@@ -212,13 +212,63 @@ export default function Index() {
         </div>
       </section>
 
+      {/* Demo Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-100">
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl font-bold text-slate-900 text-center mb-12">Test the Platform</h2>
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center mb-4">
+                <div className="w-6 h-6 rounded-full bg-blue-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Student Dashboard</h3>
+              <p className="text-slate-600 text-sm mb-4">Experience the AI chatbot interface and faculty matching system</p>
+              <Link
+                to="/student"
+                className="inline-block px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors text-sm"
+              >
+                View Demo →
+              </Link>
+            </div>
+
+            <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center mb-4">
+                <div className="w-6 h-6 rounded-full bg-purple-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Faculty Dashboard</h3>
+              <p className="text-slate-600 text-sm mb-4">Manage your profile, expertise tags, and weekly schedule</p>
+              <Link
+                to="/faculty"
+                className="inline-block px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-600 transition-colors text-sm"
+              >
+                View Demo →
+              </Link>
+            </div>
+
+            <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <div className="w-12 h-12 rounded-lg bg-emerald-100 flex items-center justify-center mb-4">
+                <div className="w-6 h-6 rounded-full bg-emerald-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Admin Dashboard</h3>
+              <p className="text-slate-600 text-sm mb-4">View analytics, faculty rankings, and feedback logs</p>
+              <Link
+                to="/admin"
+                className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg font-semibold hover:bg-emerald-600 transition-colors text-sm"
+              >
+                View Demo →
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* CTA Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-primary">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-4xl font-bold text-white mb-6">Ready to Transform Your Consultations?</h2>
           <p className="text-lg text-primary/90 mb-8">Join CLIRDEC and experience intelligent, efficient academic support.</p>
-          <Link 
-            to="/login" 
+          <Link
+            to="/login"
             className="inline-block px-8 py-4 bg-white text-primary rounded-lg font-semibold hover:bg-slate-50 transition-colors"
           >
             Get Started Now
