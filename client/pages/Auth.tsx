@@ -23,21 +23,21 @@ export default function Auth() {
       name: "Student",
       icon: User,
       description: "Find faculty experts and book consultations",
-      color: "from-blue-500 to-blue-600",
+      color: "from-green-600 to-green-700",
     },
     {
       id: "faculty",
       name: "Faculty Member",
       icon: Users,
       description: "Manage availability and expertise tags",
-      color: "from-purple-500 to-purple-600",
+      color: "from-green-600 to-green-700",
     },
     {
       id: "admin",
       name: "Administrator",
       icon: BarChart3,
       description: "Access analytics and oversee operations",
-      color: "from-emerald-500 to-emerald-600",
+      color: "from-green-600 to-green-700",
     },
   ];
 
@@ -54,15 +54,15 @@ export default function Auth() {
 
   if (!role) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-b from-white to-green-50 flex items-center justify-center p-4">
         <div className="max-w-4xl w-full">
           <div className="text-center mb-12">
-            <Link to="/" className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-8">
+            <Link to="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-green-900 mb-8">
               <ArrowLeft size={20} />
               <span className="text-sm font-medium">Back to Home</span>
             </Link>
-            <h1 className="text-4xl font-bold text-slate-900 mb-2">Welcome to CLIRDEC</h1>
-            <p className="text-lg text-slate-600">Select your role to continue</p>
+            <h1 className="text-4xl font-bold text-green-900 mb-2">Welcome to Consult</h1>
+            <p className="text-lg text-gray-700">Select your role to continue</p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
@@ -72,13 +72,13 @@ export default function Auth() {
                 <button
                   key={r.id}
                   onClick={() => setRole(r.id as UserRole)}
-                  className="group p-8 rounded-2xl border-2 border-slate-200 hover:border-primary hover:shadow-lg transition-all text-left bg-white"
+                  className="group p-8 rounded border-2 border-green-200 hover:border-green-500 hover:shadow-lg transition-all text-left bg-white"
                 >
-                  <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${r.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                  <div className={`w-16 h-16 rounded bg-gradient-to-br ${r.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
                     <Icon size={32} className="text-white" />
                   </div>
-                  <h3 className="text-xl font-semibold text-slate-900 mb-2">{r.name}</h3>
-                  <p className="text-slate-600">{r.description}</p>
+                  <h3 className="text-xl font-semibold text-green-900 mb-2">{r.name}</h3>
+                  <p className="text-gray-700">{r.description}</p>
                 </button>
               );
             })}
@@ -92,25 +92,25 @@ export default function Auth() {
   const Icon = selectedRole?.icon || User;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-b from-white to-green-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="mb-8">
           <button
             onClick={() => setRole(null)}
-            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-6"
+            className="flex items-center gap-2 text-gray-600 hover:text-green-900 mb-6"
           >
             <ArrowLeft size={20} />
             <span className="text-sm font-medium">Change Role</span>
           </button>
 
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 bg-primary rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 bg-green-700 rounded flex items-center justify-center">
               <Icon size={24} className="text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">{mode === "login" ? "Sign In" : "Create Account"}</h1>
-              <p className="text-sm text-slate-600">{selectedRole?.name}</p>
+              <h1 className="text-2xl font-bold text-green-900">{mode === "login" ? "Sign In" : "Create Account"}</h1>
+              <p className="text-sm text-gray-700">{selectedRole?.name}</p>
             </div>
           </div>
         </div>
@@ -119,41 +119,41 @@ export default function Auth() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "register" && (
             <div>
-              <label className="block text-sm font-medium text-slate-900 mb-2">Full Name</label>
+              <label className="block text-sm font-medium text-green-900 mb-2">Full Name</label>
               <input
                 type="text"
                 name="fullName"
                 value={formData.fullName}
                 onChange={handleInputChange}
                 placeholder="Enter your full name"
-                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                className="w-full px-4 py-3 rounded border border-green-200 focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-100 transition-all"
                 required
               />
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-slate-900 mb-2">CLSU Email</label>
+            <label className="block text-sm font-medium text-green-900 mb-2">CLSU Email</label>
             <input
               type="email"
               name="email"
               value={formData.email}
               onChange={handleInputChange}
               placeholder="yourname@clsu.edu.ph"
-              className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+              className="w-full px-4 py-3 rounded border border-green-200 focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-100 transition-all"
               required
             />
-            <p className="text-xs text-slate-500 mt-1">Use your institutional email address</p>
+            <p className="text-xs text-gray-600 mt-1">Use your institutional email address</p>
           </div>
 
           {mode === "register" && (
             <div>
-              <label className="block text-sm font-medium text-slate-900 mb-2">Department / College</label>
+              <label className="block text-sm font-medium text-green-900 mb-2">Department / College</label>
               <select
                 name="department"
                 value={formData.department}
                 onChange={handleInputChange}
-                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all bg-white"
+                className="w-full px-4 py-3 rounded border border-green-200 focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-100 transition-all bg-white"
                 required
               >
                 <option value="">Select your department</option>
@@ -167,7 +167,7 @@ export default function Auth() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-slate-900 mb-2">Password</label>
+            <label className="block text-sm font-medium text-green-900 mb-2">Password</label>
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
@@ -175,13 +175,13 @@ export default function Auth() {
                 value={formData.password}
                 onChange={handleInputChange}
                 placeholder="Enter your password"
-                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                className="w-full px-4 py-3 rounded border border-green-200 focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-100 transition-all"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-green-900"
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
@@ -190,14 +190,14 @@ export default function Auth() {
 
           {mode === "register" && (
             <div>
-              <label className="block text-sm font-medium text-slate-900 mb-2">Confirm Password</label>
+              <label className="block text-sm font-medium text-green-900 mb-2">Confirm Password</label>
               <input
                 type={showPassword ? "text" : "password"}
                 name="confirmPassword"
                 value={formData.confirmPassword}
                 onChange={handleInputChange}
                 placeholder="Confirm your password"
-                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                className="w-full px-4 py-3 rounded border border-green-200 focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-100 transition-all"
                 required
               />
             </div>
@@ -205,7 +205,7 @@ export default function Auth() {
 
           <button
             type="submit"
-            className="w-full mt-6 px-4 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 transition-colors"
+            className="w-full mt-6 px-4 py-3 bg-green-700 text-white rounded font-semibold hover:bg-green-800 transition-colors"
           >
             {mode === "login" ? "Sign In" : "Create Account"}
           </button>
@@ -213,14 +213,14 @@ export default function Auth() {
 
         {/* Toggle Mode */}
         <div className="mt-6 text-center">
-          <p className="text-slate-600 text-sm">
+          <p className="text-gray-700 text-sm">
             {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
             <button
               onClick={() => {
                 setMode(mode === "login" ? "register" : "login");
                 setFormData({ fullName: "", email: "", password: "", confirmPassword: "", department: "" });
               }}
-              className="text-primary font-semibold hover:underline"
+              className="text-green-700 font-semibold hover:underline"
             >
               {mode === "login" ? "Sign Up" : "Sign In"}
             </button>
@@ -228,9 +228,9 @@ export default function Auth() {
         </div>
 
         {/* Footer */}
-        <div className="mt-8 pt-6 border-t border-slate-200 text-center">
-          <p className="text-xs text-slate-500">
-            By continuing, you agree to CLIRDEC's Terms of Service and Privacy Policy
+        <div className="mt-8 pt-6 border-t border-green-200 text-center">
+          <p className="text-xs text-gray-600">
+            By continuing, you agree to Consult's Terms of Service and Privacy Policy
           </p>
         </div>
       </div>

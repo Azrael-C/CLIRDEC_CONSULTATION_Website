@@ -1,5 +1,6 @@
 /** @import must precede all other statements */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -13,88 +14,88 @@
   */
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 0 0% 15%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 0 0% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 0 0% 15%;
 
-    --primary: 263 80% 43%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 120 100% 25%;
+    --primary-foreground: 60 100% 50%;
 
-    --secondary: 263 80% 43%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 60 100% 50%;
+    --secondary-foreground: 0 0% 15%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 0 0% 92%;
+    --muted-foreground: 0 0% 45%;
 
-    --accent: 263 80% 43%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 120 100% 25%;
+    --accent-foreground: 60 100% 50%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 263 80% 43%;
+    --border: 0 0% 92%;
+    --input: 0 0% 96%;
+    --ring: 120 100% 25%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
+    --sidebar-background: 120 100% 25%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-foreground: 0 0% 100%;
 
-    --sidebar-primary: 263 80% 43%;
+    --sidebar-primary: 120 100% 25%;
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-primary-foreground: 60 100% 50%;
 
-    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent: 60 100% 50%;
 
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-accent-foreground: 120 100% 25%;
 
-    --sidebar-border: 220 13% 91%;
+    --sidebar-border: 120 80% 35%;
 
-    --sidebar-ring: 263 80% 43%;
+    --sidebar-ring: 60 100% 50%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 0 0% 12%;
+    --foreground: 0 0% 95%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 18%;
+    --card-foreground: 0 0% 95%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 18%;
+    --popover-foreground: 0 0% 95%;
 
-    --primary: 263 80% 50%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 120 100% 32%;
+    --primary-foreground: 60 100% 50%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 60 100% 50%;
+    --secondary-foreground: 120 100% 25%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 0 0% 35%;
+    --muted-foreground: 0 0% 65%;
 
-    --accent: 263 80% 50%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 120 100% 32%;
+    --accent-foreground: 60 100% 50%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 263 80% 50%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 263 80% 50%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 263 80% 50%;
+    --border: 0 0% 25%;
+    --input: 0 0% 20%;
+    --ring: 60 100% 50%;
+    --sidebar-background: 120 100% 22%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 120 100% 32%;
+    --sidebar-primary-foreground: 60 100% 50%;
+    --sidebar-accent: 60 100% 50%;
+    --sidebar-accent-foreground: 120 100% 25%;
+    --sidebar-border: 120 100% 35%;
+    --sidebar-ring: 60 100% 50%;
   }
 }
 
@@ -105,6 +106,11 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: "Libre Franklin", sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Merriweather", serif;
   }
 
   :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
