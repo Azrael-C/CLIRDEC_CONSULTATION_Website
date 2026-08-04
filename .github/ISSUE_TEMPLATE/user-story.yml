@@ -1,0 +1,45 @@
+
+name: User story
+description: Add a Product Backlog item for FacultyConnect
+title: "[Story]: "
+labels: ["user story"]
+body:
+  - type: textarea
+    id: story
+    attributes:
+      label: User story
+      description: Use the standard Scrum user-story format.
+      placeholder: As a ..., I want ..., so that ...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Interview or Product Owner evidence
+      description: Identify the confirmed need, interview question, or decision supporting this story.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        Given ..., when ..., then ...
+        Given ..., when ..., then ...
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies or risks
+      description: List required services, decisions, related stories, privacy concerns, or known blockers.
