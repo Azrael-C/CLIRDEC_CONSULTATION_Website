@@ -5,6 +5,17 @@ A mobile-first CLIRDEC pilot that can later expand into a university-wide facult
 
 See `TECH_STACK.md` for the complete development, testing, email, and deployment architecture.
 
+## Team development
+
+The production website is developed through GitHub issues, feature branches, pull requests, and automated checks. Read [CONTRIBUTING.md](CONTRIBUTING.md) before starting a Product Backlog item. Copy `.env.example` to `.env.local` for public local configuration; never commit service-role or email-provider credentials.
+
+Before requesting review for frontend work, run:
+
+```powershell
+npm install
+npm run check
+```
+
 ## Included
 
 - Student, faculty, and administrator views
