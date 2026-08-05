@@ -85,6 +85,33 @@ grant update (full_name,department,email_notifications) on public.profiles to au
 revoke update on public.appointments from authenticated;
 grant update (status,notes) on public.appointments to authenticated;
 
+-- Atomically claims a batch for the email worker. SKIP LOCKED prevents two
+-- concurrent invocations from sending the same queued notification.
+create or replace function public.claim_email_notifications(batch_size integer default 25)
+returns setof public.email_notifications
+language plpgsql
+security definer
+set search_path=public
+as $$
+begin
+  return query
+  update public.email_notifications as notification
+  set status='processing', attempts=notification.attempts+1
+  where notification.id in (
+    select candidate.id
+    from public.email_notifications as candidate
+    where candidate.status='queued'
+      and candidate.scheduled_for<=now()
+      and candidate.attempts<4
+    order by candidate.scheduled_for, candidate.created_at
+    for update skip locked
+    limit greatest(1,least(batch_size,100))
+  )
+  returning notification.*;
+end $$;
+revoke all on function public.claim_email_notifications(integer) from public,anon,authenticated;
+grant execute on function public.claim_email_notifications(integer) to service_role;
+
 create function public.close_slot_after_booking() returns trigger language plpgsql security definer set search_path=public as $$ begin update availability set is_open=false where id=new.availability_id and is_open=true; if not found then raise exception 'This consultation slot is no longer available'; end if; return new; end $$;
 create trigger prevent_double_booking before insert on public.appointments for each row execute function public.close_slot_after_booking();
 
