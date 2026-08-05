@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build"
+    "check": "npm run typecheck && npm run build",
+    "seed:test": "node scripts/seed-test-data.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.1",
