@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { availabilityValidationMessage } from "./scheduling";
 
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "declined";
 
@@ -91,6 +92,11 @@ export async function createFacultyAvailability(input: {
   location: string;
   consultationMode: "in_person" | "online";
 }) {
+  const start = new Date(input.startsAt);
+  const end = new Date(input.endsAt);
+  const validation = availabilityValidationMessage(start, end, []);
+  if (validation) throw new Error(validation);
+
   const { data, error } = await supabase
     .from("availability")
     .insert({

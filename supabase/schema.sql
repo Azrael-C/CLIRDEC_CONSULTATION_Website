@@ -1,4 +1,5 @@
 create extension if not exists pgcrypto;
+create extension if not exists btree_gist;
 
 create type public.user_role as enum ('student','faculty','admin');
 create type public.appointment_status as enum ('pending','confirmed','completed','cancelled','declined');
@@ -27,7 +28,11 @@ create table public.availability (
   consultation_mode text not null default 'in_person' check (consultation_mode in ('in_person','online')),
   is_open boolean not null default true,
   constraint valid_slot check (ends_at > starts_at),
-  constraint one_faculty_slot unique(faculty_id, starts_at, ends_at)
+  constraint one_faculty_slot unique(faculty_id, starts_at, ends_at),
+  constraint no_overlapping_faculty_slots exclude using gist (
+    faculty_id with =,
+    tstzrange(starts_at,ends_at,'[)') with &&
+  )
 );
 create table public.appointments (
   id uuid primary key default gen_random_uuid(),
@@ -135,6 +140,34 @@ create policy "admins create FAQ entries" on public.faq_entries for insert to au
 create policy "admins update FAQ entries" on public.faq_entries for update to authenticated using (public.current_role()='admin') with check (public.current_role()='admin');
 create policy "admins archive FAQ entries" on public.faq_entries for delete to authenticated using (public.current_role()='admin');
 create policy "admins read audit logs" on public.audit_logs for select to authenticated using (public.current_role()='admin');
+
+-- Availability follows CLSU's weekday pilot window in Philippine Standard Time.
+-- Updating only is_open (when a student books) does not re-run this validation.
+create or replace function public.validate_availability_schedule()
+returns trigger
+language plpgsql
+set search_path=public
+as $$
+declare
+  local_start timestamp := new.starts_at at time zone 'Asia/Manila';
+  local_end timestamp := new.ends_at at time zone 'Asia/Manila';
+begin
+  if extract(isodow from local_start) not between 1 and 5 then
+    raise exception 'Consultation availability may only be published from Monday to Friday';
+  end if;
+  if new.starts_at < now() + interval '24 hours' then
+    raise exception 'Publish availability at least 24 hours in advance';
+  end if;
+  if local_start::date <> local_end::date
+     or local_start::time < time '08:00'
+     or local_end::time > time '17:00' then
+    raise exception 'Availability must stay within 8:00 AM–5:00 PM Philippine time';
+  end if;
+  return new;
+end $$;
+create trigger validate_availability_schedule_before_write
+before insert or update of starts_at,ends_at on public.availability
+for each row execute function public.validate_availability_schedule();
 
 -- A user may edit safe profile preferences but cannot promote their own role.
 revoke update on public.profiles from authenticated;
