@@ -98,11 +98,28 @@ alter table public.faq_entries enable row level security;
 alter table public.audit_logs enable row level security;
 
 create function public.current_role() returns public.user_role language sql stable security definer set search_path=public as $$ select role from profiles where id=auth.uid() $$;
+-- Students must retain access to the closed availability slot attached to
+-- their own request. A security-definer helper avoids recursive RLS checks
+-- between availability and appointments.
+create function public.can_read_booked_availability(slot_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path=public
+as $$
+  select exists(
+    select 1 from appointments
+    where availability_id=slot_id and student_id=auth.uid()
+  )
+$$;
+revoke all on function public.can_read_booked_availability(uuid) from public,anon;
+grant execute on function public.can_read_booked_availability(uuid) to authenticated;
 create policy "read profiles" on public.profiles for select to authenticated using (true);
 create policy "update own profile" on public.profiles for update to authenticated using (id=auth.uid()) with check (id=auth.uid());
 create policy "public faculty information" on public.faculty_profiles for select to authenticated using (true);
 create policy "faculty update own information" on public.faculty_profiles for update to authenticated using (user_id=auth.uid());
-create policy "read open or related availability" on public.availability for select to authenticated using (is_open or faculty_id=auth.uid() or public.current_role()='admin');
+create policy "read open or related availability" on public.availability for select to authenticated using (is_open or faculty_id=auth.uid() or public.current_role()='admin' or public.can_read_booked_availability(id));
 create policy "faculty manages own availability" on public.availability for all to authenticated using (faculty_id=auth.uid() or public.current_role()='admin') with check (faculty_id=auth.uid() or public.current_role()='admin');
 create policy "students create own appointments" on public.appointments for insert to authenticated with check (student_id=auth.uid() and public.current_role()='student');
 create policy "participants read appointments" on public.appointments for select to authenticated using (student_id=auth.uid() or exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin');
