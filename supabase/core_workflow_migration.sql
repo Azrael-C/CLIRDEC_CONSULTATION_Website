@@ -94,21 +94,29 @@ end $$;
 create or replace function public.reschedule_consultation(target_appointment uuid,new_availability uuid)
 returns uuid language plpgsql security definer set search_path=public
 as $$
-declare previous appointments%rowtype; previous_start timestamptz; replacement availability%rowtype; created_id uuid;
+declare
+  previous_status appointment_status;
+  previous_availability uuid;
+  previous_topic text;
+  previous_notes text;
+  previous_start timestamptz;
+  replacement availability%rowtype;
+  created_id uuid;
 begin
-  select ap,av.starts_at into previous,previous_start
+  select ap.status,ap.availability_id,ap.topic,ap.notes,av.starts_at
+  into previous_status,previous_availability,previous_topic,previous_notes,previous_start
   from appointments ap join availability av on av.id=ap.availability_id
   where ap.id=target_appointment and ap.student_id=auth.uid() for update of ap,av;
   if not found then raise exception 'Consultation request not found'; end if;
-  if previous.status not in ('pending','confirmed') then raise exception 'Only active consultations may be rescheduled'; end if;
+  if previous_status not in ('pending','confirmed') then raise exception 'Only active consultations may be rescheduled'; end if;
   if previous_start<=now() then raise exception 'Past consultations cannot be rescheduled'; end if;
-  if previous.availability_id=new_availability then raise exception 'Choose a different consultation time'; end if;
+  if previous_availability=new_availability then raise exception 'Choose a different consultation time'; end if;
   select * into replacement from availability where id=new_availability for update;
   if not found or not replacement.is_open then raise exception 'This consultation slot is no longer available'; end if;
   if replacement.starts_at<now()+interval '24 hours' then raise exception 'Appointments require at least 24 hours notice'; end if;
   update appointments set status='cancelled' where id=target_appointment;
   insert into appointments(availability_id,student_id,topic,notes)
-  values(new_availability,auth.uid(),previous.topic,previous.notes)
+  values(new_availability,auth.uid(),previous_topic,previous_notes)
   returning id into created_id;
   return created_id;
 end $$;
