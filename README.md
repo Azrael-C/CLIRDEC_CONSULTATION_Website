@@ -1,4 +1,3 @@
-
 # Faculty Consultation Portal MVP
 
 A mobile-first CLIRDEC pilot that can later expand into a university-wide faculty consultation portal.
@@ -48,7 +47,13 @@ python -m venv .venv
 .venv\Scripts\uvicorn app:app --reload --port 8000
 ```
 
-The first NLP increment uses spaCy tokenization and a controlled intent vocabulary. Replace the sample answers with Product Owner-approved CLIRDEC content before pilot acceptance.
+The NLP service uses spaCy phrase matching, controlled bilingual intent rules, approved Supabase FAQ retrieval, source attribution, and safe staff escalation. Product Owner-approved FAQ entries are managed from the administrator portal.
+
+Run the assistant checks after installing its requirements:
+
+```powershell
+python -m unittest discover -s chatbot -p "test_*.py"
+```
 
 ## Configure appointment email notifications
 
