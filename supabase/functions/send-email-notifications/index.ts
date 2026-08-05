@@ -1,4 +1,3 @@
-
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const headers = { "Content-Type": "application/json" };
@@ -67,7 +66,7 @@ Deno.serve(async (request) => {
           from,
           to: [profile.email],
           subject: item.subject,
-          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><div style="background:#006b3c;color:white;padding:18px 22px;border-bottom:6px solid #f4c430"><strong>CLSU FacultyConnect</strong><br><small>Managed by MISO · CLIRDEC pilot</small></div><div style="padding:24px;border:1px solid #dbe4dc"><p>Hello ${escapeHtml(profile.full_name)},</p><p>${escapeHtml(item.body)}</p><p><a href="${escapeHtml(portalUrl)}" style="background:#006b3c;color:white;padding:10px 16px;text-decoration:none;border-radius:6px">Open FacultyConnect</a></p><p style="color:#68776e;font-size:12px">This is an automated appointment notification. Do not reply with confidential information.</p></div></div>`,
+          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><div style="background:#006b3c;color:white;padding:18px 22px;border-bottom:6px solid #f4c430"><strong>CLSU FacultyConnect</strong><br><small>Managed by MISO Â· CLIRDEC pilot</small></div><div style="padding:24px;border:1px solid #dbe4dc"><p>Hello ${escapeHtml(profile.full_name)},</p><p>${escapeHtml(item.body)}</p><p><a href="${escapeHtml(portalUrl)}" style="background:#006b3c;color:white;padding:10px 16px;text-decoration:none;border-radius:6px">Open FacultyConnect</a></p><p style="color:#68776e;font-size:12px">This is an automated appointment notification. Do not reply with confidential information.</p></div></div>`,
         }),
       });
       if (!response.ok) throw new Error(`Resend ${response.status}: ${await response.text()}`);
