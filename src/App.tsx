@@ -16,19 +16,59 @@ const demoSlots: Slot[] = [
 ];
 
 function App(){
- const [user,setUser]=useState<User|null>(null); const [role,setRole]=useState<Role>("student");
- const [view,setView]=useState<View>("home"); const [slots,setSlots]=useState<Slot[]>(demoSlots);
+ const [user,setUser]=useState<User|null>(null); const [authLoading,setAuthLoading]=useState(configured);
+ const [view,setView]=useState<View>("home"); const [slots,setSlots]=useState<Slot[]>(configured?[]:demoSlots);
  const [booked,setBooked]=useState<Slot[]>([]); const [selected,setSelected]=useState<Slot|null>(null);
  const [notice,setNotice]=useState(""); const [query,setQuery]=useState(""); const [menu,setMenu]=useState(false);
  const [chat,setChat]=useState<{who:"you"|"bot";text:string}[]>([{who:"bot",text:"Hi, Sofia! I use approved CLIRDEC information. Ask about services, office hours, consultation procedures, faculty availability, or official contacts."}]);
  const [question,setQuestion]=useState("");
- useEffect(()=>{ if(!configured)return; supabase.auth.getUser().then(async({data})=>{if(!data.user)return; const {data:p}=await supabase.from("profiles").select("full_name,role").eq("id",data.user.id).single(); setUser({id:data.user.id,email:data.user.email||"",name:p?.full_name||"User",role:p?.role||"student"});}); },[]);
+ useEffect(()=>{
+  if(!configured){setAuthLoading(false);return;}
+  let active=true;
+  const loadUser=async(id:string,email:string)=>{
+   const {data:p,error}=await supabase.from("profiles").select("full_name,role").eq("id",id).single();
+   if(!active)return;
+   if(error){setNotice("Your account exists, but its portal profile could not be loaded.");setUser(null);return;}
+   setUser({id,email,name:p.full_name,role:p.role as Role});
+  };
+  supabase.auth.getSession().then(async({data})=>{
+   if(data.session)await loadUser(data.session.user.id,data.session.user.email||"");
+   if(active)setAuthLoading(false);
+  });
+  const {data:listener}=supabase.auth.onAuthStateChange((event,session)=>{
+   if(event==="SIGNED_OUT"){setUser(null);setAuthLoading(false);}
+   else if(session)void loadUser(session.user.id,session.user.email||"");
+  });
+  return()=>{active=false;listener.subscription.unsubscribe();};
+ },[]);
+ useEffect(()=>{
+  if(!configured||!user||user.role!=="student")return;
+  void loadStudentData(user.id);
+ },[user?.id,user?.role]);
+ async function loadStudentData(studentId:string){
+  const {data:open,error:slotError}=await supabase.from("availability").select("id,faculty_id,starts_at,ends_at,location").eq("is_open",true).order("starts_at");
+  if(slotError){setNotice(slotError.message);return;}
+  const facultyIds=[...new Set((open||[]).map(x=>x.faculty_id))];
+  const [{data:profiles},{data:faculty}]=await Promise.all([
+   supabase.from("profiles").select("id,full_name").in("id",facultyIds.length?facultyIds:["00000000-0000-0000-0000-000000000000"]),
+   supabase.from("faculty_profiles").select("user_id,expertise").in("user_id",facultyIds.length?facultyIds:["00000000-0000-0000-0000-000000000000"])
+  ]);
+  const names=new Map((profiles||[]).map(x=>[x.id,x.full_name]));
+  const expertise=new Map((faculty||[]).map(x=>[x.user_id,(x.expertise||[]).join(", ")]));
+  setSlots((open||[]).map((x,i)=>{const name=names.get(x.faculty_id)||"Faculty member";return{id:x.id,faculty_name:name,initials:name.split(" ").map((n:string)=>n[0]).join("").slice(0,2),expertise:expertise.get(x.faculty_id)||"General consultation",starts_at:x.starts_at,ends_at:x.ends_at,location:x.location||"Location provided after approval",color:["coral","blue","gold","mint"][i%4]};}));
+  const {data:appointments,error:appointmentError}=await supabase.from("appointments").select("availability_id,status,availability:availability_id(id,faculty_id,starts_at,ends_at,location)").eq("student_id",studentId).order("created_at",{ascending:false});
+  if(appointmentError){setNotice(appointmentError.message);return;}
+  const related=(appointments||[]).map((x:any)=>{const a=Array.isArray(x.availability)?x.availability[0]:x.availability;const name=names.get(a?.faculty_id)||"Faculty member";return{id:a?.id||x.availability_id,faculty_name:name,initials:name.split(" ").map((n:string)=>n[0]).join("").slice(0,2),expertise:expertise.get(a?.faculty_id)||"Consultation",starts_at:a?.starts_at,ends_at:a?.ends_at,location:a?.location||"Pending confirmation",color:"mint"};});
+  setBooked(related);
+ }
  const filtered=useMemo(()=>slots.filter(s=>(s.faculty_name+" "+s.expertise).toLowerCase().includes(query.toLowerCase())),[slots,query]);
- async function login(e:FormEvent<HTMLFormElement>){e.preventDefault(); const f=new FormData(e.currentTarget); const email=String(f.get("email")); const password=String(f.get("password")); if(!configured){setUser({id:"demo",email,name:role==="student"?"Sofia Navarro":role==="faculty"?"Dr. Maria Santos":"CLIRDEC Admin",role});return;} const {data,error}=await supabase.auth.signInWithPassword({email,password}); if(error){setNotice(error.message);return;} const {data:p}=await supabase.from("profiles").select("full_name,role").eq("id",data.user.id).single(); setUser({id:data.user.id,email,name:p?.full_name||"User",role:p?.role||"student"}); }
+ async function login(e:FormEvent<HTMLFormElement>){e.preventDefault();setNotice("");if(!configured){setNotice("The production database is not configured yet. Add the Supabase environment variables in Vercel.");return;}const f=new FormData(e.currentTarget);const email=String(f.get("email"));const password=String(f.get("password"));const {error}=await supabase.auth.signInWithPassword({email,password});if(error)setNotice(error.message);}
+ async function signup(e:FormEvent<HTMLFormElement>){e.preventDefault();setNotice("");if(!configured){setNotice("The production database is not configured yet. Add the Supabase environment variables in Vercel.");return;}const f=new FormData(e.currentTarget);const full_name=String(f.get("full_name"));const email=String(f.get("email"));const password=String(f.get("password"));const {data,error}=await supabase.auth.signUp({email,password,options:{data:{full_name}}});if(error){setNotice(error.message);return;}setNotice(data.session?"Student account created.":"Check your email to confirm your student account, then sign in.");}
  async function logout(){if(configured)await supabase.auth.signOut();setUser(null);setView("home");}
  async function confirmBook(){if(!user||!selected)return; const slot=selected; if(configured){const {error}=await supabase.from("appointments").insert({student_id:user.id,availability_id:slot.id,topic:"General consultation",status:"pending"});if(error){setNotice(error.message);return;}} setBooked(b=>[slot,...b.filter(x=>x.id!==slot.id)]);setSelected(null);setNotice(`Request sent to ${slot.faculty_name}. An email receipt will be sent to ${user.email}; approval requires a separate faculty email.`);setView("schedule");}
  async function ask(e:FormEvent){e.preventDefault();const q=question.trim();if(!q)return;setQuestion("");setChat(c=>[...c,{who:"you",text:q}]);if(!configured){const s=q.toLowerCase();let answer="I’m not confident that I have an approved answer for that. Please choose an FAQ topic or contact authorized CLIRDEC staff for assistance.";if(s.includes("hour")||s.includes("open"))answer="CLIRDEC office hours must come from the current official office advisory. For the pilot, the knowledge-base administrator should publish the approved schedule and contact channel here.";else if(s.includes("consult")||s.includes("request")||s.includes("book"))answer="Open Faculty availability, select a faculty-approved time, describe your concern, and submit a request. The request remains pending until the faculty member approves it.";else if(s.includes("where")||s.includes("location"))answer="The consultation location or online platform is shown in the approved availability details and final faculty confirmation.";else if(s.includes("grade")||s.includes("emergency")||s.includes("complaint"))answer="I can’t answer confidential records, grades, emergencies, complaints, or academic decisions. Please use the appropriate official CLSU or CLIRDEC contact channel.";setTimeout(()=>setChat(c=>[...c,{who:"bot",text:answer}]),350);return;}try{const r=await fetch(`${import.meta.env.VITE_CHATBOT_URL||"http://localhost:8000"}/chat`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q})});const d=await r.json();setChat(c=>[...c,{who:"bot",text:d.answer}]);}catch{setChat(c=>[...c,{who:"bot",text:"The assistant is temporarily offline. Please use the official CLIRDEC contact channel or try again later."}]);}}
- if(!user)return <Auth role={role} setRole={setRole} login={login} notice={notice}/>;
+ if(authLoading)return <main className="auth-loading"><p>Loading FacultyConnect…</p></main>;
+ if(!user)return <ProductionAuth login={login} signup={signup} notice={notice}/>;
  if(user.role!=="student")return <RoleWorkspace user={user} logout={logout}/>;
  const nav=(next:View)=>{setView(next);setMenu(false);setNotice("");};
  return <div className="app"><header className="topbar"><button className="brand-button" onClick={()=>nav("home")}><span className="brand-mark">C</span><span><b>CLSU FacultyConnect</b><small>Managed by MISO · CLIRDEC pilot</small></span></button><div className="top-actions"><button className="icon-button" aria-label="Notifications">♢<span className="dot"/></button><button className="profile-chip"><span>SN</span><i><b>{user.name}</b><small>Student</small></i></button><button className="menu-button" onClick={()=>setMenu(!menu)} aria-label="Toggle menu">☰</button></div></header>
@@ -38,7 +78,35 @@ function App(){
  {selected&&<BookingModal slot={selected} close={()=>setSelected(null)} confirm={confirmBook}/>}</div>;
 }
 
+/* Legacy demo authentication retained temporarily for visual reference.
 function Auth({role,setRole,login,notice}:{role:Role;setRole:(r:Role)=>void;login:(e:FormEvent<HTMLFormElement>)=>void;notice:string}){return <main className="auth"><section className="auth-story"><div className="public-brand"><span className="brand-mark">C</span> CLSU FacultyConnect</div><div><span className="pilot-label">MISO · CLIRDEC PILOT</span><h1>Approved answers. Clear next steps.</h1><p>Ask common CLIRDEC questions in natural language, view faculty-approved availability, and receive a safe official referral when the assistant cannot answer.</p><ul><li>Product Owner-approved FAQ knowledge</li><li>Clarification and safe staff referral</li><li>Mobile access for students and faculty</li></ul></div><small>Central Luzon State University · Nurturing a Culture of Excellence</small></section><section className="auth-panel"><form className="login" onSubmit={login}><span className="mobile-brand">CLSU FacultyConnect</span><p className="eyebrow">CONTROLLED PILOT</p><h2>Sign in to your portal</h2><p className="muted">Use demo mode to preview each role-restricted workspace.</p><div className="role-tabs">{(["student","faculty","admin"] as Role[]).map(r=><button type="button" className={role===r?"active":""} key={r} onClick={()=>setRole(r)}>{r==="admin"?"Admin":r[0].toUpperCase()+r.slice(1)}</button>)}</div><label>CLSU email address<input name="email" type="email" required defaultValue="sofia@clsu2.edu.ph"/></label><label>Password<input name="password" type="password" required minLength={6} defaultValue="password"/></label><button className="primary">Sign in <span>→</span></button>{!configured&&<small className="demo-note">Demo mode · no account required</small>}{notice&&<p className="error">{notice}</p>}</form></section></main>}
+function Auth({role,setRole,login,notice}:{role:Role;setRole:(r:Role)=>void;login:(e:FormEvent<HTMLFormElement>)=>void;notice:string}){return <main className="auth"><section className="auth-story"><div className="public-brand"><span className="brand-mark">C</span> CLSU FacultyConnect</div><div><span className="pilot-label">MISO · CLIRDEC PILOT</span><h1>Approved answers. Clear next steps.</h1><p>Ask common CLIRDEC questions in natural language, view faculty-approved availability, and receive a safe official referral when the assistant cannot answer.</p><ul><li>Product Owner-approved FAQ knowledge</li><li>Clarification and safe staff referral</li><li>Mobile access for students and faculty</li></ul></div><small>Central Luzon State University · Nurturing a Culture of Excellence</small></section><section className="auth-panel"><form className="login" onSubmit={login}><span className="mobile-brand">CLSU FacultyConnect</span><p className="eyebrow">CONTROLLED PILOT</p><h2>Sign in to your portal</h2><p className="muted">Use demo mode to preview each role-restricted workspace.</p><div className="role-tabs">{(["student","faculty","admin"] as Role[]).map(r=><button type="button" className={role===r?"active":""} key={r} onClick={()=>setRole(r)}>{r==="admin"?"Admin":r[0].toUpperCase()+r.slice(1)}</button>)}</div><label>CLSU email address<input name="email" type="email" required defaultValue="sofia@clsu2.edu.ph"/></label><label>Password<input name="password" type="password" required minLength={6} defaultValue="password"/></label><button className="primary">Sign in <span>→</span></button>{!configured&&<small className="demo-note">Demo mode · no account required</small>}{notice&&<p className="error">{notice}</p>}</form></section></main>}
+*/
+
+function ProductionAuth({login,signup,notice}:{login:(e:FormEvent<HTMLFormElement>)=>void;signup:(e:FormEvent<HTMLFormElement>)=>void;notice:string}){
+ const [creating,setCreating]=useState(false);
+ return <main className="auth">
+  <section className="auth-story">
+   <div className="public-brand"><span className="brand-mark">C</span> CLSU FacultyConnect</div>
+   <div><span className="pilot-label">MISO · CLIRDEC PILOT</span><h1>Approved answers. Clear next steps.</h1><p>Use your registered email to access faculty consultation services and verified CLIRDEC guidance.</p><ul><li>Role-protected student, faculty, and administrator portals</li><li>Faculty-approved schedules and request decisions</li><li>Email updates for important appointment events</li></ul></div>
+   <small>Central Luzon State University · Nurturing a Culture of Excellence</small>
+  </section>
+  <section className="auth-panel">
+   <form className="login" onSubmit={creating?signup:login}>
+    <span className="mobile-brand">CLSU FacultyConnect</span><p className="eyebrow">SECURE PORTAL</p>
+    <h2>{creating?"Create a student account":"Sign in to your portal"}</h2>
+    <p className="muted">Faculty and administrator roles are assigned only through an authorized administrative process.</p>
+    {creating&&<label>Full name<input name="full_name" required autoComplete="name"/></label>}
+    <label>Email address<input name="email" type="email" required autoComplete="email"/></label>
+    <label>Password<input name="password" type="password" required minLength={8} autoComplete={creating?"new-password":"current-password"}/></label>
+    <button className="primary">{creating?"Create student account":"Sign in"} <span>→</span></button>
+    <button type="button" className="text-button" onClick={()=>setCreating(x=>!x)}>{creating?"Already registered? Sign in":"New student? Create an account"}</button>
+    {!configured&&<small className="demo-note">Backend setup required · Supabase environment variables are not configured.</small>}
+    {notice&&<p className="error">{notice}</p>}
+   </form>
+  </section>
+ </main>;
+}
 function Nav({active,label,icon,onClick}:{active:boolean;label:string;icon:string;onClick:()=>void}){return <button className={active?"nav-item active":"nav-item"} onClick={onClick}><span>{icon}</span>{label}</button>}
 function Dashboard({user,booked,go}:{user:User;booked:Slot[];go:(v:View)=>void}){const next=booked[0];return <><section className="page-head"><div><p className="eyebrow">CLIRDEC FAQ PILOT</p><h1>What do you need help with, {user.name.split(" ")[0]}?</h1><p>Start with the approved-information assistant or view faculty-maintained availability.</p></div><button className="primary" onClick={()=>go("assistant")}>Ask Consult AI <span>→</span></button></section><section className="overview-grid"><article className="next-card"><div className="section-label"><span>LATEST CONSULTATION REQUEST</span>{next&&<b>Pending approval</b>}</div>{next?<><div className="appointment-date"><strong>{new Date(next.starts_at).getDate()}</strong><span>{new Date(next.starts_at).toLocaleDateString([], {month:"short"}).toUpperCase()}<br/>{new Date(next.starts_at).toLocaleDateString([], {weekday:"short"})}</span></div><div className="appointment-main"><span className={`avatar ${next.color}`}>{next.initials}</span><div><h3>{next.expertise}</h3><p>{next.faculty_name}</p><small>Requested time: {new Date(next.starts_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</small></div></div><button className="text-button" onClick={()=>go("schedule")}>View request status →</button></>:<div className="empty"><b>No active request</b><p>Availability shown in the portal is faculty-approved, but a request still requires faculty confirmation.</p></div>}</article><article className="quick-card"><span className="section-label">APPROVED GUIDANCE</span><button onClick={()=>go("assistant")}><span className="quick-icon">✦</span><i><b>Ask Consult AI</b><small>FAQs, services, procedures, hours, and contacts</small></i><strong>→</strong></button><button onClick={()=>go("find")}><span className="quick-icon">⌕</span><i><b>View faculty availability</b><small>Use approved categories and published schedules</small></i><strong>→</strong></button></article></section><section className="how"><div className="section-title"><div><p className="eyebrow">SAFE BY DESIGN</p><h2>Approved answer or official referral</h2></div><p>The pilot does not provide unrestricted generative answers.</p></div><div className="steps"><article><b>01</b><span>✦</span><h3>Ask naturally</h3><p>Use English, Filipino, mixed language, or common abbreviations.</p></article><article><b>02</b><span>?</span><h3>Clarify when needed</h3><p>The assistant asks one clarifying question when confidence is low.</p></article><article><b>03</b><span>↗</span><h3>Refer safely</h3><p>Unsupported or sensitive concerns go to an official staff channel.</p></article></div></section></>}
 function FindFaculty({query,setQuery,slots,select}:{query:string;setQuery:(s:string)=>void;slots:Slot[];select:(s:Slot)=>void}){return <><section className="page-head compact"><div><p className="eyebrow">APPROVED CONSULTATION GUIDANCE</p><h1>Faculty availability</h1><p>Browse faculty-maintained schedules and approved expertise categories. The system does not automatically assign a faculty member.</p></div></section><div className="search-box"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search an approved category or faculty name"/></div><div className="result-head"><b>{slots.length} published availability entries</b><span>Source: faculty-approved CLIRDEC schedules</span></div><section className="faculty-grid">{slots.map(s=><article className="faculty-card" key={s.id}><div className="faculty-top"><span className={`avatar large ${s.color}`}>{s.initials}</span><div><span className="available">● Faculty-published</span><h3>{s.faculty_name}</h3><p>{s.expertise}</p></div></div><div className="slot-line"><span>Published time</span><b>{new Date(s.starts_at).toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"})} · {new Date(s.starts_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b></div><button className="primary wide" onClick={()=>select(s)}>Review and request →</button></article>)}</section></>}

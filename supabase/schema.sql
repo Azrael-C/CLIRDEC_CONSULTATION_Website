@@ -64,15 +64,26 @@ alter table public.email_notifications enable row level security;
 
 create function public.current_role() returns public.user_role language sql stable security definer set search_path=public as $$ select role from profiles where id=auth.uid() $$;
 create policy "read profiles" on public.profiles for select to authenticated using (true);
-create policy "update own profile" on public.profiles for update to authenticated using (id=auth.uid());
+create policy "update own profile" on public.profiles for update to authenticated using (id=auth.uid()) with check (id=auth.uid());
 create policy "public faculty information" on public.faculty_profiles for select to authenticated using (true);
 create policy "faculty update own information" on public.faculty_profiles for update to authenticated using (user_id=auth.uid());
 create policy "read open or related availability" on public.availability for select to authenticated using (is_open or faculty_id=auth.uid() or public.current_role()='admin');
 create policy "faculty manages own availability" on public.availability for all to authenticated using (faculty_id=auth.uid() or public.current_role()='admin') with check (faculty_id=auth.uid() or public.current_role()='admin');
 create policy "students create own appointments" on public.appointments for insert to authenticated with check (student_id=auth.uid() and public.current_role()='student');
 create policy "participants read appointments" on public.appointments for select to authenticated using (student_id=auth.uid() or exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin');
-create policy "participants update appointments" on public.appointments for update to authenticated using (student_id=auth.uid() or exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin');
+create policy "students cancel own pending appointments" on public.appointments for update to authenticated
+using (student_id=auth.uid() and status='pending')
+with check (student_id=auth.uid() and status='cancelled');
+create policy "faculty and admin decide appointments" on public.appointments for update to authenticated
+using (exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin')
+with check (exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin');
 create policy "users read own email history" on public.email_notifications for select to authenticated using (recipient_id=auth.uid() or public.current_role()='admin');
+
+-- A user may edit safe profile preferences but cannot promote their own role.
+revoke update on public.profiles from authenticated;
+grant update (full_name,department,email_notifications) on public.profiles to authenticated;
+revoke update on public.appointments from authenticated;
+grant update (status,notes) on public.appointments to authenticated;
 
 create function public.close_slot_after_booking() returns trigger language plpgsql security definer set search_path=public as $$ begin update availability set is_open=false where id=new.availability_id and is_open=true; if not found then raise exception 'This consultation slot is no longer available'; end if; return new; end $$;
 create trigger prevent_double_booking before insert on public.appointments for each row execute function public.close_slot_after_booking();
