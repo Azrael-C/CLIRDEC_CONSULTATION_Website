@@ -223,9 +223,9 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
     if cached and time.monotonic() < expires:
         return cached, source
 
-    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    supabase_url = (os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL", "")).rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    anon_key = os.getenv("SUPABASE_ANON_KEY", "")
+    anon_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("VITE_SUPABASE_ANON_KEY", "")
     api_key = service_key or anon_key
     bearer = service_key or (authorization.removeprefix("Bearer ").strip() if authorization else "")
     if not supabase_url or not api_key or not bearer:
@@ -259,7 +259,7 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
     if lowered_tokens & SENSITIVE_TERMS:
         return ChatResponse(
             answer=(
-                "I canâ€™t handle confidential records, emergencies, complaints, academic decisions, "
+                "I can’t handle confidential records, emergencies, complaints, academic decisions, "
                 "or account credentials. Please contact the appropriate CLSU or CLIRDEC office through "
                 "an official channel."
             ),
@@ -293,7 +293,7 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
 
     return ChatResponse(
         answer=(
-            "Iâ€™m not confident that I have an approved answer for that question. Please rephrase it "
+            "I’m not confident that I have an approved answer for that question. Please rephrase it "
             "as a booking, availability, faculty expertise, location, cancellation, status, or service question. "
             "For anything else, contact authorized CLIRDEC staff."
         ),
@@ -305,6 +305,7 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
     )
 
 
+@app.get("/api/health")
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "nlp": "spaCy", "pipeline": ",".join(nlp.pipe_names)}
@@ -317,6 +318,7 @@ async def knowledge_status(authorization: str | None = Header(default=None)) -> 
     return KnowledgeStatus(source=source, approved_entries=len(items), cache_seconds_remaining=remaining)
 
 
+@app.post("/api/chat", response_model=ChatResponse)
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, authorization: str | None = Header(default=None)) -> ChatResponse:
     knowledge, _ = await _load_approved_knowledge(authorization)
