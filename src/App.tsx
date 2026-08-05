@@ -131,82 +131,139 @@ function ProductionAuth({login,signup,notice}:{login:(e:FormEvent<HTMLFormElemen
     <label>Password<input name="password" type="password" required minLength={8} autoComplete={creating?"new-password":"current-password"}/></label>
     <button className="primary">{creating?"Create student account":"Sign in"} <span>→</span></button>
     <button type="button" className="text-button" onClick={()=>setCreating(x=>!x)}>{creating?"Already registered? Sign in":"New student? Create an account"}</button>
-    {!configured&&<small cl…41153 tokens truncated…          f"{supabase_url}/rest/v1/faq_entries",
-            headers,
-            params,
-        )
-        items = [KnowledgeItem(**row) for row in rows]
-        _cache = (time.monotonic() + CACHE_TTL_SECONDS, items, "Supabase approved FAQ entries")
-        return items, "Supabase approved FAQ entries"
-    except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
-        _cache = (time.monotonic() + 60, [], "bundled workflow answers")
-        return [], "bundled workflow answers"
-
-
-def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse:
-    lowered_tokens = _tokens(message)
-    if lowered_tokens & SENSITIVE_TERMS:
-        return ChatResponse(
-            answer=(
-                "I can’t handle confidential records, emergencies, complaints, academic decisions, "
-                "or account credentials. Please contact the appropriate CLSU or CLIRDEC office through "
-                "an official channel."
-            ),
-            intent="sensitive_referral",
-            confidence=0.99,
-            escalation=True,
-            source="CLSU privacy and safe-referral rule",
-            suggestions=["Ask about consultation booking", "View faculty availability"],
-        )
-
-    matched_item, faq_score = _rank_knowledge(message, knowledge)
-    intent, intent_confidence = classify_intent(message)
-    if matched_item and faq_score >= 0.27:
-        return ChatResponse(
-            answer=matched_item.answer,
-            intent=intent if intent != "fallback" else "approved_faq",
-            confidence=min(0.98, 0.62 + faq_score * 0.36),
-            escalation=False,
-            source=matched_item.source_reference,
-        )
-
-    if intent in DEFAULT_ANSWERS and intent_confidence >= 0.55:
-        answer, source = DEFAULT_ANSWERS[intent]
-        return ChatResponse(
-            answer=answer,
-            intent=intent,
-            confidence=intent_confidence,
-            escalation=False,
-            source=source,
-        )
-
-    return ChatResponse(
-        answer=(
-            "I’m not confident that I have an approved answer for that question. Please rephrase it "
-            "as a booking, availability, faculty expertise, location, cancellation, status, or service question. "
-            "For anything else, contact authorized CLIRDEC staff."
-        ),
-        intent="fallback",
-        confidence=max(0.15, intent_confidence),
-        escalation=True,
-        source="Safe fallback and staff-referral rule",
-        suggestions=["How do I request a consultation?", "When is a faculty member available?"],
-    )
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "nlp": "spaCy", "pipeline": ",".join(nlp.pipe_names)}
-
-
-@app.get("/knowledge-status", response_model=KnowledgeStatus)
-async def knowledge_status(authorization: str | None = Header(default=None)) -> KnowledgeStatus:
-    items, source = await _load_approved_knowledge(authorization)
-    remaining = max(0, int(_cache[0] - time.monotonic()))
-    return KnowledgeStatus(source=source, approved_entries=len(items), cache_seconds_remaining=remaining)
-
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, authorization: str | None = Header(default=None)) -> ChatResponse:
-    knowledge, _ = await _load_approved_knowledge(authorization)
-    return build_response(request.message, knowledge)
+    {!configured&&<small className="demo-note">Backend setup required · Supabase environment variables are not configured.</small>}
+    {notice&&<p className="error">{notice}</p>}
+   </form>
+  </section>
+ </main>;
+}
+function BrandLogo({tone="dark",size="header"}:{tone?:"dark"|"light";size?:"header"|"hero"}){return <img className={`brand-logo brand-logo-${size}`} src={tone==="light"?"/brand/Logo_white.png":"/brand/Logo_Black.png"} alt="" aria-hidden="true"/>}
+type NavIconName="home"|"assistant"|"search"|"requests"|"calendar"|"profile"|"users"|"report";
+function NavIcon({name}:{name:NavIconName}){
+ const paths:Record<NavIconName,ReactNode>={
+  home:<><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5M9.5 20v-6h5v6"/></>,
+  assistant:<><path d="M12 3 13.7 8.3 19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 17 .8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8L19 17Z"/></>,
+  search:<><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></>,
+  requests:<><path d="M6 3.5h12a2 2 0 0 1 2 2v15H4v-15a2 2 0 0 1 2-2Z"/><path d="M8 8h8M8 12h8M8 16h5"/></>,
+  calendar:<><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M7 14h3M14 14h3M7 18h3M14 18h3"/></>,
+  profile:<><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></>,
+  users:<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></>,
+  report:<><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
+ };
+ return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+function Nav({active,label,icon,onClick}:{active:boolean;label:string;icon:NavIconName;onClick:()=>void}){return <button className={active?"nav-item active":"nav-item"} onClick={onClick}><NavIcon name={icon}/><span>{label}</span></button>}
+function statusLabel(status:AppointmentStatus="pending"){return({pending:"Pending faculty approval",confirmed:"Confirmed",completed:"Completed",cancelled:"Cancelled",declined:"Declined"} as Record<AppointmentStatus,string>)[status];}
+function Dashboard({user,booked,go}:{user:User;booked:Slot[];go:(v:View)=>void}){const next=booked[0];return <><section className="page-head"><div><p className="eyebrow">CLIRDEC FAQ PILOT</p><h1>What do you need help with, {user.name.split(" ")[0]}?</h1><p>Start with the approved-information assistant or view faculty-maintained availability.</p></div><button className="primary" onClick={()=>go("assistant")}>Ask Consult AI <span>→</span></button></section><section className="overview-grid"><article className="next-card"><div className="section-label"><span>LATEST CONSULTATION REQUEST</span>{next&&<b>{statusLabel(next.status)}</b>}</div>{next?<><div className="appointment-date"><strong>{new Date(next.starts_at).getDate()}</strong><span>{new Date(next.starts_at).toLocaleDateString([], {month:"short"}).toUpperCase()}<br/>{new Date(next.starts_at).toLocaleDateString([], {weekday:"short"})}</span></div><div className="appointment-main"><span className={`avatar ${next.color}`}>{next.initials}</span><div><h3>{next.topic||next.expertise}</h3><p>{next.faculty_name}</p><small>Requested time: {new Date(next.starts_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</small></div></div><button className="text-button" onClick={()=>go("schedule")}>View request status →</button></>:<div className="empty"><b>No active request</b><p>Availability shown in the portal is faculty-approved, but a request still requires faculty confirmation.</p></div>}</article><article className="quick-card"><span className="section-label">APPROVED GUIDANCE</span><button onClick={()=>go("assistant")}><span className="quick-icon">✦</span><i><b>Ask Consult AI</b><small>FAQs, services, procedures, hours, and contacts</small></i><strong>→</strong></button><button onClick={()=>go("find")}><span className="quick-icon">⌕</span><i><b>View faculty availability</b><small>Use approved categories and published schedules</small></i><strong>→</strong></button></article></section><section className="how"><div className="section-title"><div><p className="eyebrow">SAFE BY DESIGN</p><h2>Approved answer or official referral</h2></div><p>The pilot does not provide unrestricted generative answers.</p></div><div className="steps"><article><b>01</b><span>✦</span><h3>Ask naturally</h3><p>Use English, Filipino, mixed language, or common abbreviations.</p></article><article><b>02</b><span>?</span><h3>Clarify when needed</h3><p>The assistant asks one clarifying question when confidence is low.</p></article><article><b>03</b><span>↗</span><h3>Refer safely</h3><p>Unsupported or sensitive concerns go to an official staff channel.</p></article></div></section></>}
+function FindFaculty({query,setQuery,slots,select}:{query:string;setQuery:(s:string)=>void;slots:Slot[];select:(s:Slot)=>void}){return <><section className="page-head compact"><div><p className="eyebrow">APPROVED CONSULTATION GUIDANCE</p><h1>Faculty availability</h1><p>Browse faculty-maintained schedules and approved expertise categories. The system does not automatically assign a faculty member.</p></div></section><div className="search-box"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search an approved category or faculty name"/></div><div className="result-head"><b>{slots.length} published availability entries</b><span>Source: faculty-approved CLIRDEC schedules</span></div><section className="faculty-grid">{slots.map(s=><article className="faculty-card" key={s.id}><div className="faculty-top"><span className={`avatar large ${s.color}`}>{s.initials}</span><div><span className="available">● Faculty-published</span><h3>{s.faculty_name}</h3><p>{s.expertise}</p></div></div><div className="slot-line"><span>Published time</span><b>{new Date(s.starts_at).toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"})} · {new Date(s.starts_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b></div><button className="primary wide" onClick={()=>select(s)}>Review and request →</button></article>)}</section></>}
+function Schedule({booked,cancel,reschedule,busy}:{booked:Slot[];cancel:(id:string)=>void;reschedule:(slot:Slot)=>void;busy:boolean}){return <><section className="page-head compact"><div><p className="eyebrow">CONSULTATION GUIDANCE</p><h1>My requests</h1><p>Requests shown here are not appointments until the faculty member confirms them.</p></div></section><div className="scope-note"><b>Email notifications enabled</b><span>Your registered email receives request, decision, cancellation, and reminder updates. Cancelling or rescheduling never removes the audit history.</span></div><div className="schedule-list">{booked.map(s=>{const active=s.status==="pending"||s.status==="confirmed";return <article key={s.appointment_id||s.id}><div className="date-block"><strong>{new Date(s.starts_at).getDate()}</strong><span>{new Date(s.starts_at).toLocaleDateString([], {month:"short"})}</span></div><span className={`avatar ${s.color}`}>{s.initials}</span><div className="schedule-info"><span className={`status ${s.status||"pending"}`}>{statusLabel(s.status).toUpperCase()}</span><h3>{s.topic||s.expertise}</h3><p>{s.faculty_name} · {new Date(s.starts_at).toLocaleString([], {weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</p><small>✉ Email updates enabled · {s.status==="confirmed"?s.location:"Final location follows faculty approval."}</small>{active&&s.appointment_id&&<div className="inline-actions"><button className="outline" disabled={busy} onClick={()=>reschedule(s)}>Choose another time</button><button className="danger-button" disabled={busy} onClick={()=>cancel(s.appointment_id!)}>Cancel</button></div>}</div></article>})}{!booked.length&&<div className="empty-card">You have no consultation requests. Ask Consult AI for the approved procedure or view faculty availability.</div>}</div></>}
+function Chat({chat,question,setQuestion,ask}:{chat:ChatMessage[];question:string;setQuestion:(s:string)=>void;ask:(e:FormEvent)=>void}){return <><section className="page-head compact"><div><p className="eyebrow">PRIMARY MVP CAPABILITY</p><h1>Ask Consult AI</h1><p>FastAPI and spaCy match your question to approved information. Unsupported and sensitive questions receive a safe referral.</p></div></section><div className="assistant-safety"><span>✓ Approved FAQ knowledge</span><span>✓ English, Filipino, or mixed phrasing</span><span>✓ Safe fallback and staff referral</span></div><section className="chatbot"><div className="chat-head"><span className="ai-mark">✦</span><div><b>Consult AI</b><small>spaCy intent matching · Approved CLIRDEC knowledge</small></div></div><div className="messages">{chat.map((m,i)=><div key={i} className={`message-wrap ${m.who}`}><p>{m.text}</p>{m.who==="bot"&&m.source&&<small>Source: {m.source}</small>}{m.escalation&&<small className="escalation-note">Staff follow-up recommended</small>}</div>)}</div><div className="prompts"><button onClick={()=>setQuestion("What are CLIRDEC office hours?")}>Office hours</button><button onClick={()=>setQuestion("How do I request a faculty consultation?")}>Request consultation</button><button onClick={()=>setQuestion("Where are sessions held?")}>Session location</button><button onClick={()=>setQuestion("What services are available?")}>CLIRDEC services</button></div><form onSubmit={ask}><input aria-label="Chat question" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask in English, Filipino, or mixed language..."/><button className="primary">Send →</button></form><footer className="chat-source">Answers are traceable to an approved FAQ, office advisory, service directory, or faculty-maintained schedule.</footer></section></>}
+function BookingModal({slot,topic,setTopic,close,confirm,submitting,rescheduling}:{slot:Slot;topic:string;setTopic:(value:string)=>void;close:()=>void;confirm:()=>void;submitting:boolean;rescheduling:boolean}){return <div className="modal-backdrop" onMouseDown={close}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="booking-title" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close} aria-label="Close">×</button><p className="eyebrow">{rescheduling?"RESCHEDULE CONSULTATION":"CONSULTATION REQUEST"}</p><h2 id="booking-title">{rescheduling?"Move to this published time":"Request a published time"}</h2><div className="modal-faculty"><span className={`avatar large ${slot.color}`}>{slot.initials}</span><div><h3>{slot.faculty_name}</h3><p>{slot.expertise}</p></div></div><div className="booking-details"><div><span>Preferred date</span><b>{new Date(slot.starts_at).toLocaleDateString([], {weekday:"long",month:"long",day:"numeric"})}</b></div><div><span>Preferred time</span><b>{new Date(slot.starts_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b></div><div><span>Availability source</span><b>Faculty-maintained schedule</b></div></div><label className="topic">Consultation topic and concern<textarea required value={topic} disabled={rescheduling} onChange={e=>setTopic(e.target.value)} placeholder="Provide enough context for the faculty member to review your request"/></label><button className="primary wide" disabled={submitting} onClick={confirm}>{submitting?"Saving…":rescheduling?"Confirm new time →":"Submit request →"}</button><small className="modal-note">{rescheduling?"The previous request is cancelled only after the new time is reserved successfully.":"Submitting does not confirm an appointment. The faculty member must review and approve the request."}</small></section></div>}
+type FView="fhome"|"requests"|"availability"|"fprofile"; type AView="ahome"|"users"|"appointments"|"knowledge"|"reports";
+function RoleWorkspace({user,logout}:{user:User;logout:()=>void}){const faculty=user.role==="faculty";const [view,setView]=useState<FView|AView>(faculty?"fhome":"ahome");const [menu,setMenu]=useState(false);const nav:[FView|AView,string,NavIconName][]=faculty?[["fhome","Overview","home"],["requests","Requests","requests"],["availability","Availability","calendar"],["fprofile","Profile","profile"]]:[["ahome","Pilot overview","home"],["knowledge","FAQ knowledge base","assistant"],["users","Users and roles","users"],["appointments","Consultation logs","calendar"],["reports","Pilot QA","report"]];return <div className="app role-app"><header className="topbar"><button className="brand-button" onClick={()=>setView(faculty?"fhome":"ahome")}><BrandLogo/><span><b>CLSU FacultyConnect</b><small>Managed by MISO · CLIRDEC pilot</small></span></button><div className="top-actions"><button className="icon-button" aria-label="Notifications">♢<span className="dot"/></button><button className="profile-chip"><span>{user.name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span><i><b>{user.name}</b><small>{faculty?"Faculty":"Authorized administrator"}</small></i></button><button className="menu-button" onClick={()=>setMenu(!menu)} aria-label="Toggle menu">☰</button></div></header><aside className={menu?"sidebar open":"sidebar"}><div><p className="side-kicker">{faculty?"FACULTY PORTAL":"AUTHORIZED CONTENT ADMIN"}</p><nav>{nav.map(([v,l,i])=><Nav key={v} active={view===v} label={l} icon={i} onClick={()=>{setView(v);setMenu(false)}}/>)}</nav></div><div className="side-foot"><span>Central Luzon State University</span><small>Role-restricted controlled pilot</small><button onClick={logout}>Sign out</button></div></aside><main className="content">{faculty?<FacultyPages view={view as FView} user={user}/>:<AdminPages view={view as AView} user={user}/>}</main></div>}
+function Head({label,title,copy,action}:{label:string;title:string;copy:string;action?:string}){return <section className="page-head portal-head"><div><p className="eyebrow">{label}</p><h1>{title}</h1><p>{copy}</p></div>{action&&<button className="primary">{action} →</button>}</section>}
+function Stats({data}:{data:string[][]}){return <div className="metrics">{data.map(x=><article key={x[1]}><b>{x[0]}</b><span>{x[1]}</span></article>)}</div>}
+function WeekdayAvailabilityCalendar({weekStart,setWeekStart,selectedStart,setSelectedStart,duration,slots}:{weekStart:string;setWeekStart:(dateKey:string)=>void;selectedStart:Date|null;setSelectedStart:(date:Date)=>void;duration:number;slots:FacultyAvailability[]}){
+ const days=weekDays(weekStart);
+ const times=calendarTimes();
+ const firstWeek=initialCalendarWeek();
+ const now=new Date();
+ const selectedTime=selectedStart?.getTime();
+ const range=`${formatCalendarDay(days[0],{month:"short",day:"numeric"})} – ${formatCalendarDay(days[4],{month:"short",day:"numeric",year:"numeric"})}`;
+ return <div className="weekly-calendar">
+  <div className="calendar-toolbar">
+   <div><p className="eyebrow">MONDAY–FRIDAY</p><h3>{range}</h3></div>
+   <div className="week-controls"><button type="button" className="outline" disabled={weekStart<=firstWeek} onClick={()=>setWeekStart(addCalendarDays(weekStart,-7))} aria-label="Previous week">←</button><button type="button" className="outline" onClick={()=>setWeekStart(addCalendarDays(weekStart,7))} aria-label="Next week">→</button></div>
+  </div>
+  <div className="calendar-scroll" tabIndex={0} aria-label="Weekday availability calendar">
+   <div className="availability-grid">
+    <span className="calendar-corner">Time</span>
+    {days.map(day=><span className="calendar-day" key={day}><b>{formatCalendarDay(day,{weekday:"short"})}</b><small>{formatCalendarDay(day,{month:"short",day:"numeric"})}</small></span>)}
+    {times.map(minutes=><div className="calendar-row" key={minutes}>
+     <b className="calendar-time">{formatTime(minutes)}</b>
+     {days.map(day=>{
+      const start=manilaInstant(day,minutes);
+      const end=new Date(start.getTime()+duration*60_000);
+      const cellEnd=new Date(start.getTime()+30*60_000);
+      const conflict=overlapsExisting(start,cellEnd,slots);
+      const reason=availabilityValidationMessage(start,end,slots,now);
+      const selected=selectedTime===start.getTime();
+      const state=conflict?"Published":reason?"Unavailable":selected?"Selected":"Available";
+      return <button type="button" key={day} className={`slot-toggle${selected?" selected":""}${conflict?" occupied":""}`} disabled={Boolean(reason)} onClick={()=>setSelectedStart(start)} title={reason||`Select ${formatTime(minutes)}`} aria-label={`${formatCalendarDay(day,{weekday:"long",month:"long",day:"numeric"})} at ${formatTime(minutes)} — ${state}`}><span>{conflict?"Busy":selected?"Selected":""}</span></button>;
+     })}
+    </div>)}
+   </div>
+  </div>
+  <div className="calendar-legend"><span><i className="legend-open"/>Available</span><span><i className="legend-selected"/>Selected</span><span><i className="legend-busy"/>Already published</span></div>
+  <p className="availability-foot">Times use Philippine Standard Time. The calendar disables weekends, past times, entries with less than 24 hours’ notice, and overlaps.</p>
+ </div>;
+}
+function FacultyPages({view,user}:{view:FView;user:User}){
+ const [requests,setRequests]=useState<FacultyRequest[]>([]);
+ const [facultySlots,setFacultySlots]=useState<FacultyAvailability[]>([]);
+ const [profile,setProfile]=useState<FacultyProfile>({expertise:[],bio:"",active:true});
+ const [loading,setLoading]=useState(configured);
+ const [message,setMessage]=useState("");
+ const [calendarWeek,setCalendarWeek]=useState(()=>initialCalendarWeek());
+ const [selectedStart,setSelectedStart]=useState<Date|null>(null);
+ const [duration,setDuration]=useState(30);
+ const refresh=async()=>{if(!configured)return;setLoading(true);try{const [data,facultyProfile]=await Promise.all([loadFacultyPortal(user.id),loadFacultyProfile(user.id)]);setRequests(data.requests);setFacultySlots(data.availability);setProfile(facultyProfile);}catch(cause){setMessage(cause instanceof Error?cause.message:"Faculty data could not be loaded.");}finally{setLoading(false);}};
+ useEffect(()=>{void refresh();},[user.id]);
+ const pending=requests.filter(item=>item.status==="pending");
+ const confirmed=requests.filter(item=>item.status==="confirmed");
+ const decide=async(id:string,status:"confirmed"|"declined")=>{setMessage("");try{await decideFacultyRequest(id,status);setMessage(status==="confirmed"?"Request approved. The student email notification was queued.":"Request declined. The student email notification was queued.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"The request could not be updated.");}};
+ const complete=async(id:string)=>{setMessage("");try{await completeFacultyRequest(id);setMessage("Consultation marked completed.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"The consultation could not be completed.");}};
+ const publish=async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const form=new FormData(e.currentTarget);if(!selectedStart){setMessage("Select an available weekday and time from the calendar.");return;}const end=new Date(selectedStart.getTime()+duration*60_000);const validation=availabilityValidationMessage(selectedStart,end,facultySlots);if(validation){setMessage(validation);return;}try{await createFacultyAvailability({facultyId:user.id,startsAt:selectedStart.toISOString(),endsAt:end.toISOString(),location:String(form.get("location")||"").trim(),consultationMode:String(form.get("consultation_mode")) as "in_person"|"online"});e.currentTarget.reset();setSelectedStart(null);setDuration(30);setMessage("Availability published for students.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"Availability could not be published.");}};
+ const removeSlot=async(id:string)=>{try{await removeFacultyAvailability(id);setMessage("Open availability removed.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"Availability could not be removed.");}};
+ const saveProfile=async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const form=new FormData(e.currentTarget);try{await updateFacultyProfile({userId:user.id,expertise:String(form.get("expertise")||"").split(","),bio:String(form.get("bio")||"")});setMessage("Faculty profile updated for student search.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"The faculty profile could not be updated.");}};
+ if(loading)return <div className="empty-card">Loading your faculty workspace…</div>;
+ const feedback=message&&<div className="notice"><b>✓</b><span>{message}</span><button onClick={()=>setMessage("")}>×</button></div>;
+ if(view==="fhome")return <>{feedback}<Head label="FACULTY PORTAL" title={`Welcome, ${user.name}`} copy="Manage your consultation requests and published availability from one place."/><Stats data={[[String(confirmed.length),"Confirmed consultations"],[String(pending.length),"Pending requests"],[String(facultySlots.filter(slot=>slot.is_open).length),"Open time slots"],[String(requests.filter(item=>item.status==="completed").length),"Completed sessions"]]}/><div className="workspace-grid"><Work title="Upcoming consultations">{confirmed.slice(0,4).map(r=><Line key={r.id} a={new Date(r.starts_at).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} b={r.topic} c={r.student_name}/>)}{!confirmed.length&&<div className="empty-card">No confirmed consultations yet.</div>}</Work><Work title="Published availability">{facultySlots.slice(0,5).map(slot=><Line key={slot.id} a={new Date(slot.starts_at).toLocaleDateString([], {weekday:"short"})} b={new Date(slot.starts_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})} c={slot.is_open?"Open for requests":"Already requested"}/>)}{!facultySlots.length&&<div className="empty-card">Publish your first consultation time.</div>}</Work></div></>;
+ if(view==="requests")return <>{feedback}<Head label="FACULTY PORTAL" title="Appointment requests" copy="Review pending concerns, then track confirmed consultations through completion."/><div className="filter-tabs"><button className="active">Pending {pending.length}</button><button>Approved {confirmed.length}</button><button>Completed {requests.filter(item=>item.status==="completed").length}</button></div><div className="request-list">{pending.map(r=><article key={r.id}><div className="request-main"><span className="avatar mint">{r.student_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span><div><span className="status pending">PENDING</span><h3>{r.topic}</h3><p>{r.student_name}</p></div><b className="request-time">{new Date(r.starts_at).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</b></div><div className="student-note"><span>Student note</span><p>{r.notes}</p></div><div className="request-actions"><button className="outline" onClick={()=>void decide(r.id,"declined")}>Decline + email</button><button className="primary" onClick={()=>void decide(r.id,"confirmed")}>Accept + email ✓</button></div></article>)}{confirmed.map(r=><article key={r.id}><div className="request-main"><span className="avatar mint">{r.student_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span><div><span className="status confirmed">CONFIRMED</span><h3>{r.topic}</h3><p>{r.student_name} · {r.location}</p></div><b className="request-time">{new Date(r.starts_at).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</b></div><div className="request-actions"><button className="primary" disabled={new Date(r.ends_at)>new Date()} onClick={()=>void complete(r.id)}>Mark completed</button></div></article>)}{!pending.length&&!confirmed.length&&<div className="empty-card">There are no active consultation requests.</div>}</div></>;
+ if(view==="availability"){
+  const selectedEnd=selectedStart?new Date(selectedStart.getTime()+duration*60_000):null;
+  const selectionError=selectedStart&&selectedEnd?availabilityValidationMessage(selectedStart,selectedEnd,facultySlots):"";
+  return <>{feedback}<Head label="FACULTY PORTAL" title="Manage availability" copy="Choose weekday consultation times from the calendar. Booked and overlapping slots close automatically."/>
+   <div className="availability-layout">
+    <Work title="Choose a weekday and time"><WeekdayAvailabilityCalendar weekStart={calendarWeek} setWeekStart={setCalendarWeek} selectedStart={selectedStart} setSelectedStart={setSelectedStart} duration={duration} slots={facultySlots}/></Work>
+    <div className="availability-side">
+     <Work title="Publish selected time"><form className="knowledge-form" onSubmit={publish}>
+      <div className={`selected-slot-summary${selectionError?" invalid":""}`}><span>Selected consultation</span>{selectedStart&&selectedEnd?<><b>{formatManilaDateTime(selectedStart,{weekday:"long",month:"long",day:"numeric"})}</b><p>{formatManilaDateTime(selectedStart,{hour:"numeric",minute:"2-digit"})}–{formatManilaDateTime(selectedEnd,{hour:"numeric",minute:"2-digit"})} · Philippine time</p></>:<p>Choose an available cell in the calendar.</p>}{selectionError&&<small>{selectionError}</small>}</div>
+      <label>Duration<select name="duration" value={duration} onChange={e=>setDuration(Number(e.target.value))}><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60">60 minutes</option></select></label>
+      <label>Mode<select name="consultation_mode" defaultValue="in_person"><option value="in_person">In person</option><option value="online">Online</option></select></label>
+      <label>Location or meeting platform<input name="location" required placeholder="CLIRDEC room or approved online platform"/></label>
+      <button className="primary" disabled={!selectedStart||Boolean(selectionError)}>Publish availability</button>
+     </form></Work>
+     <Work title="Published schedule"><div className="faq-list published-slots">{facultySlots.map(slot=><article key={slot.id}><span>{slot.is_open?"Open":"Requested"}</span><b>{formatManilaDateTime(new Date(slot.starts_at),{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</b>{slot.is_open?<button onClick={()=>void removeSlot(slot.id)}>Remove</button>:<small>{slot.location}</small>}</article>)}{!facultySlots.length&&<div className="empty-card">No availability has been published.</div>}</div></Work>
+    </div>
+   </div>
+  </>;
+ }
+ return <>{feedback}<Head label="FACULTY PORTAL" title="Faculty profile" copy="Keep your verified expertise current so students can find the appropriate faculty member."/><section className="profile-layout"><article className="profile-summary"><span className="avatar profile-avatar coral">{user.name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span><h2>{user.name}</h2><p>{profile.active?"Active faculty profile":"Profile hidden from students"}</p><small>{user.email}</small></article><article className="profile-details editable-profile"><form className="knowledge-form" onSubmit={saveProfile}><label>Expertise categories<input name="expertise" defaultValue={profile.expertise.join(", ")} placeholder="Software Engineering, Web Development"/></label><label>Faculty bio<textarea name="bio" defaultValue={profile.bio} placeholder="Brief background and consultation areas"/></label><button className="primary">Save faculty profile</button></form><div><Info l="Availability policy" v="Only times you publish are shown to students."/><Info l="Privacy" v="Student concerns are visible only to participants and authorized administrators."/></div></article></section></>;
+}
+function AdminPages({view,user}:{view:AView;user:User}){
+ const [data,setData]=useState<AdminPortal>({users:[],appointments:[],faqs:[]});
+ const [loading,setLoading]=useState(true);const [message,setMessage]=useState("");const [query,setQuery]=useState("");
+ const refresh=async()=>{setLoading(true);try{setData(await loadAdminPortal());}catch(cause){setMessage(cause instanceof Error?cause.message:"Administration data could not be loaded.");}finally{setLoading(false);}};
+ useEffect(()=>{void refresh();},[]);
+ const changeRole=async(id:string,role:Role)=>{try{await adminSetRole(id,role);setMessage("User role updated and recorded in the audit log.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"The role could not be changed.");}};
+ const saveFaq=async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const form=new FormData(e.currentTarget);try{await createFaqEntry({userId:user.id,question:String(form.get("question")||""),answer:String(form.get("answer")||""),sourceReference:String(form.get("source")||""),category:String(form.get("category")||"")});e.currentTarget.reset();setMessage("FAQ saved as a draft for approval.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"The FAQ draft could not be saved.");}};
+ const approve=async(id:string)=>{try{await approveFaqEntry(id,user.id);setMessage("FAQ approved and available to the spaCy service.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"The FAQ could not be approved.");}};
+ const archive=async(id:string)=>{try{await archiveFaqEntry(id);setMessage("FAQ archived and removed from chatbot answers.");await refresh();}catch(cause){setMessage(cause instanceof Error?cause.message:"The FAQ could not be archived.");}};
+ if(loading)return <div className="empty-card">Loading the administration workspace…</div>;
+ const feedback=message&&<div className="notice"><b>✓</b><span>{message}</span><button onClick={()=>setMessage("")}>×</button></div>;
+ const pending=data.appointments.filter(item=>item.status==="pending").length;
+ const confirmed=data.appointments.filter(item=>item.status==="confirmed").length;
+ const completed=data.appointments.filter(item=>item.status==="completed").length;
+ const filteredUsers=data.users.filter(item=>(item.full_name+" "+item.department+" "+item.role).toLowerCase().includes(query.toLowerCase()));
+ if(view==="ahome")return <>{feedback}<Head label="MISO ADMINISTRATION" title="Pilot overview" copy="Live records from the controlled CLIRDEC pilot."/><Stats data={[[String(data.users.length),"Registered users"],[String(data.appointments.length),"Consultation records"],[String(pending),"Pending requests"],[String(data.faqs.filter(item=>item.status==="approved").length),"Approved FAQs"]]}/><div className="workspace-grid"><Work title="Upcoming consultations">{data.appointments.filter(item=>item.status==="confirmed").slice(0,6).map(item=><Line key={item.id} a={new Date(item.starts_at).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} b={item.topic} c={`${item.student_name} · ${item.faculty_name}`}/>)}{!confirmed&&<div className="empty-card">No confirmed consultations.</div>}</Work><Work title="Knowledge status"><Line a={String(data.faqs.filter(item=>item.status==="approved").length)} b="Approved chatbot answers" c="Available to students"/><Line a={String(data.faqs.filter(item=>item.status!=="approved"&&item.status!=="archived").length)} b="Answers awaiting review" c="Not yet published"/><Line a={String(completed)} b="Completed consultations" c="Pilot records"/></Work></div></>;
+ if(view==="users")return <>{feedback}<Head label="MISO ADMINISTRATION" title="Manage users and roles" copy="Faculty and administrator access is assigned only here and every change is audited."/><div className="search-box compact-search"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search by name, department, or role"/></div><Data headings={["User","Department","Role","Status","Action"]}>{filteredUsers.map(item=><div className="data-row" key={item.id}><span data-label="User"><b>{item.full_name}</b><small>{item.id.slice(0,8)}</small></span><span data-label="Department">{item.department||"Not set"}</span><span data-label="Role"><select className="role-select" value={item.role} disabled={item.id===user.id} onChange={e=>void changeRole(item.id,e.target.value as Role)}><option value="student">Student</option><option value="faculty">Faculty</option><option value="admin">Administrator</option></select></span><span data-label="Status"><i className="active-pill">Active</i></span><span data-label="Action"><small>{item.id===user.id?"Current account":"Audited change"}</small></span></div>)}</Data></>;
+ if(view==="appointments")return <>{feedback}<Head label="MISO ADMINISTRATION" title="Consultation logs" copy="Monitor every request and its current workflow status."/><div className="filter-tabs"><button className="active">All {data.appointments.length}</button><button>Confirmed {confirmed}</button><button>Pending {pending}</button><button>Completed {completed}</button></div><Data headings={["Consultation","Participants","Date and time","Status"]} cls="appointment-row">{data.appointments.map(item=><div className="data-row appointment-row" key={item.id}><span data-label="Consultation"><b>{item.topic}</b><small>{item.consultation_mode==="online"?"Online":"In person"}</small></span><span data-label="Participants">{item.student_name}<small>{item.faculty_name}</small></span><span data-label="Date and time">{new Date(item.starts_at).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><span data-label="Status"><i className={item.status==="pending"?"pending-pill":"active-pill"}>{statusLabel(item.status)}</i></span></div>)}</Data></>;
+ if(view==="knowledge")return <>{feedback}<Head label="AUTHORIZED CONTENT ADMIN" title="FAQ knowledge base" copy="Only approved and source-backed information is returned by the FastAPI/spaCy assistant."/><div className="scope-note"><b>Approval rule</b><span>Drafts are invisible to students. Approval and archival are recorded in the audit log.</span></div><div className="knowledge-layout"><Work title="Draft an answer"><form className="knowledge-form" onSubmit={saveFaq}><label>Student question<input name="question" required placeholder="Enter a frequently asked question"/></label><label>Approved source<input name="source" required placeholder="Official advisory, procedure, directory, or schedule"/></label><label>Proposed answer<textarea name="answer" required placeholder="Write the verified response"/></label><label>Category<select name="category"><option>Office hours and contacts</option><option>Consultation procedure</option><option>Faculty availability</option><option>CLIRDEC services</option></select></label><button className="primary">Save as draft</button></form></Work><Work title="Knowledge review queue"><div className="faq-list">{data.faqs.map((faq:FaqEntry)=><article key={faq.id}><span>{faq.status}</span><div><b>{faq.question}</b><small>{faq.source_reference}</small></div><div className="faq-actions">{faq.status!=="approved"&&faq.status!=="archived"&&<button onClick={()=>void approve(faq.id)}>Approve</button>}{faq.status!=="archived"&&<button onClick={()=>void archive(faq.id)}>Archive</button>}</div></article>)}{!data.faqs.length&&<div className="empty-card">No FAQ entries yet.</div>}</div></Work></div></>;
+ return <>{feedback}<Head label="PILOT ACCEPTANCE" title="QA and user-acceptance readiness" copy="Live system counts alongside the agreed pilot acceptance gates."/><Stats data={[[String(data.faqs.filter(item=>item.status==="approved").length),"Approved FAQ test cases"],[String(pending),"Pending workflow items"],[String(completed),"Completed consultations"],["0","Allowed double bookings"]]}/><div className="report-grid"><Work title="Automated integrity checks"><div className="qa-list"><p><b>Database conflict protection</b><i>Enabled</i><span>Only one pending or confirmed request may hold an availability slot.</span></p><p><b>Role separation</b><i>Enabled</i><span>Student, faculty, and administrative write operations are checked on the server.</span></p><p><b>FAQ source control</b><i>Enabled</i><span>Only approved entries are available to the NLP service.</span></p></div></Work><Work title="Remaining acceptance gate"><div className="qa-list"><p><b>Representative phone and desktop testing</b><i>Pending UAT</i></p><p><b>Gmail delivery with production sender</b><i>Needs secret</i></p><p><b>Product Owner pilot confirmation</b><i>Pending UAT</i></p></div></Work></div></>;
+}
+function Work({title,children}:{title:string;children:ReactNode}){return <section className="work-card"><div className="card-title"><h2>{title}</h2></div>{children}</section>}
+function Line({a,b,c}:{a:string;b:string;c:string}){return <div className="timeline-line"><span>{a}</span><i/><p><b>{b}</b><small>{c}</small></p></div>}
+function Info({l,v}:{l:string;v:string}){return <div className="info"><span>{l}</span><p>{v}</p></div>}
+function Data({headings,children,cls=""}:{headings:string[];children:ReactNode;cls?:string}){return <section className="data-card"><div className={`data-row data-head ${cls}`}>{headings.map(h=><b key={h}>{h}</b>)}</div>{children}</section>}
+export default App;
