@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: clsu-faculty-connect-chatbot
+    runtime: docker
+    dockerfilePath: ./chatbot/Dockerfile
+    dockerContext: ./chatbot
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://clsu-faculty-connect.vercel.app
+      - key: FAQ_CACHE_SECONDS
+        value: "300"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
