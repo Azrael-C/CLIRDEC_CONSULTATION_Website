@@ -131,7 +131,43 @@ function ProductionAuth({login,signup,notice}:{login:(e:FormEvent<HTMLFormElemen
     <label>Password<input name="password" type="password" required minLength={8} autoComplete={creating?"new-password":"current-password"}/></label>
     <button className="primary">{creating?"Create student account":"Sign in"} <span>→</span></button>
     <button type="button" className="text-button" onClick={()=>setCreating(x=>!x)}>{creating?"Already registered? Sign in":"New student? Create an account"}</button>
-    {!configured&&<small cl…41592 tokens truncated…nce,
+    {!configured&&<small cl…41153 tokens truncated…          f"{supabase_url}/rest/v1/faq_entries",
+            headers,
+            params,
+        )
+        items = [KnowledgeItem(**row) for row in rows]
+        _cache = (time.monotonic() + CACHE_TTL_SECONDS, items, "Supabase approved FAQ entries")
+        return items, "Supabase approved FAQ entries"
+    except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
+        _cache = (time.monotonic() + 60, [], "bundled workflow answers")
+        return [], "bundled workflow answers"
+
+
+def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse:
+    lowered_tokens = _tokens(message)
+    if lowered_tokens & SENSITIVE_TERMS:
+        return ChatResponse(
+            answer=(
+                "I can’t handle confidential records, emergencies, complaints, academic decisions, "
+                "or account credentials. Please contact the appropriate CLSU or CLIRDEC office through "
+                "an official channel."
+            ),
+            intent="sensitive_referral",
+            confidence=0.99,
+            escalation=True,
+            source="CLSU privacy and safe-referral rule",
+            suggestions=["Ask about consultation booking", "View faculty availability"],
+        )
+
+    matched_item, faq_score = _rank_knowledge(message, knowledge)
+    intent, intent_confidence = classify_intent(message)
+    if matched_item and faq_score >= 0.27:
+        return ChatResponse(
+            answer=matched_item.answer,
+            intent=intent if intent != "fallback" else "approved_faq",
+            confidence=min(0.98, 0.62 + faq_score * 0.36),
+            escalation=False,
+            source=matched_item.source_reference,
         )
 
     if intent in DEFAULT_ANSWERS and intent_confidence >= 0.55:
