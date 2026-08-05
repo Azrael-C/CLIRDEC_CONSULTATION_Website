@@ -1,4 +1,3 @@
-
 # Backend, Test Data, and Email Setup
 
 Use a dedicated Supabase development or pilot project. Do not seed test users into a production project containing real student data.
@@ -7,7 +6,7 @@ Use a dedicated Supabase development or pilot project. Do not seed test users in
 
 1. Create a Supabase project.
 2. Open SQL Editor.
-3. Run `supabase/schema.sql` once on a new project.
+3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, run `supabase/core_workflow_migration.sql` instead.
 4. Confirm that Row-Level Security is enabled on every public table.
 
 ## 2. Configure the frontend
@@ -21,7 +20,21 @@ VITE_SUPABASE_ANON_KEY
 
 Redeploy after changing Vite variables because they are included at build time.
 
-## 3. Create guarded test data
+Add the deployed FastAPI URL as `VITE_CHATBOT_URL`. Do not point production at `localhost`.
+
+## 3. Deploy the FastAPI/spaCy service
+
+The repository includes `render.yaml` and `chatbot/Dockerfile`.
+
+1. Create a Render Blueprint from the GitHub repository.
+2. Configure `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY` in Render.
+3. Keep `ALLOWED_ORIGINS` set to the Vercel site URL.
+4. Confirm `/health` and `/knowledge-status` return successfully.
+5. Add the resulting Render URL to Vercel as `VITE_CHATBOT_URL`, then redeploy the frontend.
+
+The service loads only FAQ rows whose status is `approved`. If Supabase is temporarily unavailable, it answers only the bundled consultation-workflow topics and safely escalates unsupported questions.
+
+## 4. Create guarded test data
 
 Copy `supabase/.env.example` to a private local environment file and provide test-only email addresses plus a strong temporary password. Never commit that file.
 
@@ -40,7 +53,7 @@ npm run seed:test
 
 The seeder is rerunnable. It creates or updates three accounts, one faculty profile, three future availability slots, and one pending appointment. The appointment trigger also queues test email notifications.
 
-## 4. Configure Resend
+## 5. Configure Resend
 
 For initial testing, `onboarding@resend.dev` can send only to the email address associated with the Resend account. For multiple recipients, verify a sending domain and set `EMAIL_FROM` to that domain.
 
@@ -76,6 +89,6 @@ Expected response:
 
 Check `email_notifications` after the request. Successful rows must be `sent`; failures must contain `last_error` and retry later. The worker uses an atomic claim operation and a deterministic Resend idempotency key to limit duplicate sends.
 
-## 5. Schedule processing
+## 6. Schedule processing
 
 After manual testing succeeds, schedule an authenticated POST every five minutes using Supabase Cron or another approved scheduler. Store the cron secret in the scheduler; never place it in browser code.
