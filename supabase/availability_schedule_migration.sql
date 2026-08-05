@@ -31,7 +31,7 @@ begin
   if local_start::date <> local_end::date
      or local_start::time < time '08:00'
      or local_end::time > time '17:00' then
-    raise exception 'Availability must stay within 8:00 AM–5:00 PM Philippine time';
+    raise exception 'Availability must stay within 8:00 AMâ€“5:00 PM Philippine time';
   end if;
   return new;
 end $$;
