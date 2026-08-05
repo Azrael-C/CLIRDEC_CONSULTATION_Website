@@ -133,7 +133,7 @@ export function availabilityValidationMessage(
     toMinutes(endParts) > CONSULTATION_END_MINUTES ||
     manilaDateKey(end) !== dateKey
   ) {
-    return "Choose a time that stays within the 8:00 AM–5:00 PM consultation window.";
+    return "Choose a time that stays within the 8:00 AMâ€“5:00 PM consultation window.";
   }
 
   if (overlapsExisting(start, end, existing)) {
