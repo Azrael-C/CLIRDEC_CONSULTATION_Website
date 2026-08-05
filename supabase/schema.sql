@@ -1,3 +1,4 @@
+create extension if not exists pgcrypto;
 
 create type public.user_role as enum ('student','faculty','admin');
 create type public.appointment_status as enum ('pending','confirmed','completed','cancelled','declined');
@@ -56,11 +57,45 @@ create table public.email_notifications (
 );
 create unique index one_email_event_per_recipient on public.email_notifications(appointment_id,recipient_id,event_type);
 
+-- Product Owner-approved knowledge used by the NLP service. Draft and review
+-- entries remain invisible to students until an administrator approves them.
+create table public.faq_entries (
+  id uuid primary key default gen_random_uuid(),
+  question text not null,
+  answer text not null,
+  category text not null,
+  source_reference text not null,
+  status text not null default 'draft' check (status in ('draft','review','approved','archived')),
+  created_by uuid not null references public.profiles(id),
+  approved_by uuid references public.profiles(id),
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint approval_metadata check (
+    (status='approved' and approved_by is not null and approved_at is not null)
+    or status<>'approved'
+  )
+);
+
+-- Append-only evidence for security-sensitive administrative actions.
+create table public.audit_logs (
+  id bigint generated always as identity primary key,
+  actor_id uuid references public.profiles(id),
+  action text not null,
+  resource_type text not null,
+  resource_id text not null,
+  old_data jsonb,
+  new_data jsonb,
+  created_at timestamptz not null default now()
+);
+
 alter table public.profiles enable row level security;
 alter table public.faculty_profiles enable row level security;
 alter table public.availability enable row level security;
 alter table public.appointments enable row level security;
 alter table public.email_notifications enable row level security;
+alter table public.faq_entries enable row level security;
+alter table public.audit_logs enable row level security;
 
 create function public.current_role() returns public.user_role language sql stable security definer set search_path=public as $$ select role from profiles where id=auth.uid() $$;
 create policy "read profiles" on public.profiles for select to authenticated using (true);
@@ -78,12 +113,59 @@ create policy "faculty and admin decide appointments" on public.appointments for
 using (exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin')
 with check (exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin');
 create policy "users read own email history" on public.email_notifications for select to authenticated using (recipient_id=auth.uid() or public.current_role()='admin');
+create policy "users read approved FAQ entries" on public.faq_entries for select to authenticated using (status='approved' or public.current_role()='admin');
+create policy "admins create FAQ entries" on public.faq_entries for insert to authenticated with check (public.current_role()='admin' and created_by=auth.uid());
+create policy "admins update FAQ entries" on public.faq_entries for update to authenticated using (public.current_role()='admin') with check (public.current_role()='admin');
+create policy "admins archive FAQ entries" on public.faq_entries for delete to authenticated using (public.current_role()='admin');
+create policy "admins read audit logs" on public.audit_logs for select to authenticated using (public.current_role()='admin');
 
 -- A user may edit safe profile preferences but cannot promote their own role.
 revoke update on public.profiles from authenticated;
 grant update (full_name,department,email_notifications) on public.profiles to authenticated;
+revoke select on public.profiles from anon,authenticated;
+grant select (id,full_name,role,department) on public.profiles to authenticated;
 revoke update on public.appointments from authenticated;
 grant update (status,notes) on public.appointments to authenticated;
+
+-- Only trusted administrators can assign faculty or administrator roles. The
+-- browser cannot directly update the role column.
+create or replace function public.admin_set_user_role(target_user uuid, new_role public.user_role)
+returns void
+language plpgsql
+security definer
+set search_path=public
+as $$
+declare previous_role public.user_role;
+begin
+  if public.current_role()<>'admin' then raise exception 'Administrator access required'; end if;
+  select role into previous_role from profiles where id=target_user for update;
+  if not found then raise exception 'User profile not found'; end if;
+  update profiles set role=new_role where id=target_user;
+  if new_role='faculty' then
+    insert into faculty_profiles(user_id) values(target_user) on conflict (user_id) do nothing;
+  end if;
+  insert into audit_logs(actor_id,action,resource_type,resource_id,old_data,new_data)
+  values(auth.uid(),'role_changed','profile',target_user::text,jsonb_build_object('role',previous_role),jsonb_build_object('role',new_role));
+end $$;
+revoke all on function public.admin_set_user_role(uuid,public.user_role) from public,anon;
+grant execute on function public.admin_set_user_role(uuid,public.user_role) to authenticated;
+
+create or replace function public.audit_faq_change()
+returns trigger
+language plpgsql
+security definer
+set search_path=public
+as $$
+begin
+  insert into audit_logs(actor_id,action,resource_type,resource_id,old_data,new_data)
+  values(auth.uid(),lower(tg_op),'faq_entry',(case when tg_op='DELETE' then old.id else new.id end)::text,
+    case when tg_op in ('UPDATE','DELETE') then to_jsonb(old) else null end,
+    case when tg_op in ('INSERT','UPDATE') then to_jsonb(new) else null end);
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end $$;
+create trigger audit_faq_entry_changes after insert or update or delete on public.faq_entries
+for each row execute function public.audit_faq_change();
 
 -- Atomically claims a batch for the email worker. SKIP LOCKED prevents two
 -- concurrent invocations from sending the same queued notification.
