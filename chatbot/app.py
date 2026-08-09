@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -97,7 +98,22 @@ INTENT_KEYWORDS: dict[str, set[str]] = {
 SENSITIVE_TERMS = {
     "password", "otp", "grade", "grades", "medical", "diagnosis", "emergency",
     "harassment", "complaint", "disciplinary", "legal", "suicide", "self-harm",
+    "unsafe", "abuse", "violence", "assault", "threat", "rape", "bullying",
 }
+
+SENSITIVE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"\bharass(?:ment|ed|ing|es)?\b",
+    r"\babus(?:e|ed|ing|ive)\b",
+    r"\bbull(?:y|ied|ying|ies)\b",
+    r"\bassault(?:ed|ing|s)?\b",
+    r"\bthreat(?:en|ened|ening|ens|s)?\b",
+    r"\b(?:feel|am|i'm)\s+(?:not\s+)?safe\b",
+    r"\b(?:hurt|kill)\s+(?:myself|me)\b",
+    r"\bself[\s-]?harm(?:ing)?\b",
+    r"\bsexual\s+(?:misconduct|harassment|assault)\b",
+    r"\b(?:inaabuso|inabuso|binubully|pananakot|sinaktan)\b",
+    r"\b(?:ayoko|ayaw\s+ko)\s+nang?\s+mabuhay\b",
+))
 
 DEFAULT_ANSWERS = {
     "booking": (
@@ -217,6 +233,15 @@ def _rank_knowledge(message: str, items: list[KnowledgeItem]) -> tuple[Knowledge
     return best, best_score
 
 
+def is_sensitive(message: str) -> bool:
+    """Detect high-risk topics before FAQ or intent matching runs."""
+    lowered_tokens = _tokens(message)
+    return bool(
+        lowered_tokens & SENSITIVE_TERMS
+        or any(pattern.search(message) for pattern in SENSITIVE_PATTERNS)
+    )
+
+
 async def _load_approved_knowledge(authorization: str | None) -> tuple[list[KnowledgeItem], str]:
     global _cache
     expires, cached, source = _cache
@@ -255,8 +280,7 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
 
 
 def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse:
-    lowered_tokens = _tokens(message)
-    if lowered_tokens & SENSITIVE_TERMS:
+    if is_sensitive(message):
         return ChatResponse(
             answer=(
                 "I can’t handle confidential records, emergencies, complaints, academic decisions, "
@@ -312,6 +336,7 @@ def health() -> dict[str, str]:
 
 
 @app.get("/knowledge-status", response_model=KnowledgeStatus)
+@app.get("/api/knowledge-status", response_model=KnowledgeStatus)
 async def knowledge_status(authorization: str | None = Header(default=None)) -> KnowledgeStatus:
     items, source = await _load_approved_knowledge(authorization)
     remaining = max(0, int(_cache[0] - time.monotonic()))

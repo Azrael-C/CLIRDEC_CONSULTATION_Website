@@ -6,6 +6,10 @@ export const SLOT_STEP_MINUTES = 30;
 
 export type ExistingSlot = { starts_at: string; ends_at: string };
 
+export function isUpcomingSlot(slot: Pick<ExistingSlot, "ends_at">, now = new Date()) {
+  return new Date(slot.ends_at).getTime() > now.getTime();
+}
+
 const manilaDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: MANILA_TIME_ZONE,
   year: "numeric",
@@ -133,7 +137,7 @@ export function availabilityValidationMessage(
     toMinutes(endParts) > CONSULTATION_END_MINUTES ||
     manilaDateKey(end) !== dateKey
   ) {
-    return "Choose a time that stays within the 8:00 AMâ€“5:00 PM consultation window.";
+    return "Choose a time that stays within the 8:00 AM–5:00 PM consultation window.";
   }
 
   if (overlapsExisting(start, end, existing)) {

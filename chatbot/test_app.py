@@ -1,6 +1,6 @@
 import unittest
 
-from app import KnowledgeItem, build_response, classify_intent
+from app import KnowledgeItem, build_response, classify_intent, is_sensitive
 
 
 class AssistantTests(unittest.TestCase):
@@ -31,6 +31,22 @@ class AssistantTests(unittest.TestCase):
         response = build_response("Can you show my grades and password?", [])
         self.assertTrue(response.escalation)
         self.assertEqual(response.intent, "sensitive_referral")
+
+    def test_harassment_word_variants_are_escalated(self):
+        for message in (
+            "My professor is harassing me and I feel unsafe",
+            "I was harassed during a consultation",
+            "A student keeps threatening me",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(is_sensitive(message))
+                self.assertEqual(build_response(message, []).intent, "sensitive_referral")
+
+    def test_filipino_safety_phrases_are_escalated(self):
+        for message in ("Inaabuso ako", "Binubully ako", "Ayaw ko nang mabuhay"):
+            with self.subTest(message=message):
+                self.assertTrue(is_sensitive(message))
+                self.assertTrue(build_response(message, []).escalation)
 
     def test_unknown_question_uses_safe_fallback(self):
         response = build_response("What is the meaning of life?", [])

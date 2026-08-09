@@ -29,6 +29,7 @@ export type PortalAppointment = {
   topic: string;
   notes: string;
   status: AppointmentStatus;
+  updated_at: string;
   starts_at: string;
   ends_at: string;
   location: string;
@@ -118,7 +119,7 @@ export async function loadStudentPortal(studentId: string) {
         .order("starts_at"),
       supabase
         .from("appointments")
-        .select("id,availability_id,student_id,topic,notes,status,created_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)")
+        .select("id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)")
         .eq("student_id", studentId)
         .order("created_at", { ascending: false }),
     ]);
@@ -164,6 +165,7 @@ export async function loadStudentPortal(studentId: string) {
       topic: row.topic,
       notes: row.notes || "",
       status: row.status as AppointmentStatus,
+      updated_at: row.updated_at || row.created_at,
       starts_at: slot.starts_at,
       ends_at: slot.ends_at,
       location: slot.location || "Location provided after approval",
@@ -219,7 +221,7 @@ export async function loadFacultyPortal(facultyId: string) {
 
   const { data: appointments, error: appointmentError } = await supabase
     .from("appointments")
-    .select("id,availability_id,student_id,topic,notes,status,created_at")
+    .select("id,availability_id,student_id,topic,notes,status,created_at,updated_at")
     .in("availability_id", slotIds)
     .order("created_at", { ascending: false });
   if (appointmentError) throw new Error(friendlyError(appointmentError, "Consultation requests could not be loaded."));
@@ -244,6 +246,7 @@ export async function loadFacultyPortal(facultyId: string) {
       topic: item.topic,
       notes: item.notes || "No additional note was provided.",
       status: item.status as AppointmentStatus,
+      updated_at: item.updated_at || item.created_at,
       starts_at: slot.starts_at,
       ends_at: slot.ends_at,
       location: slot.location || "Location to be confirmed",
@@ -332,7 +335,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       supabase.from("profiles").select("id,full_name,role,department").order("full_name"),
       supabase
         .from("appointments")
-        .select("id,availability_id,student_id,topic,notes,status,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)")
+        .select("id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)")
         .order("created_at", { ascending: false }),
       supabase.from("faq_entries").select("id,question,answer,category,source_reference,status,created_by,approved_by,approved_at,updated_at").order("updated_at", { ascending: false }),
     ]);
@@ -352,6 +355,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       topic: row.topic,
       notes: row.notes || "",
       status: row.status as AppointmentStatus,
+      updated_at: row.updated_at || row.created_at,
       starts_at: slot.starts_at,
       ends_at: slot.ends_at,
       location: slot.location || "Location to be confirmed",
