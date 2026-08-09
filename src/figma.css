@@ -68,14 +68,6 @@ h1, h2, h3, b, strong { color: var(--figma-ink); letter-spacing: -.025em; }
 .login input { min-height: 48px; border-radius: 7px; background: #fff; }
 .login > .primary { margin-top: 1.15rem; }
 .login > .primary:disabled { cursor: not-allowed; background: #9ab7a7; transform: none; }
-.signup-heading { display: grid; grid-template-columns: minmax(0, 1fr) 116px; gap: 1.5rem; align-items: center; margin-bottom: .35rem; }
-.signup-heading h2 { margin-top: 0; }
-.siel-card { display: grid; gap: .5rem; margin: 0; justify-items: center; text-align: center; }
-.siel-card img { display: block; width: 92px; height: 118px; border: 1px solid #cbd8cf; border-radius: 18px; object-fit: cover; object-position: center 45%; box-shadow: 0 10px 25px rgba(0, 66, 39, .12); }
-.siel-card figcaption { display: grid; gap: .1rem; }
-.siel-card b { color: var(--figma-green-dark); font-size: .75rem; }
-.siel-card span { color: var(--figma-muted); font-size: .62rem; line-height: 1.35; }
-.siel-card small { color: #87928b; font-size: .52rem; line-height: 1.3; }
 .password-label { position: relative; }
 .password-field { position: relative; display: block; }
 .password-field input { width: 100%; padding-right: 5.7rem; }
@@ -396,10 +388,6 @@ h1, h2, h3, b, strong { color: var(--figma-ink); letter-spacing: -.025em; }
 .published-slot-lock { color: var(--figma-muted); font-size: .65rem; white-space: nowrap; }
 
 @media (max-width: 600px) {
-  .signup-heading { grid-template-columns: minmax(0, 1fr) 76px; gap: .85rem; }
-  .siel-card img { width: 68px; height: 88px; border-radius: 14px; }
-  .siel-card span { display: none; }
-  .siel-card small { display: none; }
   .password-rules { grid-template-columns: 1fr; }
   .password-privacy small { font-size: .62rem; }
   .notification-panel { position: fixed; top: 76px; right: 12px; left: 12px; width: auto; }
