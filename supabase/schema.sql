@@ -191,7 +191,7 @@ for each row execute function public.validate_availability_schedule();
 revoke update on public.profiles from authenticated;
 grant update (full_name,department,email_notifications) on public.profiles to authenticated;
 revoke select on public.profiles from anon,authenticated;
-grant select (id,full_name,role,department) on public.profiles to authenticated;
+grant select (id,full_name,role,department,email_notifications) on public.profiles to authenticated;
 revoke update on public.appointments from authenticated;
 revoke update,delete on public.availability from authenticated;
 grant select,insert on public.availability to authenticated;
