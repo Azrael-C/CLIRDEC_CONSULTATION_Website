@@ -112,7 +112,7 @@ function App(){
  }
  const filtered=useMemo(()=>slots.filter(s=>(s.faculty_name+" "+s.expertise).toLowerCase().includes(query.toLowerCase())),[slots,query]);
  async function login(e:FormEvent<HTMLFormElement>){e.preventDefault();setNotice("");if(!configured){setNotice("The production database is not configured yet. Add the Supabase environment variables in Vercel.");return;}const f=new FormData(e.currentTarget);const email=String(f.get("email"));const password=String(f.get("password"));const {error}=await supabase.auth.signInWithPassword({email,password});if(error)setNotice(error.message);}
- async function signup(e:FormEvent<HTMLFormElement>){e.preventDefault();setNotice("");if(!configured){setNotice("The production database is not configured yet. Add the Supabase environment variables in Vercel.");return;}const f=new FormData(e.currentTarget);const full_name=String(f.get("full_name"));const email=String(f.get("email"));const password=String(f.get("password"));const {data,error}=await supabase.auth.signUp({email,password,options:{data:{full_name}}});if(error){setNotice(error.message);return;}setNotice(data.session?"Student account created.":"Check your email to confirm your student account, then sign in.");}
+ async function signup(e:FormEvent<HTMLFormElement>){e.preventDefault();setNotice("");if(!configured){setNotice("The production database is not configured yet. Add the Supabase environment variables in Vercel.");return;}const f=new FormData(e.currentTarget);const full_name=String(f.get("full_name"));const email=String(f.get("email"));const password=String(f.get("password"));const confirmation=String(f.get("confirmation"));if(!studentPasswordIsValid(password)){setNotice("Your password must meet every requirement shown below the password field.");return;}if(password!==confirmation){setNotice("The password confirmation does not match.");return;}const {data,error}=await supabase.auth.signUp({email,password,options:{data:{full_name}}});if(error){setNotice(error.message);return;}setNotice(data.session?"Student account created.":"Student account created. Check your email for the confirmation link before signing in.");}
  async function requestPasswordReset(email:string){setNotice("");if(!configured){setNotice("Password recovery requires the production Supabase configuration.");return;}if(!email||!email.includes("@")){setNotice("Enter your registered email address first.");return;}const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});setNotice(error?error.message:"Check your email for the secure password-reset link.");}
  async function updateRecoveredPassword(password:string){setNotice("");const {error}=await supabase.auth.updateUser({password});if(error){setNotice(error.message);return false;}setRecoveringPassword(false);setNotice("Your password has been updated.");return true;}
  async function logout(){setUser(null);setView("home");setNotice("");if(configured)await supabase.auth.signOut({scope:"local"});}
@@ -144,8 +144,26 @@ function App(){
  {selected&&<BookingModal slot={selected} topic={bookingTopic} setTopic={setBookingTopic} close={()=>{setSelected(null);setReschedulingId(null);setBookingTopic("");}} confirm={confirmBook} submitting={submitting} rescheduling={Boolean(reschedulingId)}/>}</div>;
 }
 
+const studentPasswordRules=[
+ {id:"length",label:"At least 12 characters",test:(value:string)=>value.length>=12},
+ {id:"uppercase",label:"One uppercase letter",test:(value:string)=>/[A-Z]/.test(value)},
+ {id:"lowercase",label:"One lowercase letter",test:(value:string)=>/[a-z]/.test(value)},
+ {id:"number",label:"One number",test:(value:string)=>/\d/.test(value)},
+ {id:"symbol",label:"One symbol (for example: ! @ # $ %)",test:(value:string)=>/[^A-Za-z0-9\s]/.test(value)},
+] as const;
+function studentPasswordIsValid(value:string){return studentPasswordRules.every(rule=>rule.test(value));}
+function PasswordVisibilityIcon({visible}:{visible:boolean}){
+ return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{visible?<><path d="M3 3l18 18"/><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.3A10.8 10.8 0 0 1 12 4c5.2 0 9 4.7 9 8a8.5 8.5 0 0 1-2.1 3.9M6.6 6.6C4.3 8 3 10.3 3 12c0 3.3 3.8 8 9 8 1.1 0 2.2-.2 3.1-.6"/></>:<><path d="M3 12c0-3.3 3.8-8 9-8s9 4.7 9 8-3.8 8-9 8-9-4.7-9-8Z"/><circle cx="12" cy="12" r="2.5"/></>}</svg>;
+}
 function ProductionAuth({login,signup,resetPassword,notice}:{login:(e:FormEvent<HTMLFormElement>)=>void;signup:(e:FormEvent<HTMLFormElement>)=>void;resetPassword:(email:string)=>Promise<void>;notice:string}){
  const [creating,setCreating]=useState(false);
+ const [password,setPassword]=useState("");
+ const [confirmation,setConfirmation]=useState("");
+ const [passwordVisible,setPasswordVisible]=useState(false);
+ const passwordValid=studentPasswordIsValid(password);
+ const passwordsMatch=confirmation.length>0&&password===confirmation;
+ const passedRuleCount=studentPasswordRules.filter(rule=>rule.test(password)).length;
+ const changeMode=()=>{setCreating(value=>!value);setPassword("");setConfirmation("");setPasswordVisible(false);};
  return <main className="auth">
   <section className="auth-story">
    <div className="public-brand"><BrandLogo tone="light" size="hero"/><span>CLSU FacultyConnect</span></div>
@@ -153,17 +171,17 @@ function ProductionAuth({login,signup,resetPassword,notice}:{login:(e:FormEvent<
    <small>Central Luzon State University · Nurturing a Culture of Excellence</small>
   </section>
   <section className="auth-panel">
-   <form className="login" onSubmit={creating?signup:login}>
+   <form className={creating?"login student-signup":"login"} onSubmit={creating?signup:login}>
     <span className="mobile-brand"><BrandLogo/><span>CLSU FacultyConnect</span></span><p className="eyebrow">SECURE PORTAL</p>
-    <h2>{creating?"Create a student account":"Log in to your portal"}</h2>
-    <p className="muted">{creating?"Student registration is available here. Faculty and administrator accounts are issued by MISO.":"Students, faculty, and administrators use the same secure sign-in."}</p>
+    {creating?<div className="signup-heading"><div><h2>Create a student account</h2><p className="muted">Register as a student to request faculty consultations. Faculty and administrator accounts are issued only by MISO.</p></div><figure className="siel-card"><img src="/brand/siel-official-photo.jpeg" alt="Siel, the official CLSU Green Cobra mascot"/><figcaption><b>Hi, I’m Siel!</b><span>I’ll help you make a stronger password.</span><small>Official CLSU mascot · SCO photo</small></figcaption></figure></div>:<><h2>Log in to your portal</h2><p className="muted">Students, faculty, and administrators use the same secure sign-in.</p></>}
     {creating&&<label>Full name<input name="full_name" required autoComplete="name"/></label>}
     <label>{creating?"Student email address":"Email address"}<input name="email" type="email" required autoComplete="email"/></label>
-    <label>Password<input name="password" type="password" required minLength={8} autoComplete={creating?"new-password":"current-password"}/></label>
-    <button className="primary">{creating?"Create student account":"Log in"}</button>
+    <div className="auth-field password-label"><label htmlFor="portal-password">Password</label><span className="password-field"><input id="portal-password" name="password" type={passwordVisible?"text":"password"} required minLength={creating?12:8} autoComplete={creating?"new-password":"current-password"} value={password} onChange={event=>setPassword(event.target.value)} aria-describedby={creating?"student-password-rules student-password-progress":undefined} aria-invalid={creating&&password.length>0&&!passwordValid}/><button type="button" className="password-visibility" aria-label={passwordVisible?"Hide password":"Show password"} aria-pressed={passwordVisible} onClick={()=>setPasswordVisible(value=>!value)}><PasswordVisibilityIcon visible={passwordVisible}/><span>{passwordVisible?"Hide":"Show"}</span></button></span></div>
+    {creating&&<><div className={passwordVisible?"password-privacy visible":"password-privacy"} role="status"><span aria-hidden="true">{passwordVisible?"👁":"🛡"}</span><p><b>{passwordVisible?"Your password is visible":"Your password is hidden"}</b><small>{passwordVisible?"Make sure no one else can see your screen.":"Select Show whenever you need to check what you typed."}</small></p></div><p id="student-password-progress" className="sr-only" aria-live="polite">{passedRuleCount} of {studentPasswordRules.length} password requirements met.</p><ul className="password-rules" id="student-password-rules" aria-label="Password requirements">{studentPasswordRules.map(rule=>{const passed=rule.test(password);return <li key={rule.id} className={passed?"passed":""}><span aria-hidden="true">{passed?"✓":"·"}</span>{rule.label}</li>;})}</ul><div className="auth-field"><label htmlFor="portal-password-confirmation">Confirm password</label><span className="password-field"><input id="portal-password-confirmation" name="confirmation" type={passwordVisible?"text":"password"} required minLength={12} autoComplete="new-password" value={confirmation} onChange={event=>setConfirmation(event.target.value)} aria-describedby="password-match-status" aria-invalid={confirmation.length>0&&!passwordsMatch}/></span></div><p id="password-match-status" className={passwordsMatch?"password-match passed":"password-match"} aria-live="polite">{confirmation.length===0?"Re-enter your password to confirm it.":passwordsMatch?"✓ Passwords match.":"Passwords do not match yet."}</p></>}
+    <button className="primary" disabled={creating&&(!passwordValid||!passwordsMatch)}>{creating?"Create student account":"Log in"}</button>
     <div className="auth-options">
      {!creating&&<button type="button" className="auth-option" onClick={event=>{const form=event.currentTarget.form;if(form)void resetPassword(String(new FormData(form).get("email")||""));}}><b>Forgot your password?</b><small>Enter your email above to receive a secure reset link.</small></button>}
-     <button type="button" className="auth-option" onClick={()=>setCreating(x=>!x)}><b>{creating?"Already registered? Sign in":"Create a student account"}</b><small>{creating?"Return to the secure portal login.":"For students who need to request faculty consultations."}</small></button>
+     <button type="button" className="auth-option" onClick={changeMode}><b>{creating?"Already registered? Sign in":"Create a student account"}</b><small>{creating?"Return to the secure portal login.":"For students who need to request faculty consultations."}</small></button>
     </div>
     {!creating&&<aside className="account-type-list" aria-label="Account types"><p>ACCOUNT TYPES</p><div><b>Student</b><span>Self-register and request consultations.</span></div><div><b>Faculty</b><span>MISO-issued account for schedules and requests.</span></div><div><b>Administrator</b><span>Restricted MISO account for portal oversight.</span></div></aside>}
     {!configured&&<small className="demo-note">Backend setup required · Supabase environment variables are not configured.</small>}
