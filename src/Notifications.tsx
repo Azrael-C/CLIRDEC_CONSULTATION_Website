@@ -13,11 +13,12 @@ type PortalRole = "student" | "faculty" | "admin";
 type NotificationUser = {
   id: string;
   role: PortalRole;
+  email_notifications?: boolean;
 };
 
 export type NotificationAppointment = Pick<
   PortalAppointment,
-  "id" | "status" | "starts_at" | "faculty_name" | "student_name" | "topic" | "location"
+  "id" | "status" | "updated_at" | "starts_at" | "faculty_name" | "student_name" | "topic" | "location"
 >;
 
 type NotificationItem = {
@@ -62,7 +63,7 @@ function studentNotifications(appointments: NotificationAppointment[]): Notifica
     id: `student:${appointment.id}:${appointment.status}`,
     title: studentTitles[appointment.status],
     message: `${appointment.faculty_name || "Faculty member"} · ${appointmentTime(appointment.starts_at)}`,
-    timestamp: appointment.starts_at,
+    timestamp: appointment.updated_at || appointment.starts_at,
     target: "schedule",
     tone: statusTones[appointment.status],
   }));
@@ -75,7 +76,7 @@ function facultyNotifications(appointments: PortalAppointment[]): NotificationIt
       id: `faculty:${appointment.id}:${appointment.status}`,
       title: appointment.status === "pending" ? "New consultation request" : "Upcoming confirmed consultation",
       message: `${appointment.student_name} · ${appointment.topic} · ${appointmentTime(appointment.starts_at)}`,
-      timestamp: appointment.starts_at,
+      timestamp: appointment.updated_at || appointment.starts_at,
       target: "requests",
       tone: appointment.status === "pending" ? "warning" : "success",
     }));
@@ -95,7 +96,7 @@ async function roleNotifications(user: NotificationUser): Promise<NotificationIt
         id: `admin:appointment:${appointment.id}:${appointment.status}`,
         title: "Pending consultation request",
         message: `${appointment.student_name} with ${appointment.faculty_name} · ${appointmentTime(appointment.starts_at)}`,
-        timestamp: appointment.starts_at,
+        timestamp: appointment.updated_at || appointment.starts_at,
         target: "appointments",
         tone: "warning",
       }));
@@ -254,7 +255,7 @@ export function NotificationCenter({
           </button>;
         })}
       </div>
-      <footer>Email updates remain enabled for appointment decisions and reminders.</footer>
+      <footer>{user.email_notifications===false?"Optional email updates are disabled for this account.":"Email updates remain enabled for appointment decisions and reminders."}</footer>
     </section>}
   </div>;
 }

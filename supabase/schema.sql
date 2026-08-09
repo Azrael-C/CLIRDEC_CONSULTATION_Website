@@ -41,11 +41,22 @@ create table public.appointments (
   topic text not null,
   notes text,
   status public.appointment_status not null default 'pending',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 create unique index one_active_appointment_per_slot
   on public.appointments(availability_id)
   where status in ('pending','confirmed');
+
+create function public.set_appointment_updated_at()
+returns trigger language plpgsql set search_path=public as $$
+begin
+  new.updated_at=now();
+  return new;
+end $$;
+create trigger set_appointment_updated_at_before_update
+before update on public.appointments
+for each row execute function public.set_appointment_updated_at();
 
 -- Transactional email outbox. A scheduled server-side function sends queued
 -- messages to the user's registered address (Gmail and CLSU email supported).

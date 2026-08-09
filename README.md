@@ -23,16 +23,16 @@ npm run check
 - Database-enforced double-booking protection
 - FastAPI + spaCy FAQ/intent chatbot with safe escalation
 - Responsive phone and desktop interface
-- Email notifications delivered to registered Gmail or CLSU addresses
-- Demo mode when Supabase is not configured
+- Backend email queue and protected Resend worker for Gmail or CLSU addresses
+- Secure password recovery and student email-notification preferences
 
 ## Run the web app
 
-1. Copy `.env.example` to `.env` and add Supabase credentials when available.
-2. Run `pnpm install`.
-3. Run `pnpm dev`.
+1. Copy `.env.example` to `.env.local` and add the Supabase public credentials.
+2. Run `npm install`.
+3. Run `npm run dev`.
 
-Without credentials, sign in using any valid-looking email and a six-character password to use demo mode.
+Authentication requires a configured Supabase project; the production portal does not provide a fake sign-in mode.
 
 ## Configure Supabase
 
@@ -62,9 +62,9 @@ Email is sent from the backend, never from React. The database trigger places me
 1. Create a free Resend account and verify the sender domain/address.
 2. Deploy `supabase/functions/send-email-notifications`.
 3. Add these function secrets in Supabase: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_CRON_SECRET`, and `PORTAL_URL`. Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the function.
-4. Schedule an authenticated call to the function every minute using Supabase Cron or another trusted scheduler. Send `Authorization: Bearer <EMAIL_CRON_SECRET>`.
+4. Schedule an authenticated call to the function every five minutes using Supabase Cron or another trusted scheduler. Send `Authorization: Bearer <EMAIL_CRON_SECRET>`.
 5. Test request submission, approval, decline, cancellation, and reminder emails with a Gmail address before the pilot.
 
-The initial events are request receipt, faculty decision, schedule change/cancellation, and appointment reminder. Users can disable optional email notifications in their profile; legally or operationally required notices should be defined with the Product Owner before implementation.
+The initial events are request receipt, faculty decision, schedule change/cancellation, and appointment reminder. Students can disable optional email notifications in their profile; legally or operationally required notices should be defined with the Product Owner before implementation.
 
 Do not place Gmail passwords, Google app passwords, Resend keys, or the Supabase service-role key in `.env` variables beginning with `VITE_`; those values become visible in the browser bundle.

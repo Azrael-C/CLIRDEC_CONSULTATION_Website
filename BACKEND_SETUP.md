@@ -6,7 +6,7 @@ Use a dedicated Supabase development or pilot project. Do not seed test users in
 
 1. Create a Supabase project.
 2. Open SQL Editor.
-3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, run `supabase/core_workflow_migration.sql` instead.
+3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, apply the versioned SQL files that have not yet run, ending with `supabase/notification_refresh_migration.sql` before deploying the notification-refresh frontend.
 4. Confirm that Row-Level Security is enabled on every public table.
 
 ## 2. Configure the frontend
@@ -20,17 +20,16 @@ VITE_SUPABASE_ANON_KEY
 
 Redeploy after changing Vite variables because they are included at build time.
 
-Add the deployed FastAPI URL as `VITE_CHATBOT_URL`. Do not point production at `localhost`.
+For the Vercel Services deployment, leave `VITE_CHATBOT_URL` unset so the frontend uses the same-origin `/api` route. For a separate API host, set it to that host and never point production at `localhost`.
 
 ## 3. Deploy the FastAPI/spaCy service
 
-The repository includes `render.yaml` and `chatbot/Dockerfile`.
+`vercel.json` deploys the Vite frontend and `chatbot/app.py` as two Vercel Services in one project.
 
-1. Create a Render Blueprint from the GitHub repository.
-2. Configure `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY` in Render.
-3. Keep `ALLOWED_ORIGINS` set to the Vercel site URL.
-4. Confirm `/health` and `/knowledge-status` return successfully.
-5. Add the resulting Render URL to Vercel as `VITE_CHATBOT_URL`, then redeploy the frontend.
+1. Configure `SUPABASE_URL` and `SUPABASE_ANON_KEY` for the API service. Add `SUPABASE_SERVICE_ROLE_KEY` only if the approved server-side access pattern has been security-reviewed.
+2. Keep `ALLOWED_ORIGINS` set to the production portal URL and approved local origins.
+3. Confirm `/api/health` and `/api/knowledge-status` return successfully.
+4. Confirm `/api/chat` answers a booking question, safely escalates a sensitive question, and reports an approved FAQ source when authenticated.
 
 The service loads only FAQ rows whose status is `approved`. If Supabase is temporarily unavailable, it answers only the bundled consultation-workflow topics and safely escalates unsupported questions.
 
@@ -91,4 +90,4 @@ Check `email_notifications` after the request. Successful rows must be `sent`; f
 
 ## 6. Schedule processing
 
-After manual testing succeeds, schedule an authenticated POST every five minutes using Supabase Cron or another approved scheduler. Store the cron secret in the scheduler; never place it in browser code.
+After manual testing succeeds, schedule an authenticated POST every five minutes using Supabase Cron or another approved scheduler. Store the cron secret in the scheduler; never place it in browser code. Separately schedule `select public.queue_due_appointment_reminders();` every 15 minutes so reminders enter the email queue.

@@ -2,6 +2,7 @@ import {
   availabilityValidationMessage,
   firstBookableStart,
   initialCalendarWeek,
+  isUpcomingSlot,
   manilaInstant,
 } from "../src/scheduling.ts";
 
@@ -44,4 +45,14 @@ assert(
   "The overlap rule did not reject an existing slot.",
 );
 
-console.log("Scheduling checks passed: Friday rolls to Monday; weekends and overlaps are blocked.");
+const currentTime = new Date("2026-08-09T04:00:00Z");
+assert(
+  !isUpcomingSlot({ ends_at: "2026-08-08T09:00:00Z" }, currentTime),
+  "An expired availability entry was treated as upcoming.",
+);
+assert(
+  isUpcomingSlot({ ends_at: "2026-08-10T09:00:00Z" }, currentTime),
+  "A future availability entry was incorrectly hidden.",
+);
+
+console.log("Scheduling checks passed: Friday rolls to Monday; weekends, overlaps, and expired slots are handled.");
