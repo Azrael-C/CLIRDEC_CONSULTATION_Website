@@ -155,16 +155,19 @@ function ProductionAuth({login,signup,resetPassword,notice}:{login:(e:FormEvent<
   <section className="auth-panel">
    <form className="login" onSubmit={creating?signup:login}>
     <span className="mobile-brand"><BrandLogo/><span>CLSU FacultyConnect</span></span><p className="eyebrow">SECURE PORTAL</p>
-    <h2>{creating?"Create your account":"Log in to your portal"}</h2>
-    <p className="muted">Faculty and administrator roles are assigned only through an authorized administrative process.</p>
+    <h2>{creating?"Create a student account":"Log in to your portal"}</h2>
+    <p className="muted">{creating?"Student registration is available here. Faculty and administrator accounts are issued by MISO.":"Students, faculty, and administrators use the same secure sign-in."}</p>
     {creating&&<label>Full name<input name="full_name" required autoComplete="name"/></label>}
-    <label>Email address<input name="email" type="email" required autoComplete="email"/></label>
+    <label>{creating?"Student email address":"Email address"}<input name="email" type="email" required autoComplete="email"/></label>
     <label>Password<input name="password" type="password" required minLength={8} autoComplete={creating?"new-password":"current-password"}/></label>
-    <button className="primary">{creating?"Create account":"Log in"} <span>→</span></button>
-    {!creating&&<button type="button" className="text-button" onClick={event=>{const form=event.currentTarget.form;if(form)void resetPassword(String(new FormData(form).get("email")||""));}}>Forgot password?</button>}
-    <button type="button" className="text-button" onClick={()=>setCreating(x=>!x)}>{creating?"Already registered? Sign in":"New student? Create an account"}</button>
+    <button className="primary">{creating?"Create student account":"Log in"}</button>
+    <div className="auth-options">
+     {!creating&&<button type="button" className="auth-option" onClick={event=>{const form=event.currentTarget.form;if(form)void resetPassword(String(new FormData(form).get("email")||""));}}><b>Forgot your password?</b><small>Enter your email above to receive a secure reset link.</small></button>}
+     <button type="button" className="auth-option" onClick={()=>setCreating(x=>!x)}><b>{creating?"Already registered? Sign in":"Create a student account"}</b><small>{creating?"Return to the secure portal login.":"For students who need to request faculty consultations."}</small></button>
+    </div>
+    {!creating&&<aside className="account-type-list" aria-label="Account types"><p>ACCOUNT TYPES</p><div><b>Student</b><span>Self-register and request consultations.</span></div><div><b>Faculty</b><span>MISO-issued account for schedules and requests.</span></div><div><b>Administrator</b><span>Restricted MISO account for portal oversight.</span></div></aside>}
     {!configured&&<small className="demo-note">Backend setup required · Supabase environment variables are not configured.</small>}
-    {notice&&<p className="error">{notice}</p>}
+    {notice&&<p className="error" aria-live="polite">{notice}</p>}
    </form>
   </section>
  </main>;
