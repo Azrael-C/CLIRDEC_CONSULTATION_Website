@@ -64,7 +64,17 @@ h1, h2, h3, b, strong { color: var(--figma-ink); letter-spacing: -.025em; }
 .login label { gap: .45rem; margin: 1.05rem 0; font-size: .9rem; }
 .login input { min-height: 48px; border-radius: 7px; background: #fff; }
 .login > .primary { margin-top: 1.15rem; }
-.login .text-button { margin-top: 1.3rem; padding-top: .9rem; border-top-color: #bfc8c1; }
+.auth-options { display: grid; gap: .7rem; margin-top: 1.3rem; padding-top: 1rem; border-top: 1px solid #bfc8c1; }
+.auth-option { display: grid; gap: .28rem; width: 100%; padding: .82rem .9rem; border: 1px solid #d8dfd9; border-radius: 8px; background: #fff; color: var(--figma-green); text-align: left; }
+.auth-option:hover { color: var(--figma-green-dark); background: #f8faf8; }
+.auth-option b { font-size: .9rem; }
+.auth-option small { color: var(--figma-muted); font-size: .73rem; font-weight: 500; line-height: 1.45; }
+.account-type-list { display: grid; gap: .45rem; margin-top: 1.15rem; padding: .8rem .9rem; border-left: 3px solid var(--figma-gold); background: #fff9dc; color: var(--figma-ink); }
+.account-type-list > p { margin: 0 0 .1rem; color: #75631b; font-size: .62rem; font-weight: 800; letter-spacing: .11em; }
+.account-type-list > div { display: grid; grid-template-columns: 78px 1fr; gap: .55rem; align-items: baseline; }
+.account-type-list b { font-size: .72rem; }
+.account-type-list span { color: #657168; font-size: .67rem; line-height: 1.4; }
+.login > .primary::after { content: "→"; color: #fff; }
 
 /* App frame */
 .app { padding-left: 260px; padding-top: 76px; background: var(--figma-canvas); }
