@@ -155,15 +155,53 @@ function studentPasswordIsValid(value:string){return studentPasswordRules.every(
 function PasswordVisibilityIcon({visible}:{visible:boolean}){
  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{visible?<><path d="M3 3l18 18"/><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.3A10.8 10.8 0 0 1 12 4c5.2 0 9 4.7 9 8a8.5 8.5 0 0 1-2.1 3.9M6.6 6.6C4.3 8 3 10.3 3 12c0 3.3 3.8 8 9 8 1.1 0 2.2-.2 3.1-.6"/></>:<><path d="M3 12c0-3.3 3.8-8 9-8s9 4.7 9 8-3.8 8-9 8-9-4.7-9-8Z"/><circle cx="12" cy="12" r="2.5"/></>}</svg>;
 }
+type SielState="neutral"|"active"|"ecstatic"|"shy"|"peek";
+const sielMessages:Record<SielState,{title:string;detail:string}>={
+ neutral:{title:"Hi, I’m Siel!",detail:"Let’s create your student account."},
+ active:{title:"I’m ready!",detail:"Tell me a little about yourself."},
+ ecstatic:{title:"That’s a strong password!",detail:"Every requirement is complete."},
+ shy:{title:"I can’t see it!",detail:"Your password stays private while you type."},
+ peek:{title:"Just checking!",detail:"Your password is visible on this screen."},
+};
+function AnimatedSiel({state}:{state:SielState}){
+ const message=sielMessages[state];
+ return <figure className={`siel-card state-${state}`}>
+  <span className="siel-avatar-shell"><svg className="siel-avatar" viewBox="0 0 180 180" role="img" aria-label={`Siel the CLSU Green Cobra is ${state}`}>
+   <circle className="siel-backdrop" cx="90" cy="90" r="82"/>
+   <g className="siel-sparkles" aria-hidden="true"><path d="M30 42v13M23.5 48.5h13"/><path d="M150 48v10M145 53h10"/><circle cx="146" cy="124" r="3"/></g>
+   <g className="siel-character">
+    <path className="siel-hood" d="M34 98C22 69 29 34 58 28c7-12 20-18 32-18s25 6 32 18c29 6 36 41 24 70-10 25-31 40-56 40S44 123 34 98Z"/>
+    <path className="siel-face" d="M53 77c1-27 16-44 37-44s36 17 37 44c1 27-14 48-37 48S52 104 53 77Z"/>
+    <path className="siel-muzzle" d="M66 91c6-10 13-13 24-8 11-5 18-2 24 8 3 13-7 24-24 24S63 104 66 91Z"/>
+    <g className="siel-eyes">
+     <ellipse cx="72" cy="75" rx="5" ry="6"/><ellipse cx="108" cy="75" rx="5" ry="6"/>
+     <circle className="siel-eye-glint" cx="70.5" cy="73" r="1.5"/><circle className="siel-eye-glint" cx="106.5" cy="73" r="1.5"/>
+    </g>
+    <path className="siel-brow siel-brow-left" d="M64 64q8-5 15 0"/><path className="siel-brow siel-brow-right" d="M101 64q8-5 15 0"/>
+    <path className="siel-nose" d="M84 89q6-5 12 0-1 7-6 7t-6-7Z"/>
+    {state==="ecstatic"?<path className="siel-mouth siel-mouth-happy" d="M73 100q17 25 34 0-17 9-34 0Z"/>:state==="active"||state==="peek"?<ellipse className="siel-mouth siel-mouth-open" cx="90" cy="104" rx="8" ry="9"/>:<path className="siel-mouth" d="M76 101q14 13 28 0"/>}
+    <path className="siel-torso" d="M58 120q32-16 64 0l10 52H48l10-52Z"/>
+    <path className="siel-chest" d="M74 124q16-7 32 0l6 48H68l6-48Z"/>
+    <path className="siel-chevron" d="m71 137 19 9 19-9M70 147l20 9 20-9"/>
+    <circle className="siel-medallion" cx="90" cy="128" r="6"/><path className="siel-medallion-mark" d="M93 125a4 4 0 1 0 0 6"/>
+    <g className="siel-arm siel-arm-left"><path d="M50 158Q44 120 67 80"/><circle cx="68" cy="78" r="12"/></g>
+    <g className="siel-arm siel-arm-right"><path d="M130 158q6-38-17-78"/><circle cx="112" cy="78" r="12"/></g>
+   </g>
+  </svg></span>
+  <figcaption aria-live="polite"><b>{message.title}</b><span>{message.detail}</span><small>Animated Siel · CLSU Green Cobra</small></figcaption>
+ </figure>;
+}
 function ProductionAuth({login,signup,resetPassword,notice}:{login:(e:FormEvent<HTMLFormElement>)=>void;signup:(e:FormEvent<HTMLFormElement>)=>void;resetPassword:(email:string)=>Promise<void>;notice:string}){
  const [creating,setCreating]=useState(false);
  const [password,setPassword]=useState("");
  const [confirmation,setConfirmation]=useState("");
  const [passwordVisible,setPasswordVisible]=useState(false);
+ const [focusedField,setFocusedField]=useState<"none"|"identity"|"password">("none");
  const passwordValid=studentPasswordIsValid(password);
  const passwordsMatch=confirmation.length>0&&password===confirmation;
  const passedRuleCount=studentPasswordRules.filter(rule=>rule.test(password)).length;
- const changeMode=()=>{setCreating(value=>!value);setPassword("");setConfirmation("");setPasswordVisible(false);};
+ const sielState:SielState=passwordValid&&passwordsMatch?"ecstatic":passwordVisible?"peek":focusedField==="password"?"shy":focusedField==="identity"?"active":"neutral";
+ const changeMode=()=>{setCreating(value=>!value);setPassword("");setConfirmation("");setPasswordVisible(false);setFocusedField("none");};
  return <main className="auth">
   <section className="auth-story">
    <div className="public-brand"><BrandLogo tone="light" size="hero"/><span>CLSU FacultyConnect</span></div>
@@ -173,11 +211,11 @@ function ProductionAuth({login,signup,resetPassword,notice}:{login:(e:FormEvent<
   <section className="auth-panel">
    <form className={creating?"login student-signup":"login"} onSubmit={creating?signup:login}>
     <span className="mobile-brand"><BrandLogo/><span>CLSU FacultyConnect</span></span><p className="eyebrow">SECURE PORTAL</p>
-    {creating?<div className="signup-heading"><div><h2>Create a student account</h2><p className="muted">Register as a student to request faculty consultations. Faculty and administrator accounts are issued only by MISO.</p></div><figure className="siel-card"><img src="/brand/siel-official-photo.jpeg" alt="Siel, the official CLSU Green Cobra mascot"/><figcaption><b>Hi, I’m Siel!</b><span>I’ll help you make a stronger password.</span><small>Official CLSU mascot · SCO photo</small></figcaption></figure></div>:<><h2>Log in to your portal</h2><p className="muted">Students, faculty, and administrators use the same secure sign-in.</p></>}
-    {creating&&<label>Full name<input name="full_name" required autoComplete="name"/></label>}
-    <label>{creating?"Student email address":"Email address"}<input name="email" type="email" required autoComplete="email"/></label>
-    <div className="auth-field password-label"><label htmlFor="portal-password">Password</label><span className="password-field"><input id="portal-password" name="password" type={passwordVisible?"text":"password"} required minLength={creating?12:8} autoComplete={creating?"new-password":"current-password"} value={password} onChange={event=>setPassword(event.target.value)} aria-describedby={creating?"student-password-rules student-password-progress":undefined} aria-invalid={creating&&password.length>0&&!passwordValid}/><button type="button" className="password-visibility" aria-label={passwordVisible?"Hide password":"Show password"} aria-pressed={passwordVisible} onClick={()=>setPasswordVisible(value=>!value)}><PasswordVisibilityIcon visible={passwordVisible}/><span>{passwordVisible?"Hide":"Show"}</span></button></span></div>
-    {creating&&<><div className={passwordVisible?"password-privacy visible":"password-privacy"} role="status"><span aria-hidden="true">{passwordVisible?"👁":"🛡"}</span><p><b>{passwordVisible?"Your password is visible":"Your password is hidden"}</b><small>{passwordVisible?"Make sure no one else can see your screen.":"Select Show whenever you need to check what you typed."}</small></p></div><p id="student-password-progress" className="sr-only" aria-live="polite">{passedRuleCount} of {studentPasswordRules.length} password requirements met.</p><ul className="password-rules" id="student-password-rules" aria-label="Password requirements">{studentPasswordRules.map(rule=>{const passed=rule.test(password);return <li key={rule.id} className={passed?"passed":""}><span aria-hidden="true">{passed?"✓":"·"}</span>{rule.label}</li>;})}</ul><div className="auth-field"><label htmlFor="portal-password-confirmation">Confirm password</label><span className="password-field"><input id="portal-password-confirmation" name="confirmation" type={passwordVisible?"text":"password"} required minLength={12} autoComplete="new-password" value={confirmation} onChange={event=>setConfirmation(event.target.value)} aria-describedby="password-match-status" aria-invalid={confirmation.length>0&&!passwordsMatch}/></span></div><p id="password-match-status" className={passwordsMatch?"password-match passed":"password-match"} aria-live="polite">{confirmation.length===0?"Re-enter your password to confirm it.":passwordsMatch?"✓ Passwords match.":"Passwords do not match yet."}</p></>}
+    {creating?<div className="signup-heading"><div><h2>Create a student account</h2><p className="muted">Register as a student to request faculty consultations. Faculty and administrator accounts are issued only by MISO.</p></div><AnimatedSiel state={sielState}/></div>:<><h2>Log in to your portal</h2><p className="muted">Students, faculty, and administrators use the same secure sign-in.</p></>}
+    {creating&&<label>Full name<input name="full_name" required autoComplete="name" onFocus={()=>setFocusedField("identity")} onBlur={()=>setFocusedField("none")}/></label>}
+    <label>{creating?"Student email address":"Email address"}<input name="email" type="email" required autoComplete="email" onFocus={()=>{if(creating)setFocusedField("identity");}} onBlur={()=>{if(creating)setFocusedField("none");}}/></label>
+    <div className="auth-field password-label"><label htmlFor="portal-password">Password</label><span className="password-field"><input id="portal-password" name="password" type={passwordVisible?"text":"password"} required minLength={creating?12:8} autoComplete={creating?"new-password":"current-password"} value={password} onChange={event=>setPassword(event.target.value)} onFocus={()=>{if(creating)setFocusedField("password");}} onBlur={()=>{if(creating)setFocusedField("none");}} aria-describedby={creating?"student-password-rules student-password-progress":undefined} aria-invalid={creating&&password.length>0&&!passwordValid}/><button type="button" className="password-visibility" aria-label={passwordVisible?"Hide password":"Show password"} aria-pressed={passwordVisible} onClick={()=>setPasswordVisible(value=>!value)}><PasswordVisibilityIcon visible={passwordVisible}/><span>{passwordVisible?"Hide":"Show"}</span></button></span></div>
+    {creating&&<><div className={passwordVisible?"password-privacy visible":"password-privacy"} role="status"><span aria-hidden="true">{passwordVisible?"👁":"🛡"}</span><p><b>{passwordVisible?"Your password is visible":"Your password is hidden"}</b><small>{passwordVisible?"Make sure no one else can see your screen.":"Select Show whenever you need to check what you typed."}</small></p></div><p id="student-password-progress" className="sr-only" aria-live="polite">{passedRuleCount} of {studentPasswordRules.length} password requirements met.</p><ul className="password-rules" id="student-password-rules" aria-label="Password requirements">{studentPasswordRules.map(rule=>{const passed=rule.test(password);return <li key={rule.id} className={passed?"passed":""}><span aria-hidden="true">{passed?"✓":"·"}</span>{rule.label}</li>;})}</ul><div className="auth-field"><label htmlFor="portal-password-confirmation">Confirm password</label><span className="password-field"><input id="portal-password-confirmation" name="confirmation" type={passwordVisible?"text":"password"} required minLength={12} autoComplete="new-password" value={confirmation} onChange={event=>setConfirmation(event.target.value)} onFocus={()=>setFocusedField("password")} onBlur={()=>setFocusedField("none")} aria-describedby="password-match-status" aria-invalid={confirmation.length>0&&!passwordsMatch}/></span></div><p id="password-match-status" className={passwordsMatch?"password-match passed":"password-match"} aria-live="polite">{confirmation.length===0?"Re-enter your password to confirm it.":passwordsMatch?"✓ Passwords match.":"Passwords do not match yet."}</p></>}
     <button className="primary" disabled={creating&&(!passwordValid||!passwordsMatch)}>{creating?"Create student account":"Log in"}</button>
     <div className="auth-options">
      {!creating&&<button type="button" className="auth-option" onClick={event=>{const form=event.currentTarget.form;if(form)void resetPassword(String(new FormData(form).get("email")||""));}}><b>Forgot your password?</b><small>Enter your email above to receive a secure reset link.</small></button>}
