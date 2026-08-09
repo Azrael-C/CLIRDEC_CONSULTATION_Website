@@ -115,7 +115,7 @@ function App(){
  async function signup(e:FormEvent<HTMLFormElement>){e.preventDefault();setNotice("");if(!configured){setNotice("The production database is not configured yet. Add the Supabase environment variables in Vercel.");return;}const f=new FormData(e.currentTarget);const full_name=String(f.get("full_name"));const email=String(f.get("email"));const password=String(f.get("password"));const {data,error}=await supabase.auth.signUp({email,password,options:{data:{full_name}}});if(error){setNotice(error.message);return;}setNotice(data.session?"Student account created.":"Check your email to confirm your student account, then sign in.");}
  async function requestPasswordReset(email:string){setNotice("");if(!configured){setNotice("Password recovery requires the production Supabase configuration.");return;}if(!email||!email.includes("@")){setNotice("Enter your registered email address first.");return;}const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});setNotice(error?error.message:"Check your email for the secure password-reset link.");}
  async function updateRecoveredPassword(password:string){setNotice("");const {error}=await supabase.auth.updateUser({password});if(error){setNotice(error.message);return false;}setRecoveringPassword(false);setNotice("Your password has been updated.");return true;}
- async function logout(){if(configured)await supabase.auth.signOut({scope:"local"});setUser(null);setView("home");}
+ async function logout(){setUser(null);setView("home");setNotice("");if(configured)await supabase.auth.signOut({scope:"local"});}
  async function saveStudentProfile(values:{fullName:string;department:string;emailNotifications:boolean}){
   if(!user)return false;
   setNotice("");
