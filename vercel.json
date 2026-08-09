@@ -1,19 +1,26 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/chat.py": {
-      "maxDuration": 30,
-      "memory": 1024
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/health",
-      "destination": "/api/chat"
+  "experimentalServices": {
+    "web": {
+      "entrypoint": ".",
+      "framework": "vite",
+      "routePrefix": "/",
+      "excludeFiles": [
+        "api/**",
+        "chatbot/**",
+        "requirements.txt",
+        "pyproject.toml",
+        ".python-version"
+      ]
     },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+    "api": {
+      "entrypoint": "chatbot/app.py",
+      "routePrefix": "/api",
+      "maxDuration": 30,
+      "memory": 1024,
+      "includeFiles": [
+        "chatbot/**"
+      ]
     }
-  ]
+  }
 }
