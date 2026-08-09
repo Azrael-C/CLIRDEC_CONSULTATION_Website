@@ -165,7 +165,15 @@ function NavIcon({name}:{name:NavIconName}){
 }
 function Nav({active,label,icon,onClick}:{active:boolean;label:string;icon:NavIconName;onClick:()=>void}){return <button className={active?"nav-item active":"nav-item"} onClick={onClick}><NavIcon name={icon}/><span>{label}</span></button>}
 function statusLabel(status:AppointmentStatus="pending"){return({pending:"Pending faculty approval",confirmed:"Confirmed",completed:"Completed",cancelled:"Cancelled",declined:"Declined"} as Record<AppointmentStatus,string>)[status];}
-function Dashboard({user,booked,go}:{user:User;booked:Slot[];go:(v:View)=>void}){const next=booked[0];return <><section className="page-head"><div><p className="eyebrow">CLIRDEC FAQ PILOT</p><h1>What do you need help with, {user.name.split(" ")[0]}?</h1><p>Start with the approved-information assistant or view faculty-maintained availability.</p></div><button className="prim…4164 tokens truncated…d-selected"/>Selected</span><span><i className="legend-busy"/>Already published</span></div>
+function Dashboard({user,booked,go}:{user:User;booked:Slot[];go:(v:View)=>void}) {
+ const next=booked[0];
+ return <>
+  <section className="page-head">
+   <div>
+    <p className="eyebrow">CLIRDEC FAQ PILOT</p>
+    <h1>What do you need help with, {user.name.split(" ")[0]}?</h1>
+    <p>Start with the approved-information assistant or view faculty-maintained availability.</p>
+ …4242 tokens truncated…d-selected"/>Selected</span><span><i className="legend-busy"/>Already published</span></div>
   <p className="availability-foot">Times use Philippine Standard Time. The calendar disables weekends, past times, entries with less than 24 hours’ notice, and overlaps.</p>
  </div>;
 }
