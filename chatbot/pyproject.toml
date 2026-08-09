@@ -1,0 +1,10 @@
+[project]
+name = "clsu-faculty-connect-chatbot"
+version = "1.0.0"
+description = "FastAPI and spaCy assistant for CLSU FacultyConnect"
+requires-python = "==3.13.*"
+dependencies = [
+    "fastapi==0.116.1",
+    "pydantic==2.11.7",
+    "spacy==3.8.7",
+]
