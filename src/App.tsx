@@ -119,11 +119,6 @@ function App(){
  {selected&&<BookingModal slot={selected} topic={bookingTopic} setTopic={setBookingTopic} close={()=>{setSelected(null);setReschedulingId(null);setBookingTopic("");}} confirm={confirmBook} submitting={submitting} rescheduling={Boolean(reschedulingId)}/>}</div>;
 }
 
-/* Legacy demo authentication retained temporarily for visual reference.
-function Auth({role,setRole,login,notice}:{role:Role;setRole:(r:Role)=>void;login:(e:FormEvent<HTMLFormElement>)=>void;notice:string}){return <main className="auth"><section className="auth-story"><div className="public-brand"><span className="brand-mark">C</span> CLSU FacultyConnect</div><div><span className="pilot-label">MISO · CLIRDEC PILOT</span><h1>Approved answers. Clear next steps.</h1><p>Ask common CLIRDEC questions in natural language, view faculty-approved availability, and receive a safe official referral when the assistant cannot answer.</p><ul><li>Product Owner-approved FAQ knowledge</li><li>Clarification and safe staff referral</li><li>Mobile access for students and faculty</li></ul></div><small>Central Luzon State University · Nurturing a Culture of Excellence</small></section><section className="auth-panel"><form className="login" onSubmit={login}><span className="mobile-brand">CLSU FacultyConnect</span><p className="eyebrow">CONTROLLED PILOT</p><h2>Sign in to your portal</h2><p className="muted">Use demo mode to preview each role-restricted workspace.</p><div className="role-tabs">{(["student","faculty","admin"] as Role[]).map(r=><button type="button" className={role===r?"active":""} key={r} onClick={()=>setRole(r)}>{r==="admin"?"Admin":r[0].toUpperCase()+r.slice(1)}</button>)}</div><label>CLSU email address<input name="email" type="email" required defaultValue="sofia@clsu2.edu.ph"/></label><label>Password<input name="password" type="password" required minLength={6} defaultValue="password"/></label><button className="primary">Sign in <span>→</span></button>{!configured&&<small className="demo-note">Demo mode · no account required</small>}{notice&&<p className="error">{notice}</p>}</form></section></main>}
-function Auth({role,setRole,login,notice}:{role:Role;setRole:(r:Role)=>void;login:(e:FormEvent<HTMLFormElement>)=>void;notice:string}){return <main className="auth"><section className="auth-story"><div className="public-brand"><span className="brand-mark">C</span> CLSU FacultyConnect</div><div><span className="pilot-label">MISO · CLIRDEC PILOT</span><h1>Approved answers. Clear next steps.</h1><p>Ask common CLIRDEC questions in natural language, view faculty-approved availability, and receive a safe official referral when the assistant cannot answer.</p><ul><li>Product Owner-approved FAQ knowledge</li><li>Clarification and safe staff referral</li><li>Mobile access for students and faculty</li></ul></div><small>Central Luzon State University · Nurturing a Culture of Excellence</small></section><section className="auth-panel"><form className="login" onSubmit={login}><span className="mobile-brand">CLSU FacultyConnect</span><p className="eyebrow">CONTROLLED PILOT</p><h2>Sign in to your portal</h2><p className="muted">Use demo mode to preview each role-restricted workspace.</p><div className="role-tabs">{(["student","faculty","admin"] as Role[]).map(r=><button type="button" className={role===r?"active":""} key={r} onClick={()=>setRole(r)}>{r==="admin"?"Admin":r[0].toUpperCase()+r.slice(1)}</button>)}</div><label>CLSU email address<input name="email" type="email" required defaultValue="sofia@clsu2.edu.ph"/></label><label>Password<input name="password" type="password" required minLength={6} defaultValue="password"/></label><button className="primary">Sign in <span>→</span></button>{!configured&&<small className="demo-note">Demo mode · no account required</small>}{notice&&<p className="error">{notice}</p>}</form></section></main>}
-*/
-
 function ProductionAuth({login,signup,notice}:{login:(e:FormEvent<HTMLFormElement>)=>void;signup:(e:FormEvent<HTMLFormElement>)=>void;notice:string}){
  const [creating,setCreating]=useState(false);
  return <main className="auth">
@@ -173,7 +168,62 @@ function Dashboard({user,booked,go}:{user:User;booked:Slot[];go:(v:View)=>void})
     <p className="eyebrow">CLIRDEC FAQ PILOT</p>
     <h1>What do you need help with, {user.name.split(" ")[0]}?</h1>
     <p>Start with the approved-information assistant or view faculty-maintained availability.</p>
- …4242 tokens truncated…d-selected"/>Selected</span><span><i className="legend-busy"/>Already published</span></div>
+   </div>
+   <button className="primary" onClick={()=>go("assistant")}>Ask Consult AI <span>→</span></button>
+  </section>
+  <section className="overview-grid">
+   <article className="next-card">
+    <div className="section-label">
+     <span>LATEST CONSULTATION REQUEST</span>
+     {next&&<b>{statusLabel(next.status)}</b>}
+    </div>
+    {next ? <>
+     <div className="appointment-date">
+      <strong>{new Date(next.starts_at).getDate()}</strong>
+      <span>{new Date(next.starts_at).toLocaleDateString([], {month:"short"}).toUpperCase()}<br/>{new Date(next.starts_at).toLocaleDateString([], {weekday:"short"})}</span>
+     </div>
+     <div className="appointment-main">
+      <span className={`avatar ${next.color}`}>{next.initials}</span>
+      <div>
+       <h3>{next.topic||next.expertise}</h3>
+       <p>{next.faculty_name}</p>
+       <small>Requested time: {new Date(next.starts_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</small>
+      </div>
+     </div>
+     <button className="text-button" onClick={()=>go("schedule")}>View request status →</button>
+    </> : <div className="empty">
+     <b>No active request</b>
+     <p>Availability shown in the portal is faculty-approved, but a request still requires faculty confirmation.</p>
+    </div>}
+   </article>
+   <article className="quick-card">
+    <span className="section-label">APPROVED GUIDANCE</span>
+    <button onClick={()=>go("assistant")}>
+     <span className="quick-icon">✦</span>
+     <i><b>Ask Consult AI</b><small>FAQs, services, procedures, hours, and contacts</small></i>
+     <strong>→</strong>
+    </button>
+    <button onClick={()=>go("find")}>
+     <span className="quick-icon">⌕</span>
+     <i><b>View faculty availability</b><small>Use approved categories and published schedules</small></i>
+     <strong>→</strong>
+    </button>
+   </article>
+  </section>
+  <section className="how">
+   <div className="section-title">
+    <div><p className="eyebrow">SAFE BY DESIGN</p><h2>Approved answer or official referral</h2></div>
+    <p>The pilot does not provide unrestricted generative answers.</p>
+   </div>
+   <div className="steps">
+    <article><b>01</b><span>✦</span><h3>Ask naturally</h3><p>Use English, Filipino, mixed language, or common abbreviations.</p></article>
+    <article><b>02</b><span>?</span><h3>Clarify when needed</h3><p>The assistant asks one clarifying question when confidence is low.</p></article>
+    <article><b>03</b><span>↗</span><h3>Refer safely</h3><p>Unsupported or sensitive concerns go to an official staff channel.</p></article>
+   </div>
+  </section>
+ </>;
+}
+function FindFaculty({query,setQuery,slots,select}:{query:string;setQuery:(s:string)=>void;slots:Slot[];select:(s:Slot)=>void}){return <><section className="page-head compact"><div><p className="eyebrow">APPROVED CONSULTATION GUIDANCE</p><h1>Faculty availability</h1><p>Browse faculty-maintained schedules and approved expertise categories. The system does not automatically assign a faculty member.</p></div></section><div className="search-box"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search an approved category or faculty name"/></div><div className="result-head"><b>{slots.length} published availability entries</b><span>Source: faculty-approved CLIRDEC schedules</span></div><section className="faculty-grid">{slots.map(s=><article className="faculty-card" key={s.id}><div className="faculty-top"><span className={`avatar large ${s.color}`}>{s.initials}</span><div><span className="available">● Faculty-published</span><h3>{s.fa…3344 tokens truncated…d-selected"/>Selected</span><span><i className="legend-busy"/>Already published</span></div>
   <p className="availability-foot">Times use Philippine Standard Time. The calendar disables weekends, past times, entries with less than 24 hours’ notice, and overlaps.</p>
  </div>;
 }
