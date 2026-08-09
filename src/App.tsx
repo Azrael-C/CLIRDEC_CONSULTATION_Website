@@ -163,22 +163,29 @@ const sielMessages:Record<SielState,{title:string;detail:string}>={
  shy:{title:"I can’t see it!",detail:"Your password stays private while you type."},
  peek:{title:"Just checking!",detail:"Your password is visible on this screen."},
 };
-function AnimatedSiel({state}:{state:SielState}){
+function AnimatedSiel({state,lookOffset=0,variant="compact"}:{state:SielState;lookOffset?:number;variant?:"compact"|"stage"}){
  const message=sielMessages[state];
- return <figure className={`siel-card state-${state}`}>
+ return <figure className={`siel-card siel-card-${variant} state-${state}`}>
   <span className="siel-avatar-shell"><svg className="siel-avatar" viewBox="0 0 180 180" role="img" aria-label={`Siel the CLSU Green Cobra is ${state}`}>
    <circle className="siel-backdrop" cx="90" cy="90" r="82"/>
    <g className="siel-sparkles" aria-hidden="true"><path d="M30 42v13M23.5 48.5h13"/><path d="M150 48v10M145 53h10"/><circle cx="146" cy="124" r="3"/></g>
    <g className="siel-character">
     <path className="siel-hood" d="M34 98C22 69 29 34 58 28c7-12 20-18 32-18s25 6 32 18c29 6 36 41 24 70-10 25-31 40-56 40S44 123 34 98Z"/>
+    <path className="siel-hood-mark siel-hood-mark-left" d="M43 48c-9 17-9 35-3 52M51 39c-6 10-8 20-8 29"/>
+    <path className="siel-hood-mark siel-hood-mark-right" d="M137 48c9 17 9 35 3 52M129 39c6 10 8 20 8 29"/>
+    <path className="siel-tail" d="M121 151c28 1 38 12 31 21-5 7-19 5-23-1"/>
     <path className="siel-face" d="M53 77c1-27 16-44 37-44s36 17 37 44c1 27-14 48-37 48S52 104 53 77Z"/>
     <path className="siel-muzzle" d="M66 91c6-10 13-13 24-8 11-5 18-2 24 8 3 13-7 24-24 24S63 104 66 91Z"/>
     <g className="siel-eyes">
-     <ellipse cx="72" cy="75" rx="5" ry="6"/><ellipse cx="108" cy="75" rx="5" ry="6"/>
-     <circle className="siel-eye-glint" cx="70.5" cy="73" r="1.5"/><circle className="siel-eye-glint" cx="106.5" cy="73" r="1.5"/>
+     <ellipse className="siel-eye-white" cx="72" cy="75" rx="8.5" ry="9.5"/><ellipse className="siel-eye-white" cx="108" cy="75" rx="8.5" ry="9.5"/>
+     <g className="siel-pupils" style={{transform:`translateX(${lookOffset}px)`}}>
+      <ellipse className="siel-pupil" cx="72" cy="76" rx="4.6" ry="5.8"/><ellipse className="siel-pupil" cx="108" cy="76" rx="4.6" ry="5.8"/>
+      <circle className="siel-eye-glint" cx="70.5" cy="73.5" r="1.5"/><circle className="siel-eye-glint" cx="106.5" cy="73.5" r="1.5"/>
+     </g>
     </g>
     <path className="siel-brow siel-brow-left" d="M64 64q8-5 15 0"/><path className="siel-brow siel-brow-right" d="M101 64q8-5 15 0"/>
     <path className="siel-nose" d="M84 89q6-5 12 0-1 7-6 7t-6-7Z"/>
+    <circle className="siel-nostril" cx="87.5" cy="90" r="1"/><circle className="siel-nostril" cx="92.5" cy="90" r="1"/>
     {state==="ecstatic"?<path className="siel-mouth siel-mouth-happy" d="M73 100q17 25 34 0-17 9-34 0Z"/>:state==="active"||state==="peek"?<ellipse className="siel-mouth siel-mouth-open" cx="90" cy="104" rx="8" ry="9"/>:<path className="siel-mouth" d="M76 101q14 13 28 0"/>}
     <path className="siel-torso" d="M58 120q32-16 64 0l10 52H48l10-52Z"/>
     <path className="siel-chest" d="M74 124q16-7 32 0l6 48H68l6-48Z"/>
@@ -197,23 +204,26 @@ function ProductionAuth({login,signup,resetPassword,notice}:{login:(e:FormEvent<
  const [confirmation,setConfirmation]=useState("");
  const [passwordVisible,setPasswordVisible]=useState(false);
  const [focusedField,setFocusedField]=useState<"none"|"identity"|"password">("none");
+ const [identityLength,setIdentityLength]=useState(0);
  const passwordValid=studentPasswordIsValid(password);
  const passwordsMatch=confirmation.length>0&&password===confirmation;
  const passedRuleCount=studentPasswordRules.filter(rule=>rule.test(password)).length;
  const sielState:SielState=passwordValid&&passwordsMatch?"ecstatic":passwordVisible?"peek":focusedField==="password"?"shy":focusedField==="identity"?"active":"neutral";
- const changeMode=()=>{setCreating(value=>!value);setPassword("");setConfirmation("");setPasswordVisible(false);setFocusedField("none");};
+ const sielLookOffset=focusedField==="identity"?Math.min(4,-4+identityLength*.45):0;
+ const trackIdentity=(value:string)=>setIdentityLength(value.length);
+ const changeMode=()=>{setCreating(value=>!value);setPassword("");setConfirmation("");setPasswordVisible(false);setFocusedField("none");setIdentityLength(0);};
  return <main className="auth">
-  <section className="auth-story">
+  <section className={creating?"auth-story auth-story-signup":"auth-story"}>
    <div className="public-brand"><BrandLogo tone="light" size="hero"/><span>CLSU FacultyConnect</span></div>
-   <div><span className="pilot-label">MISO · CLIRDEC PILOT</span><h1>Approved answers. Clear next steps.</h1><p>Use your registered email to access faculty consultation services and verified CLIRDEC guidance.</p><ul><li>Role-protected student, faculty, and administrator portals</li><li>Faculty-approved schedules and request decisions</li><li>Email updates for important appointment events</li></ul></div>
+   {creating?<div className="siel-stage"><span className="pilot-label">STUDENT ACCOUNT SETUP</span><AnimatedSiel state={sielState} lookOffset={sielLookOffset} variant="stage"/><p className="siel-stage-note">Siel only reacts to the form’s status. The mascot never reads, displays, or receives your password.</p></div>:<div><span className="pilot-label">MISO · CLIRDEC PILOT</span><h1>Approved answers. Clear next steps.</h1><p>Use your registered email to access faculty consultation services and verified CLIRDEC guidance.</p><ul><li>Role-protected student, faculty, and administrator portals</li><li>Faculty-approved schedules and request decisions</li><li>Email updates for important appointment events</li></ul></div>}
    <small>Central Luzon State University · Nurturing a Culture of Excellence</small>
   </section>
   <section className="auth-panel">
    <form className={creating?"login student-signup":"login"} onSubmit={creating?signup:login}>
     <span className="mobile-brand"><BrandLogo/><span>CLSU FacultyConnect</span></span><p className="eyebrow">SECURE PORTAL</p>
-    {creating?<div className="signup-heading"><div><h2>Create a student account</h2><p className="muted">Register as a student to request faculty consultations. Faculty and administrator accounts are issued only by MISO.</p></div><AnimatedSiel state={sielState}/></div>:<><h2>Log in to your portal</h2><p className="muted">Students, faculty, and administrators use the same secure sign-in.</p></>}
-    {creating&&<label>Full name<input name="full_name" required autoComplete="name" onFocus={()=>setFocusedField("identity")} onBlur={()=>setFocusedField("none")}/></label>}
-    <label>{creating?"Student email address":"Email address"}<input name="email" type="email" required autoComplete="email" onFocus={()=>{if(creating)setFocusedField("identity");}} onBlur={()=>{if(creating)setFocusedField("none");}}/></label>
+    {creating?<div className="signup-heading"><h2>Create a student account</h2><p className="muted">Register as a student to request faculty consultations. Faculty and administrator accounts are issued only by MISO.</p><div className="mobile-siel"><AnimatedSiel state={sielState} lookOffset={sielLookOffset}/></div></div>:<><h2>Log in to your portal</h2><p className="muted">Students, faculty, and administrators use the same secure sign-in.</p></>}
+    {creating&&<label>Full name<input name="full_name" required autoComplete="name" onChange={event=>trackIdentity(event.target.value)} onFocus={()=>setFocusedField("identity")} onBlur={()=>setFocusedField("none")}/></label>}
+    <label>{creating?"Student email address":"Email address"}<input name="email" type="email" required autoComplete="email" onChange={event=>{if(creating)trackIdentity(event.target.value);}} onFocus={()=>{if(creating)setFocusedField("identity");}} onBlur={()=>{if(creating)setFocusedField("none");}}/></label>
     <div className="auth-field password-label"><label htmlFor="portal-password">Password</label><span className="password-field"><input id="portal-password" name="password" type={passwordVisible?"text":"password"} required minLength={creating?12:8} autoComplete={creating?"new-password":"current-password"} value={password} onChange={event=>setPassword(event.target.value)} onFocus={()=>{if(creating)setFocusedField("password");}} onBlur={()=>{if(creating)setFocusedField("none");}} aria-describedby={creating?"student-password-rules student-password-progress":undefined} aria-invalid={creating&&password.length>0&&!passwordValid}/><button type="button" className="password-visibility" aria-label={passwordVisible?"Hide password":"Show password"} aria-pressed={passwordVisible} onClick={()=>setPasswordVisible(value=>!value)}><PasswordVisibilityIcon visible={passwordVisible}/><span>{passwordVisible?"Hide":"Show"}</span></button></span></div>
     {creating&&<><div className={passwordVisible?"password-privacy visible":"password-privacy"} role="status"><span aria-hidden="true">{passwordVisible?"👁":"🛡"}</span><p><b>{passwordVisible?"Your password is visible":"Your password is hidden"}</b><small>{passwordVisible?"Make sure no one else can see your screen.":"Select Show whenever you need to check what you typed."}</small></p></div><p id="student-password-progress" className="sr-only" aria-live="polite">{passedRuleCount} of {studentPasswordRules.length} password requirements met.</p><ul className="password-rules" id="student-password-rules" aria-label="Password requirements">{studentPasswordRules.map(rule=>{const passed=rule.test(password);return <li key={rule.id} className={passed?"passed":""}><span aria-hidden="true">{passed?"✓":"·"}</span>{rule.label}</li>;})}</ul><div className="auth-field"><label htmlFor="portal-password-confirmation">Confirm password</label><span className="password-field"><input id="portal-password-confirmation" name="confirmation" type={passwordVisible?"text":"password"} required minLength={12} autoComplete="new-password" value={confirmation} onChange={event=>setConfirmation(event.target.value)} onFocus={()=>setFocusedField("password")} onBlur={()=>setFocusedField("none")} aria-describedby="password-match-status" aria-invalid={confirmation.length>0&&!passwordsMatch}/></span></div><p id="password-match-status" className={passwordsMatch?"password-match passed":"password-match"} aria-live="polite">{confirmation.length===0?"Re-enter your password to confirm it.":passwordsMatch?"✓ Passwords match.":"Passwords do not match yet."}</p></>}
     <button className="primary" disabled={creating&&(!passwordValid||!passwordsMatch)}>{creating?"Create student account":"Log in"}</button>
