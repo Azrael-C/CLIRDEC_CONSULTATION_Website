@@ -80,6 +80,11 @@ INTENT_PHRASES: dict[str, list[str]] = {
         "clirdec services", "portal services", "what can you do", "how can clirdec help",
         "anong serbisyo", "ano ang clirdec",
     ],
+    "office_hours": [
+        "clirdec office hours", "when is the office open", "clirdec hours",
+        "what are your office hours", "office hours",
+        "anong oras bukas ang clirdec", "kailan bukas ang office",
+    ],
 }
 
 for intent_name, phrases in INTENT_PHRASES.items():
@@ -87,12 +92,13 @@ for intent_name, phrases in INTENT_PHRASES.items():
 
 INTENT_KEYWORDS: dict[str, set[str]] = {
     "booking": {"book", "booking", "schedule", "appointment", "consultation", "reserve"},
-    "availability": {"available", "availability", "hours", "open", "slot", "oras", "kailan"},
+    "availability": {"available", "availability", "faculty", "slot", "oras", "kailan"},
     "expertise": {"expert", "expertise", "faculty", "professor", "adviser", "topic", "sinong", "sino"},
     "location": {"where", "location", "room", "online", "link", "platform", "saan"},
     "cancel": {"cancel", "reschedule", "change", "move", "ilipat", "palitan"},
     "status": {"status", "confirmed", "approved", "pending", "declined"},
     "services": {"service", "services", "help", "clirdec", "portal", "offer", "serbisyo"},
+    "office_hours": {"clirdec", "office", "hours", "open", "closed", "bukas"},
 }
 
 SENSITIVE_TERMS = {
@@ -114,6 +120,11 @@ SENSITIVE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
     r"\b(?:inaabuso|inabuso|binubully|pananakot|sinaktan)\b",
     r"\b(?:ayoko|ayaw\s+ko)\s+nang?\s+mabuhay\b",
 ))
+
+CLIRDEC_CONTACT = (
+    "Email [INSERT CLIRDEC EMAIL], call [INSERT PHONE], or visit the CLIRDEC office "
+    "at [INSERT LOCATION] (Office hours: [INSERT HOURS])."
+)
 
 DEFAULT_ANSWERS = {
     "booking": (
@@ -150,6 +161,10 @@ DEFAULT_ANSWERS = {
         "FacultyConnect provides verified FAQ guidance, faculty discovery, published availability, "
         "consultation requests, status tracking, and email notifications for important events.",
         "FacultyConnect MVP scope",
+    ),
+    "office_hours": (
+        "[INSERT CLIRDEC OFFICE HOURS, e.g. Monday-Friday, 8:00 AM - 5:00 PM]. " + CLIRDEC_CONTACT,
+        "CLIRDEC office hours",
     ),
 }
 
@@ -283,9 +298,8 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
     if is_sensitive(message):
         return ChatResponse(
             answer=(
-                "I can’t handle confidential records, emergencies, complaints, academic decisions, "
-                "or account credentials. Please contact the appropriate CLSU or CLIRDEC office through "
-                "an official channel."
+               "I can't handle confidential records, emergencies, complaints, academic decisions, "
+                "or account credentials. " + CLIRDEC_CONTACT
             ),
             intent="sensitive_referral",
             confidence=0.99,
@@ -317,9 +331,9 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
 
     return ChatResponse(
         answer=(
-            "I’m not confident that I have an approved answer for that question. Please rephrase it "
+           "I'm not confident that I have an approved answer for that question. Please rephrase it "
             "as a booking, availability, faculty expertise, location, cancellation, status, or service question. "
-            "For anything else, contact authorized CLIRDEC staff."
+            "For anything else: " + CLIRDEC_CONTACT
         ),
         intent="fallback",
         confidence=max(0.15, intent_confidence),
