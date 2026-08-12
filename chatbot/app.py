@@ -68,7 +68,9 @@ INTENT_PHRASES: dict[str, list[str]] = {
     ],
     "office_hours": [
         "office hours", "office opening hours", "when is the office open",
+        "clirdec office hours", "clirdec hours", "what are your office hours",
         "oras ng opisina", "anong oras bukas ang opisina",
+        "anong oras bukas ang clirdec", "kailan bukas ang office",
     ],
     "expertise": [
         "faculty expertise", "find faculty", "appropriate professor", "research adviser",
@@ -97,13 +99,13 @@ for intent_name, phrases in INTENT_PHRASES.items():
 
 INTENT_KEYWORDS: dict[str, set[str]] = {
     "booking": {"book", "booking", "schedule", "appointment", "consultation", "reserve"},
-    "availability": {"available", "availability", "open", "slot", "kailan"},
-    "office_hours": {"office", "hours", "opisina"},
+    "availability": {"available", "availability", "faculty", "slot", "oras", "kailan"},
     "expertise": {"expert", "expertise", "faculty", "professor", "adviser", "topic", "sinong", "sino"},
     "location": {"where", "location", "room", "online", "link", "platform", "saan"},
     "cancel": {"cancel", "reschedule", "change", "move", "ilipat", "palitan"},
     "status": {"status", "confirmed", "approved", "pending", "declined"},
     "services": {"service", "services", "help", "clirdec", "portal", "offer", "serbisyo"},
+    "office_hours": {"clirdec", "office", "hours", "open", "closed", "bukas", "opisina"},
 }
 
 SENSITIVE_TERMS = {
@@ -294,9 +296,8 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
     if is_sensitive(message):
         return ChatResponse(
             answer=(
-                "I can’t handle confidential records, emergencies, complaints, academic decisions, "
-                "or account credentials. Please contact the appropriate CLSU or CLIRDEC office through "
-                "an official channel."
+                "I can't handle confidential records, emergencies, complaints, academic decisions, "
+                f"or account credentials. Please use {SUPPORT_CONTACT}."
             ),
             intent="sensitive_referral",
             confidence=0.99,
@@ -341,9 +342,9 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
 
     return ChatResponse(
         answer=(
-            "I’m not confident that I have an approved answer for that question. Please rephrase it "
+            "I'm not confident that I have an approved answer for that question. Please rephrase it "
             "as a booking, availability, faculty expertise, location, cancellation, status, or service question. "
-            "For anything else, contact authorized CLIRDEC staff."
+            f"For anything else, use {SUPPORT_CONTACT}."
         ),
         intent="fallback",
         confidence=max(0.15, intent_confidence),
