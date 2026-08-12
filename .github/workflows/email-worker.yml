@@ -1,12 +1,12 @@
-name: Email notification worker
+name: Email notification worker (manual backup)
 
+# Cloudflare Worker Cron is the production five-minute scheduler. Keep this
+# workflow manual-only so GitHub can be used during a Cloudflare incident.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 concurrency:
-  group: facultyconnect-email-worker
+  group: facultyconnect-email-worker-manual-backup
   cancel-in-progress: false
 
 jobs:
@@ -32,4 +32,4 @@ jobs:
             --request POST "$FUNCTION_URL" \
             --header "Authorization: Bearer $CRON_SECRET" \
             --header "Content-Type: application/json" \
-            --data '{}'
+            --data '{"scheduler":"github-manual-backup"}'
