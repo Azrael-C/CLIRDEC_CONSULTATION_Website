@@ -29,6 +29,10 @@ if (schema.includes('create policy "read profiles"')) {
 assertIncludes(worker, '"queue_due_appointment_reminders"', "Reminder queue invocation");
 assertIncludes(worker, '"claim_email_notifications"', "Email claim invocation");
 assertIncludes(worker, "Idempotency-Key", "Idempotent email delivery");
+assertIncludes(worker, "appointmentDetails", "Appointment detail email content");
+assertIncludes(worker, "CLSU FacultyConnect", "Branded email template");
+assertIncludes(worker, 'timeZone: "Asia/Manila"', "Philippine email date formatting");
+assertIncludes(worker, "For your privacy", "Email privacy guidance");
 assertIncludes(functionConfig, "verify_jwt = false", "Custom-secret worker configuration");
 for (const sql of [schema, reviewMigration]) {
   assertIncludes(sql, "consultation_reviews", "Consultation review storage");

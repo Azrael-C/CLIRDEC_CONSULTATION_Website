@@ -36,6 +36,7 @@ import {
   formatCalendarDay,
   formatManilaDateTime,
   formatTime,
+  firstBookableStart,
   initialCalendarWeek,
   isUpcomingSlot,
   manilaDateKey,
@@ -56,6 +57,10 @@ type User = {
   email: string;
   role: Role;
   department?: string;
+  student_number?: string;
+  college?: string;
+  program?: string;
+  year_level?: string;
   email_notifications: boolean;
 };
 type Slot = {
@@ -212,7 +217,9 @@ function App() {
     const loadUser = async (id: string, email: string) => {
       const { data: p, error } = await supabase
         .from("profiles")
-        .select("full_name,role,department,email_notifications")
+        .select(
+          "full_name,role,department,student_number,college,program,year_level,email_notifications",
+        )
         .eq("id", id)
         .single();
       if (!active) return;
@@ -229,6 +236,10 @@ function App() {
         name: p.full_name,
         role: p.role as Role,
         department: p.department || "",
+        student_number: p.student_number || "",
+        college: p.college || "",
+        program: p.program || "",
+        year_level: p.year_level || "",
         email_notifications: p.email_notifications ?? true,
       });
     };
@@ -473,7 +484,9 @@ function App() {
   }
   async function saveStudentProfile(values: {
     fullName: string;
-    department: string;
+    college: string;
+    program: string;
+    yearLevel: string;
     emailNotifications: boolean;
   }) {
     if (!user) return false;
@@ -483,7 +496,12 @@ function App() {
         .from("profiles")
         .update({
           full_name: values.fullName,
-          department: values.department || null,
+          college: values.college || null,
+          program: values.program || null,
+          year_level: values.yearLevel || null,
+          department:
+            [values.program, values.yearLevel].filter(Boolean).join(" · ") ||
+            null,
           email_notifications: values.emailNotifications,
         })
         .eq("id", user.id);
@@ -495,7 +513,10 @@ function App() {
     setUser({
       ...user,
       name: values.fullName,
-      department: values.department,
+      college: values.college,
+      program: values.program,
+      year_level: values.yearLevel,
+      department: [values.program, values.yearLevel].filter(Boolean).join(" · "),
       email_notifications: values.emailNotifications,
     });
     setNotice("Profile has been updated.");
@@ -2087,7 +2108,9 @@ function StudentProfile({
   user: User;
   save: (values: {
     fullName: string;
-    department: string;
+    college: string;
+    program: string;
+    yearLevel: string;
     emailNotifications: boolean;
   }) => Promise<boolean>;
 }) {
@@ -2104,7 +2127,9 @@ function StudentProfile({
     setSaving(true);
     const saved = await save({
       fullName: String(form.get("full_name") || "").trim(),
-      department: String(form.get("department") || "").trim(),
+      college: String(form.get("college") || "").trim(),
+      program: String(form.get("program") || "").trim(),
+      yearLevel: String(form.get("year_level") || "").trim(),
       emailNotifications: form.get("email_notifications") === "on",
     });
     setSaving(false);
@@ -2114,33 +2139,69 @@ function StudentProfile({
     <>
       <section className="page-head compact student-profile-heading">
         <div>
+          <p className="eyebrow">STUDENT ACCOUNT</p>
           <h1>My profile</h1>
+          <p>
+            Keep your academic details accurate and choose how you receive
+            appointment updates.
+          </p>
         </div>
       </section>
-      <section className="student-profile-layout">
-        <article className="student-identity-card">
-          <span className="avatar student-avatar">{initials}</span>
-          <div>
-            <h2>{user.name}</h2>
-            <p>{user.email}</p>
+      <section className="student-profile-layout profile-v2-layout">
+        <article className="student-identity-card profile-identity-v2">
+          <div className="profile-identity-accent" aria-hidden="true" />
+          <div className="profile-identity-main">
+            <span className="avatar student-avatar">{initials}</span>
+            <div>
+              <span className="profile-status-pill">Active student</span>
+              <h2>{user.name}</h2>
+              <p>{user.email}</p>
+            </div>
+          </div>
+          <div className="profile-identity-meta">
+            <span>
+              <small>Student number</small>
+              <b>{user.student_number || "Not provided"}</b>
+            </span>
+            <span>
+              <small>Account access</small>
+              <b>FacultyConnect student</b>
+            </span>
           </div>
         </article>
-        <article className="student-details-card">
-          <button
-            className="edit-profile-button"
-            onClick={() => setEditing(true)}
-          >
-            Edit profile
-          </button>
-          <Info l="Full name" v={user.name} />
-          <Info l="Email" v={user.email} />
-          <Info l="Course and year" v={user.department || "Not provided"} />
-          <Info
-            l="Email updates"
-            v={user.email_notifications ? "Enabled" : "Disabled"}
-          />
-          <Info l="Account type" v="Student" />
-          <Info l="Profile status" v="Active FacultyConnect account" />
+        <article className="student-details-card profile-details-v2">
+          <header className="profile-card-header">
+            <div>
+              <span>Academic information</span>
+              <h2>Profile details</h2>
+            </div>
+            <button
+              type="button"
+              className="edit-profile-button"
+              onClick={() => setEditing(true)}
+            >
+              Edit profile
+            </button>
+          </header>
+          <div className="profile-information-grid">
+            <Info l="College or unit" v={user.college || "Not provided"} />
+            <Info l="Degree program" v={user.program || "Not provided"} />
+            <Info l="Year level" v={user.year_level || "Not provided"} />
+            <Info l="Registered email" v={user.email} />
+          </div>
+          <div className="profile-preference-card">
+            <div className="profile-preference-icon" aria-hidden="true">✉</div>
+            <div>
+              <span>Appointment email notifications</span>
+              <p>
+                Receive request receipts, faculty decisions, schedule changes,
+                and reminders at your registered email.
+              </p>
+            </div>
+            <b className={user.email_notifications ? "enabled" : "disabled"}>
+              {user.email_notifications ? "Enabled" : "Disabled"}
+            </b>
+          </div>
         </article>
       </section>
       {editing ? (
@@ -2171,21 +2232,53 @@ function StudentProfile({
               Email
               <input value={user.email} disabled />
             </label>
-            <label className="topic">
-              Course and year
-              <input
-                name="department"
-                defaultValue={user.department || ""}
-                placeholder="For example, BSIT 3-5"
-              />
-            </label>
+            <div className="profile-edit-grid">
+              <label className="topic">
+                College or unit
+                <input
+                  name="college"
+                  defaultValue={user.college || ""}
+                  placeholder="College of Engineering"
+                  required
+                />
+              </label>
+              <label className="topic">
+                Degree program
+                <input
+                  name="program"
+                  defaultValue={user.program || ""}
+                  placeholder="BS Information Technology"
+                  required
+                />
+              </label>
+              <label className="topic">
+                Year level
+                <select
+                  name="year_level"
+                  defaultValue={user.year_level || ""}
+                  required
+                >
+                  <option value="" disabled>Select year level</option>
+                  <option>1st year</option>
+                  <option>2nd year</option>
+                  <option>3rd year</option>
+                  <option>4th year</option>
+                  <option>5th year or higher</option>
+                  <option>Graduate student</option>
+                </select>
+              </label>
+              <label className="topic">
+                Student number
+                <input value={user.student_number || "Not provided"} disabled />
+              </label>
+            </div>
             <label className="check-row">
               <input
                 type="checkbox"
                 name="email_notifications"
                 defaultChecked={user.email_notifications}
               />
-              <span>Send optional appointment emails</span>
+              <span>Send appointment status and reminder emails</span>
             </label>
             <div className="modal-actions">
               <button
@@ -2715,6 +2808,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   const [calendarWeek, setCalendarWeek] = useState(() => initialCalendarWeek());
   const [selectedStart, setSelectedStart] = useState<Date | null>(null);
   const [duration, setDuration] = useState(30);
+  const [publishing, setPublishing] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const refresh = async () => {
     if (!configured) return;
     setLoading(true);
@@ -2783,7 +2878,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   };
   const publish = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    const formElement = e.currentTarget;
+    const form = new FormData(formElement);
     if (!selectedStart) {
       setMessage("Select an available weekday and time from the calendar.");
       return;
@@ -2798,6 +2894,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       setMessage(validation);
       return;
     }
+    setMessage("");
+    setPublishing(true);
     try {
       await createFacultyAvailability({
         facultyId: user.id,
@@ -2808,7 +2906,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           | "in_person"
           | "online",
       });
-      e.currentTarget.reset();
+      formElement.reset();
       setSelectedStart(null);
       setDuration(30);
       setMessage("Availability published for students.");
@@ -2819,6 +2917,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           ? cause.message
           : "Availability could not be published.",
       );
+    } finally {
+      setPublishing(false);
     }
   };
   const removeSlot = async (id: string) => {
@@ -2837,6 +2937,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   const saveProfile = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+    setMessage("");
+    setSavingProfile(true);
     try {
       await updateFacultyProfile({
         userId: user.id,
@@ -2851,6 +2953,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           ? cause.message
           : "The faculty profile could not be updated.",
       );
+    } finally {
+      setSavingProfile(false);
     }
   };
   if (loading)
@@ -2956,16 +3060,54 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
             facultySlots,
           )
         : "";
+    const openUpcoming = upcomingSlots.filter((slot) => slot.is_open);
+    const reservedUpcoming = upcomingSlots.filter((slot) => !slot.is_open);
+    const nextBookable = firstBookableStart();
     return (
       <>
         {feedback}
         <Head
           label="FACULTY PORTAL"
           title="Manage availability"
-          copy="Choose weekday consultation times from the calendar. Booked and overlapping slots close automatically."
+          copy="Publish clear consultation hours for students. Times use Philippine Standard Time and close automatically when requested."
         />
-        <div className="availability-layout">
+        <section className="availability-summary-band" aria-label="Schedule summary">
+          <div>
+            <span>Open for students</span>
+            <b>{openUpcoming.length}</b>
+            <small>Upcoming time slots</small>
+          </div>
+          <div>
+            <span>Reserved</span>
+            <b>{reservedUpcoming.length}</b>
+            <small>Awaiting or holding requests</small>
+          </div>
+          <div>
+            <span>Earliest publishable time</span>
+            <b className="availability-summary-date">
+              {formatManilaDateTime(nextBookable, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              })}
+            </b>
+            <small>
+              {formatManilaDateTime(nextBookable, {
+                hour: "numeric",
+                minute: "2-digit",
+              })} · 24-hour notice
+            </small>
+          </div>
+        </section>
+        <div className="availability-layout availability-layout-v2">
           <Work title="Choose a weekday and time">
+            <div className="availability-instruction">
+              <span>1</span>
+              <p>
+                Select one available cell. Gray times are outside the allowed
+                window or already published.
+              </p>
+            </div>
             <WeekdayAvailabilityCalendar
               weekStart={calendarWeek}
               setWeekStart={setCalendarWeek}
@@ -2977,11 +3119,11 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           </Work>
           <div className="availability-side">
             <Work title="Publish selected time">
-              <form className="knowledge-form" onSubmit={publish}>
+              <form className="knowledge-form publish-availability-form" onSubmit={publish}>
                 <div
                   className={`selected-slot-summary${selectionError ? " invalid" : ""}`}
                 >
-                  <span>Selected consultation</span>
+                  <span>2 · Confirm the selected consultation</span>
                   {selectedStart && selectedEnd ? (
                     <>
                       <b>
@@ -3005,12 +3147,12 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                       </p>
                     </>
                   ) : (
-                    <p>Choose an available cell in the calendar.</p>
+                    <p>No time selected yet. Choose a white calendar cell.</p>
                   )}
                   {selectionError && <small>{selectionError}</small>}
                 </div>
                 <label>
-                  Duration
+                  <span>3 · Duration</span>
                   <select
                     name="duration"
                     value={duration}
@@ -3022,14 +3164,14 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                   </select>
                 </label>
                 <label>
-                  Mode
+                  <span>4 · Consultation mode</span>
                   <select name="consultation_mode" defaultValue="in_person">
                     <option value="in_person">In person</option>
                     <option value="online">Online</option>
                   </select>
                 </label>
                 <label>
-                  Location or meeting platform
+                  <span>5 · Location or meeting platform</span>
                   <input
                     name="location"
                     required
@@ -3038,67 +3180,93 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                 </label>
                 <button
                   className="primary"
-                  disabled={!selectedStart || Boolean(selectionError)}
+                  type="submit"
+                  disabled={
+                    publishing || !selectedStart || Boolean(selectionError)
+                  }
                 >
-                  Publish availability
+                  {publishing ? "Publishing…" : "Publish availability"}
                 </button>
+                <small className="publish-help-text">
+                  Students will see this time immediately after it is published.
+                </small>
               </form>
-            </Work>
-            <Work title="Published schedule">
-              <div className="published-slots">
-                {upcomingSlots.map((slot) => (
-                  <article className="published-slot" key={slot.id}>
-                    <div className="published-slot-copy">
-                      <div className="published-slot-head">
-                        <span
-                          className={
-                            slot.is_open
-                              ? "slot-state open"
-                              : "slot-state requested"
-                          }
-                        >
-                          {slot.is_open ? "Open" : "Requested"}
-                        </span>
-                        <b>
-                          {formatManilaDateTime(new Date(slot.starts_at), {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </b>
-                      </div>
-                      <small>
-                        {slot.location || "Location provided after approval"}
-                      </small>
-                    </div>
-                    {slot.is_open ? (
-                      <button
-                        className="published-slot-remove"
-                        onClick={() => void removeSlot(slot.id)}
-                      >
-                        Remove
-                      </button>
-                    ) : (
-                      <span
-                        className="published-slot-lock"
-                        aria-label="This time has a consultation request"
-                      >
-                        Reserved
-                      </span>
-                    )}
-                  </article>
-                ))}
-                {!upcomingSlots.length && (
-                  <div className="empty-card">
-                    No upcoming availability has been published.
-                  </div>
-                )}
-              </div>
             </Work>
           </div>
         </div>
+        <Work title="Published schedule">
+          <div className="published-schedule-header">
+            <p>
+              Review every upcoming time in one place. Open slots may be removed;
+              reserved slots remain locked to protect the student request.
+            </p>
+            <span>{upcomingSlots.length} upcoming</span>
+          </div>
+          <div className="published-slots published-slots-grid">
+            {upcomingSlots.map((slot) => (
+              <article className="published-slot" key={slot.id}>
+                <div className="published-slot-date" aria-hidden="true">
+                  <span>
+                    {formatManilaDateTime(new Date(slot.starts_at), {
+                      month: "short",
+                    })}
+                  </span>
+                  <b>
+                    {formatManilaDateTime(new Date(slot.starts_at), {
+                      day: "numeric",
+                    })}
+                  </b>
+                </div>
+                <div className="published-slot-copy">
+                  <div className="published-slot-head">
+                    <span
+                      className={
+                        slot.is_open
+                          ? "slot-state open"
+                          : "slot-state requested"
+                      }
+                    >
+                      {slot.is_open ? "Open" : "Reserved"}
+                    </span>
+                    <b>
+                      {formatManilaDateTime(new Date(slot.starts_at), {
+                        weekday: "long",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </b>
+                  </div>
+                  <small>
+                    {slot.consultation_mode === "online" ? "Online" : "In person"}
+                    {" · "}
+                    {slot.location || "Location provided after approval"}
+                  </small>
+                </div>
+                {slot.is_open ? (
+                  <button
+                    type="button"
+                    className="published-slot-remove"
+                    onClick={() => void removeSlot(slot.id)}
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <span
+                    className="published-slot-lock"
+                    aria-label="This time has a consultation request"
+                  >
+                    Locked
+                  </span>
+                )}
+              </article>
+            ))}
+            {!upcomingSlots.length && (
+              <div className="empty-card">
+                No upcoming availability has been published.
+              </div>
+            )}
+          </div>
+        </Work>
       </>
     );
   }
@@ -3108,10 +3276,11 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       <Head
         label="FACULTY PORTAL"
         title="Faculty profile"
-        copy="Keep your verified expertise current so students can find the appropriate faculty member."
+        copy="Present your verified expertise clearly so students can choose the right consultation path."
       />
-      <section className="profile-layout">
-        <article className="profile-summary">
+      <section className="profile-layout faculty-profile-v2">
+        <article className="profile-summary faculty-profile-identity">
+          <div className="faculty-profile-pattern" aria-hidden="true" />
           <span className="avatar profile-avatar coral">
             {user.name
               .split(" ")
@@ -3119,15 +3288,24 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
               .join("")
               .slice(0, 2)}
           </span>
+          <span className="faculty-verified-badge">Verified faculty</span>
           <h2>{user.name}</h2>
-          <p>
-            {profile.active
-              ? "Active faculty profile"
-              : "Profile hidden from students"}
-          </p>
+          <p>{user.department || "CLSU faculty member"}</p>
           <small>{user.email}</small>
+          <div className="faculty-profile-state">
+            <i className={profile.active ? "active" : "inactive"} />
+            {profile.active
+              ? "Visible in student search"
+              : "Hidden from student search"}
+          </div>
         </article>
-        <article className="profile-details editable-profile">
+        <article className="profile-details editable-profile faculty-profile-editor">
+          <header className="profile-card-header">
+            <div>
+              <span>Public consultation profile</span>
+              <h2>Expertise and introduction</h2>
+            </div>
+          </header>
           <form className="knowledge-form" onSubmit={saveProfile}>
             <label>
               Expertise categories
@@ -3135,28 +3313,47 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                 name="expertise"
                 defaultValue={profile.expertise.join(", ")}
                 placeholder="Software Engineering, Web Development"
+                required
               />
+              <small>Separate categories with commas. Add only verified areas.</small>
             </label>
+            <div className="profile-expertise-preview" aria-label="Current expertise">
+              {profile.expertise.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+              {!profile.expertise.length && <small>No expertise added yet.</small>}
+            </div>
             <label>
-              Faculty bio
+              Faculty introduction
               <textarea
                 name="bio"
                 defaultValue={profile.bio}
-                placeholder="Brief background and consultation areas"
+                placeholder="Briefly describe your background and the consultation concerns you can support."
+                rows={6}
               />
+              <small>Students see this before requesting a consultation.</small>
             </label>
-            <button className="primary">Save faculty profile</button>
+            <button className="primary" disabled={savingProfile}>
+              {savingProfile ? "Saving profile…" : "Save faculty profile"}
+            </button>
           </form>
-          <div>
-            <Info
-              l="Availability policy"
-              v="Only times you publish are shown to students."
-            />
-            <Info
-              l="Privacy"
-              v="Student concerns are visible only to participants and authorized administrators."
-            />
-          </div>
+          <aside className="faculty-profile-guidance">
+            <h3>Profile guidance</h3>
+            <p>
+              <b>Availability</b>
+              Only weekday times you publish are shown to students.
+            </p>
+            <p>
+              <b>Privacy</b>
+              Consultation concerns remain limited to participants and authorized
+              administrators.
+            </p>
+            <p>
+              <b>Accuracy</b>
+              Keep expertise labels concise and use the terminology approved by
+              your unit.
+            </p>
+          </aside>
         </article>
       </section>
     </>
