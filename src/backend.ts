@@ -23,6 +23,7 @@ export type FacultyAvailability = {
 export type PortalSlot = FacultyAvailability & {
   faculty_name: string;
   expertise: string[];
+  booking_open: boolean;
 };
 
 export type PortalAppointment = {
@@ -148,9 +149,7 @@ function initials(name: string) {
 export { initials };
 
 export async function loadStudentPortal(studentId: string) {
-  const earliestBookable = new Date(
-    Date.now() + MINIMUM_NOTICE_MS,
-  ).toISOString();
+  const now = new Date().toISOString();
   const [
     { data: open, error: slotError },
     { data: appointmentRows, error: appointmentError },
@@ -162,7 +161,7 @@ export async function loadStudentPortal(studentId: string) {
         "id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open",
       )
       .eq("is_open", true)
-      .gte("starts_at", earliestBookable)
+      .gt("starts_at", now)
       .order("starts_at"),
     supabase
       .from("appointments")
@@ -232,6 +231,8 @@ export async function loadStudentPortal(studentId: string) {
     .filter((slot) => activeFaculty.has(slot.faculty_id))
     .map((slot) => ({
       ...slot,
+      booking_open:
+        new Date(slot.starts_at).getTime() >= Date.now() + MINIMUM_NOTICE_MS,
       location: slot.location || "Location provided after approval",
       faculty_name: names.get(slot.faculty_id) || "Faculty member",
       expertise: expertise.get(slot.faculty_id) || [],
