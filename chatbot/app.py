@@ -34,6 +34,12 @@ def _origins() -> list[str]:
     return [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
 
 
+SUPPORT_CONTACT = os.getenv(
+    "OFFICIAL_SUPPORT_CONTACT",
+    "the official CLIRDEC or MISO contact channel",
+)
+
+
 app = FastAPI(
     title="CLSU FacultyConnect NLP Assistant",
     description="Source-backed consultation guidance using FastAPI and spaCy.",
@@ -57,8 +63,12 @@ INTENT_PHRASES: dict[str, list[str]] = {
         "reserve a slot", "mag book", "magpa schedule", "kumuha ng appointment",
     ],
     "availability": [
-        "available time", "faculty availability", "office hours", "open slot",
+        "available time", "faculty availability", "open slot",
         "anong oras", "kailan available", "available ba",
+    ],
+    "office_hours": [
+        "office hours", "office opening hours", "when is the office open",
+        "oras ng opisina", "anong oras bukas ang opisina",
     ],
     "expertise": [
         "faculty expertise", "find faculty", "appropriate professor", "research adviser",
@@ -87,7 +97,8 @@ for intent_name, phrases in INTENT_PHRASES.items():
 
 INTENT_KEYWORDS: dict[str, set[str]] = {
     "booking": {"book", "booking", "schedule", "appointment", "consultation", "reserve"},
-    "availability": {"available", "availability", "hours", "open", "slot", "oras", "kailan"},
+    "availability": {"available", "availability", "open", "slot", "kailan"},
+    "office_hours": {"office", "hours", "opisina"},
     "expertise": {"expert", "expertise", "faculty", "professor", "adviser", "topic", "sinong", "sino"},
     "location": {"where", "location", "room", "online", "link", "platform", "saan"},
     "cancel": {"cancel", "reschedule", "change", "move", "ilipat", "palitan"},
@@ -303,6 +314,19 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
             confidence=min(0.98, 0.62 + faq_score * 0.36),
             escalation=False,
             source=matched_item.source_reference,
+        )
+
+    if intent == "office_hours":
+        return ChatResponse(
+            answer=(
+                "A current Product Owner-approved CLIRDEC office-hours entry is not configured. "
+                f"Please verify the schedule through {SUPPORT_CONTACT}."
+            ),
+            intent="office_hours",
+            confidence=intent_confidence,
+            escalation=True,
+            source="Official office-hours source required",
+            suggestions=["How do I request a consultation?", "View faculty availability"],
         )
 
     if intent in DEFAULT_ANSWERS and intent_confidence >= 0.55:

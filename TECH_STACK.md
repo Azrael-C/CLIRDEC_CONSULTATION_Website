@@ -13,8 +13,8 @@
 | Authorization | PostgreSQL Row-Level Security | Separate student, faculty, and administrator permissions | Included with Supabase |
 | Server functions | Supabase Edge Functions | Protected email processing and administrative operations | Free tier for the pilot |
 | NLP API | Python + FastAPI + spaCy | Controlled FAQ intent recognition and safe fallback | Free / open source |
-| NLP hosting | Render web service | Hosts the FastAPI/spaCy service | Free tier; cold starts are acceptable for development but must be tested against the three-second pilot target |
-| Transactional email | Resend | Sends receipts, decisions, changes, cancellations, and reminders to Gmail/CLSU email | Free tier: 3,000 emails/month and 100/day |
+| NLP hosting | Vercel Services | Hosts FastAPI/spaCy beside the frontend under the same production domain | Included in the pilot Vercel project; function size and response time remain release checks |
+| Transactional email | Resend | Sends receipts, decisions, changes, cancellations, and reminders to Gmail/CLSU email | Provider limits must be checked before pilot launch |
 | Frontend hosting | Vercel | HTTPS website deployment and GitHub-based updates | Free Hobby tier for an academic pilot |
 | Source control | GitHub | Team collaboration, branches, reviews, and deployment integration | Free |
 | Local development | XAMPP + Node.js + Python | XAMPP may continue serving local assets/tools; Vite runs the React development server | Free |
@@ -28,7 +28,7 @@ The React site is a static browser application, while spaCy requires a Python se
 - FastAPI serves the NLP chatbot on `http://localhost:8000`.
 - Supabase supplies the shared cloud database and authentication.
 
-For deployment, Vercel serves the React build while Render serves FastAPI/spaCy. Supabase and Resend remain managed services.
+For deployment, Vercel Services deploys the React build and FastAPI/spaCy service in one project. Supabase and Resend remain managed services.
 
 ## Required for the MVP
 
@@ -75,7 +75,7 @@ For deployment, Vercel serves the React build while Render serves FastAPI/spaCy.
 - Visual Studio Code
 - Git and GitHub
 - Node.js LTS with npm or pnpm
-- Python 3.11 or 3.12 with a virtual environment
+- Python 3.13 with a virtual environment to match CI and production
 - Supabase CLI for schema migrations and Edge Function deployment
 - Postman, Bruno, or FastAPI `/docs` for API testing
 - Browser responsive-mode testing for phone and desktop layouts
@@ -100,14 +100,16 @@ The acceptance targets remain provisional until Product Owner confirmation: at l
 ```text
 Student / Faculty / MISO browser
               |
-       Vercel React site
-          /          \
-Supabase Auth/DB    Render FastAPI + spaCy
-          |
+       Vercel project
+        /           \
+React + Vite    FastAPI + spaCy
+        \           /
+         Supabase Auth/DB
+                |
 Supabase email outbox + Edge Function
-          |
-        Resend
-          |
+                |
+              Resend
+                |
 Registered Gmail / CLSU email
 ```
 

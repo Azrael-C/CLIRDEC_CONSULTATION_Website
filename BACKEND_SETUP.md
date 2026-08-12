@@ -6,8 +6,9 @@ Use a dedicated Supabase development or pilot project. Do not seed test users in
 
 1. Create a Supabase project.
 2. Open SQL Editor.
-3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, apply the versioned SQL files that have not yet run, ending with `supabase/notification_refresh_migration.sql` before deploying the notification-refresh frontend.
+3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, apply the versioned SQL files that have not yet run, ending with `supabase/release_hardening_migration.sql`.
 4. Confirm that Row-Level Security is enabled on every public table.
+5. Before a new student registers, approve the exact email in **MISO Administration → Manage users**. Approvals are single-use. Existing accounts are unaffected; faculty and administrator roles are assigned only by an administrator after registration.
 
 ## 2. Configure the frontend
 
@@ -80,14 +81,23 @@ $headers=@{Authorization="Bearer $env:EMAIL_CRON_SECRET"}
 Invoke-RestMethod -Method Post -Headers $headers -Uri "https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-email-notifications"
 ```
 
-Expected response:
+Expected response (counts depend on queue contents):
 
 ```json
-{"processed":2,"sent":2,"failed":0}
+{"processed":2,"sent":2,"failed":0,"remindersQueued":0,"reminderError":null}
 ```
 
 Check `email_notifications` after the request. Successful rows must be `sent`; failures must contain `last_error` and retry later. The worker uses an atomic claim operation and a deterministic Resend idempotency key to limit duplicate sends.
 
 ## 6. Schedule processing
 
-After manual testing succeeds, schedule an authenticated POST every five minutes using Supabase Cron or another approved scheduler. Store the cron secret in the scheduler; never place it in browser code. Separately schedule `select public.queue_due_appointment_reminders();` every 15 minutes so reminders enter the email queue.
+After manual testing succeeds, add these GitHub repository secrets:
+
+```text
+SUPABASE_EMAIL_FUNCTION_URL
+EMAIL_CRON_SECRET
+```
+
+The `Email notification worker` workflow calls the protected function every five minutes. Each invocation queues due reminders and drains/retries the email outbox, so a second reminder schedule is not required. Run the workflow manually once and confirm queued rows become `sent` before enabling pilot email expectations.
+
+GitHub schedules can be delayed during high load. If the Product Owner requires exact-time delivery, move the same authenticated request to Supabase Cron while keeping the function and secret unchanged.

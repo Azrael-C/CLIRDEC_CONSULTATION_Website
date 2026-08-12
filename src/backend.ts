@@ -2,7 +2,12 @@ import { supabase } from "./supabase";
 import { availabilityValidationMessage, MINIMUM_NOTICE_MS } from "./scheduling";
 
 export type Role = "student" | "faculty" | "admin";
-export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "declined";
+export type AppointmentStatus =
+  | "pending"
+  | "confirmed"
+  | "completed"
+  | "cancelled"
+  | "declined";
 export type ConsultationMode = "in_person" | "online";
 
 export type FacultyAvailability = {
@@ -54,6 +59,12 @@ export type AdminUser = {
   department: string;
 };
 
+export type RegistrationEmail = {
+  email: string;
+  active: boolean;
+  created_at: string;
+};
+
 export type FaqStatus = "draft" | "review" | "approved" | "archived";
 export type FaqEntry = {
   id: string;
@@ -72,6 +83,7 @@ export type AdminPortal = {
   users: AdminUser[];
   appointments: PortalAppointment[];
   faqs: FaqEntry[];
+  registrationEmails: RegistrationEmail[];
 };
 
 type DbError = { message?: string; code?: string; details?: string } | null;
@@ -84,7 +96,8 @@ function friendlyError(error: DbError, fallback: string) {
   if (/overlap|no_overlapping_faculty_slots/i.test(raw)) {
     return "That time overlaps an availability entry already on the faculty schedule.";
   }
-  if (/24 hours/i.test(raw)) return "Choose a consultation time at least 24 hours from now.";
+  if (/24 hours/i.test(raw))
+    return "Choose a consultation time at least 24 hours from now.";
   if (/row-level security|permission denied/i.test(raw)) {
     return "Your account is not allowed to perform that action.";
   }
@@ -102,48 +115,81 @@ function relation<T>(value: T | T[] | null | undefined): T | undefined {
 }
 
 function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 export { initials };
 
 export async function loadStudentPortal(studentId: string) {
-  const earliestBookable = new Date(Date.now() + MINIMUM_NOTICE_MS).toISOString();
-  const [{ data: open, error: slotError }, { data: appointmentRows, error: appointmentError }] =
-    await Promise.all([
-      supabase
-        .from("availability")
-        .select("id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open")
-        .eq("is_open", true)
-        .gte("starts_at", earliestBookable)
-        .order("starts_at"),
-      supabase
-        .from("appointments")
-        .select("id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)")
-        .eq("student_id", studentId)
-        .order("created_at", { ascending: false }),
-    ]);
-  if (slotError) throw new Error(friendlyError(slotError, "Faculty availability could not be loaded."));
-  if (appointmentError) throw new Error(friendlyError(appointmentError, "Your requests could not be loaded."));
+  const earliestBookable = new Date(
+    Date.now() + MINIMUM_NOTICE_MS,
+  ).toISOString();
+  const [
+    { data: open, error: slotError },
+    { data: appointmentRows, error: appointmentError },
+  ] = await Promise.all([
+    supabase
+      .from("availability")
+      .select(
+        "id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open",
+      )
+      .eq("is_open", true)
+      .gte("starts_at", earliestBookable)
+      .order("starts_at"),
+    supabase
+      .from("appointments")
+      .select(
+        "id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)",
+      )
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false }),
+  ]);
+  if (slotError)
+    throw new Error(
+      friendlyError(slotError, "Faculty availability could not be loaded."),
+    );
+  if (appointmentError)
+    throw new Error(
+      friendlyError(appointmentError, "Your requests could not be loaded."),
+    );
 
-  const facultyIds = [...new Set([
-    ...(open || []).map((slot) => slot.faculty_id),
-    ...(appointmentRows || []).map((row) => relation<any>(row.availability)?.faculty_id),
-  ].filter(Boolean))] as string[];
+  const facultyIds = [
+    ...new Set(
+      [
+        ...(open || []).map((slot) => slot.faculty_id),
+        ...(appointmentRows || []).map(
+          (row) => relation<any>(row.availability)?.faculty_id,
+        ),
+      ].filter(Boolean),
+    ),
+  ] as string[];
 
-  const emptyId = "00000000-0000-0000-0000-000000000000";
-  const [{ data: profiles, error: profileError }, { data: faculty, error: facultyError }] =
-    await Promise.all([
-      supabase.from("profiles").select("id,full_name").in("id", facultyIds.length ? facultyIds : [emptyId]),
-      supabase.from("faculty_profiles").select("user_id,expertise,active").in("user_id", facultyIds.length ? facultyIds : [emptyId]),
-    ]);
-  if (profileError || facultyError) {
-    throw new Error(friendlyError(profileError || facultyError, "Faculty profiles could not be loaded."));
+  const { data: facultyDirectory, error: directoryError } = facultyIds.length
+    ? await supabase.rpc("faculty_directory", { target_ids: facultyIds })
+    : { data: [], error: null };
+  if (directoryError) {
+    throw new Error(
+      friendlyError(directoryError, "Faculty profiles could not be loaded."),
+    );
   }
-
-  const names = new Map((profiles || []).map((profile) => [profile.id, profile.full_name]));
-  const expertise = new Map((faculty || []).map((profile) => [profile.user_id, profile.expertise || []]));
-  const activeFaculty = new Set((faculty || []).filter((profile) => profile.active).map((profile) => profile.user_id));
+  const directoryRows = (facultyDirectory || []) as Array<{
+    id: string;
+    full_name: string;
+    expertise: string[];
+  }>;
+  const names = new Map(
+    directoryRows.map((profile) => [profile.id, profile.full_name]),
+  );
+  const expertise = new Map(
+    directoryRows.map((profile) => [profile.id, profile.expertise || []]),
+  );
+  const activeFaculty = new Set(directoryRows.map((profile) => profile.id));
 
   const slots: PortalSlot[] = (open || [])
     .filter((slot) => activeFaculty.has(slot.faculty_id))
@@ -154,27 +200,31 @@ export async function loadStudentPortal(studentId: string) {
       expertise: expertise.get(slot.faculty_id) || [],
     }));
 
-  const appointments: PortalAppointment[] = (appointmentRows || []).flatMap((row) => {
-    const slot = relation<any>(row.availability);
-    if (!slot) return [];
-    return [{
-      id: row.id,
-      availability_id: row.availability_id,
-      student_id: row.student_id,
-      student_name: "",
-      topic: row.topic,
-      notes: row.notes || "",
-      status: row.status as AppointmentStatus,
-      updated_at: row.updated_at || row.created_at,
-      starts_at: slot.starts_at,
-      ends_at: slot.ends_at,
-      location: slot.location || "Location provided after approval",
-      consultation_mode: slot.consultation_mode as ConsultationMode,
-      faculty_id: slot.faculty_id,
-      faculty_name: names.get(slot.faculty_id) || "Faculty member",
-      expertise: expertise.get(slot.faculty_id) || [],
-    }];
-  });
+  const appointments: PortalAppointment[] = (appointmentRows || []).flatMap(
+    (row) => {
+      const slot = relation<any>(row.availability);
+      if (!slot) return [];
+      return [
+        {
+          id: row.id,
+          availability_id: row.availability_id,
+          student_id: row.student_id,
+          student_name: "",
+          topic: row.topic,
+          notes: row.notes || "",
+          status: row.status as AppointmentStatus,
+          updated_at: row.updated_at || row.created_at,
+          starts_at: slot.starts_at,
+          ends_at: slot.ends_at,
+          location: slot.location || "Location provided after approval",
+          consultation_mode: slot.consultation_mode as ConsultationMode,
+          faculty_id: slot.faculty_id,
+          faculty_name: names.get(slot.faculty_id) || "Faculty member",
+          expertise: expertise.get(slot.faculty_id) || [],
+        },
+      ];
+    },
+  );
 
   return { slots, appointments };
 }
@@ -185,92 +235,151 @@ export async function bookAppointment(input: {
   notes?: string;
 }) {
   const topic = input.topic.trim();
-  if (topic.length < 5) throw new Error("Describe your consultation concern in at least 5 characters.");
+  if (topic.length < 5)
+    throw new Error(
+      "Describe your consultation concern in at least 5 characters.",
+    );
   const { data, error } = await supabase.rpc("book_consultation", {
     target_availability: input.slotId,
     consultation_topic: topic,
     consultation_notes: input.notes?.trim() || topic,
   });
-  return requireData(data as string | null, error, "The consultation request could not be submitted.");
+  return requireData(
+    data as string | null,
+    error,
+    "The consultation request could not be submitted.",
+  );
 }
 
 export async function cancelAppointment(appointmentId: string) {
-  const { error } = await supabase.rpc("cancel_consultation", { target_appointment: appointmentId });
-  if (error) throw new Error(friendlyError(error, "The consultation could not be cancelled."));
+  const { error } = await supabase.rpc("cancel_consultation", {
+    target_appointment: appointmentId,
+  });
+  if (error)
+    throw new Error(
+      friendlyError(error, "The consultation could not be cancelled."),
+    );
 }
 
-export async function rescheduleAppointment(appointmentId: string, newSlotId: string) {
+export async function rescheduleAppointment(
+  appointmentId: string,
+  newSlotId: string,
+) {
   const { data, error } = await supabase.rpc("reschedule_consultation", {
     target_appointment: appointmentId,
     new_availability: newSlotId,
   });
-  return requireData(data as string | null, error, "The consultation could not be rescheduled.");
+  return requireData(
+    data as string | null,
+    error,
+    "The consultation could not be rescheduled.",
+  );
 }
 
 export async function loadFacultyPortal(facultyId: string) {
   const { data: availability, error: availabilityError } = await supabase
     .from("availability")
-    .select("id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open")
+    .select(
+      "id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open",
+    )
     .eq("faculty_id", facultyId)
     .order("starts_at", { ascending: true });
-  if (availabilityError) throw new Error(friendlyError(availabilityError, "Faculty availability could not be loaded."));
+  if (availabilityError)
+    throw new Error(
+      friendlyError(
+        availabilityError,
+        "Faculty availability could not be loaded.",
+      ),
+    );
 
   const slots = (availability || []) as FacultyAvailability[];
   const slotIds = slots.map((slot) => slot.id);
-  if (!slotIds.length) return { requests: [] as FacultyRequest[], availability: slots };
+  if (!slotIds.length)
+    return { requests: [] as FacultyRequest[], availability: slots };
 
   const { data: appointments, error: appointmentError } = await supabase
     .from("appointments")
-    .select("id,availability_id,student_id,topic,notes,status,created_at,updated_at")
+    .select(
+      "id,availability_id,student_id,topic,notes,status,created_at,updated_at",
+    )
     .in("availability_id", slotIds)
     .order("created_at", { ascending: false });
-  if (appointmentError) throw new Error(friendlyError(appointmentError, "Consultation requests could not be loaded."));
+  if (appointmentError)
+    throw new Error(
+      friendlyError(
+        appointmentError,
+        "Consultation requests could not be loaded.",
+      ),
+    );
 
-  const studentIds = [...new Set((appointments || []).map((item) => item.student_id))];
+  const studentIds = [
+    ...new Set((appointments || []).map((item) => item.student_id)),
+  ];
   const { data: students, error: studentError } = studentIds.length
-    ? await supabase.from("profiles").select("id,full_name").in("id", studentIds)
+    ? await supabase
+        .from("profiles")
+        .select("id,full_name")
+        .in("id", studentIds)
     : { data: [], error: null };
-  if (studentError) throw new Error(friendlyError(studentError, "Student profiles could not be loaded."));
+  if (studentError)
+    throw new Error(
+      friendlyError(studentError, "Student profiles could not be loaded."),
+    );
 
   const slotById = new Map(slots.map((slot) => [slot.id, slot]));
-  const studentById = new Map((students || []).map((student) => [student.id, student]));
+  const studentById = new Map(
+    (students || []).map((student) => [student.id, student]),
+  );
   const requests = (appointments || []).flatMap((item) => {
     const slot = slotById.get(item.availability_id);
     if (!slot) return [];
     const student = studentById.get(item.student_id);
-    return [{
-      id: item.id,
-      availability_id: item.availability_id,
-      student_id: item.student_id,
-      student_name: student?.full_name || "Student",
-      topic: item.topic,
-      notes: item.notes || "No additional note was provided.",
-      status: item.status as AppointmentStatus,
-      updated_at: item.updated_at || item.created_at,
-      starts_at: slot.starts_at,
-      ends_at: slot.ends_at,
-      location: slot.location || "Location to be confirmed",
-      consultation_mode: slot.consultation_mode,
-      faculty_id: facultyId,
-      faculty_name: "",
-      expertise: [],
-    }];
+    return [
+      {
+        id: item.id,
+        availability_id: item.availability_id,
+        student_id: item.student_id,
+        student_name: student?.full_name || "Student",
+        topic: item.topic,
+        notes: item.notes || "No additional note was provided.",
+        status: item.status as AppointmentStatus,
+        updated_at: item.updated_at || item.created_at,
+        starts_at: slot.starts_at,
+        ends_at: slot.ends_at,
+        location: slot.location || "Location to be confirmed",
+        consultation_mode: slot.consultation_mode,
+        faculty_id: facultyId,
+        faculty_name: "",
+        expertise: [],
+      },
+    ];
   });
 
   return { requests, availability: slots };
 }
 
-export async function decideFacultyRequest(requestId: string, status: "confirmed" | "declined") {
+export async function decideFacultyRequest(
+  requestId: string,
+  status: "confirmed" | "declined",
+) {
   const { error } = await supabase.rpc("decide_consultation", {
     target_appointment: requestId,
     decision: status,
   });
-  if (error) throw new Error(friendlyError(error, "The consultation decision could not be saved."));
+  if (error)
+    throw new Error(
+      friendlyError(error, "The consultation decision could not be saved."),
+    );
 }
 
 export async function completeFacultyRequest(requestId: string) {
-  const { error } = await supabase.rpc("complete_consultation", { target_appointment: requestId });
-  if (error) throw new Error(friendlyError(error, "The consultation could not be marked completed."));
+  const { error } = await supabase.rpc("complete_consultation", {
+    target_appointment: requestId,
+  });
+  if (error)
+    throw new Error(
+      friendlyError(error, "The consultation could not be marked completed."),
+    );
 }
 
 export async function createFacultyAvailability(input: {
@@ -284,7 +393,10 @@ export async function createFacultyAvailability(input: {
   const end = new Date(input.endsAt);
   const validation = availabilityValidationMessage(start, end, []);
   if (validation) throw new Error(validation);
-  if (input.location.trim().length < 3) throw new Error("Provide the consultation room or approved online platform.");
+  if (input.location.trim().length < 3)
+    throw new Error(
+      "Provide the consultation room or approved online platform.",
+    );
 
   const { data, error } = await supabase
     .from("availability")
@@ -296,86 +408,184 @@ export async function createFacultyAvailability(input: {
       consultation_mode: input.consultationMode,
       is_open: true,
     })
-    .select("id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open")
+    .select(
+      "id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open",
+    )
     .single();
-  return requireData(data as FacultyAvailability | null, error, "The availability entry could not be published.");
+  return requireData(
+    data as FacultyAvailability | null,
+    error,
+    "The availability entry could not be published.",
+  );
 }
 
 export async function removeFacultyAvailability(slotId: string) {
-  const { error } = await supabase.rpc("withdraw_availability", { target_availability: slotId });
-  if (error) throw new Error(friendlyError(error, "The availability entry could not be withdrawn."));
+  const { error } = await supabase.rpc("withdraw_availability", {
+    target_availability: slotId,
+  });
+  if (error)
+    throw new Error(
+      friendlyError(error, "The availability entry could not be withdrawn."),
+    );
 }
 
-export async function updateFacultyProfile(input: { userId: string; expertise: string[]; bio: string }) {
-  const expertise = input.expertise.map((item) => item.trim()).filter(Boolean).slice(0, 12);
-  if (!expertise.length) throw new Error("Add at least one faculty expertise category.");
+export async function updateFacultyProfile(input: {
+  userId: string;
+  expertise: string[];
+  bio: string;
+}) {
+  const expertise = input.expertise
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  if (!expertise.length)
+    throw new Error("Add at least one faculty expertise category.");
   const { error } = await supabase
     .from("faculty_profiles")
     .update({ expertise, bio: input.bio.trim() })
     .eq("user_id", input.userId);
-  if (error) throw new Error(friendlyError(error, "The faculty profile could not be updated."));
+  if (error)
+    throw new Error(
+      friendlyError(error, "The faculty profile could not be updated."),
+    );
 }
 
-export async function loadFacultyProfile(userId: string): Promise<FacultyProfile> {
+export async function loadFacultyProfile(
+  userId: string,
+): Promise<FacultyProfile> {
   const { data, error } = await supabase
     .from("faculty_profiles")
     .select("expertise,bio,active")
     .eq("user_id", userId)
     .single();
-  return requireData({
-    expertise: data?.expertise || [],
-    bio: data?.bio || "",
-    active: data?.active ?? true,
-  }, error, "The faculty profile could not be loaded.");
+  return requireData(
+    {
+      expertise: data?.expertise || [],
+      bio: data?.bio || "",
+      active: data?.active ?? true,
+    },
+    error,
+    "The faculty profile could not be loaded.",
+  );
 }
 
 export async function loadAdminPortal(): Promise<AdminPortal> {
-  const [{ data: users, error: userError }, { data: rows, error: appointmentError }, { data: faqs, error: faqError }] =
-    await Promise.all([
-      supabase.from("profiles").select("id,full_name,role,department").order("full_name"),
-      supabase
-        .from("appointments")
-        .select("id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)")
-        .order("created_at", { ascending: false }),
-      supabase.from("faq_entries").select("id,question,answer,category,source_reference,status,created_by,approved_by,approved_at,updated_at").order("updated_at", { ascending: false }),
-    ]);
-  if (userError || appointmentError || faqError) {
-    throw new Error(friendlyError(userError || appointmentError || faqError, "The administration workspace could not be loaded."));
+  const [
+    { data: users, error: userError },
+    { data: rows, error: appointmentError },
+    { data: faqs, error: faqError },
+    { data: registrationEmails, error: registrationError },
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id,full_name,role,department")
+      .order("full_name"),
+    supabase
+      .from("appointments")
+      .select(
+        "id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)",
+      )
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("faq_entries")
+      .select(
+        "id,question,answer,category,source_reference,status,created_by,approved_by,approved_at,updated_at",
+      )
+      .order("updated_at", { ascending: false }),
+    supabase
+      .from("registration_allowlist")
+      .select("email,active,created_at")
+      .order("created_at", { ascending: false }),
+  ]);
+  if (userError || appointmentError || faqError || registrationError) {
+    throw new Error(
+      friendlyError(
+        userError || appointmentError || faqError || registrationError,
+        "The administration workspace could not be loaded.",
+      ),
+    );
   }
 
-  const profileMap = new Map((users || []).map((profile) => [profile.id, profile.full_name]));
+  const profileMap = new Map(
+    (users || []).map((profile) => [profile.id, profile.full_name]),
+  );
   const appointments: PortalAppointment[] = (rows || []).flatMap((row) => {
     const slot = relation<any>(row.availability);
     if (!slot) return [];
-    return [{
-      id: row.id,
-      availability_id: row.availability_id,
-      student_id: row.student_id,
-      student_name: profileMap.get(row.student_id) || "Student",
-      topic: row.topic,
-      notes: row.notes || "",
-      status: row.status as AppointmentStatus,
-      updated_at: row.updated_at || row.created_at,
-      starts_at: slot.starts_at,
-      ends_at: slot.ends_at,
-      location: slot.location || "Location to be confirmed",
-      consultation_mode: slot.consultation_mode as ConsultationMode,
-      faculty_id: slot.faculty_id,
-      faculty_name: profileMap.get(slot.faculty_id) || "Faculty member",
-      expertise: [],
-    }];
+    return [
+      {
+        id: row.id,
+        availability_id: row.availability_id,
+        student_id: row.student_id,
+        student_name: profileMap.get(row.student_id) || "Student",
+        topic: row.topic,
+        notes: row.notes || "",
+        status: row.status as AppointmentStatus,
+        updated_at: row.updated_at || row.created_at,
+        starts_at: slot.starts_at,
+        ends_at: slot.ends_at,
+        location: slot.location || "Location to be confirmed",
+        consultation_mode: slot.consultation_mode as ConsultationMode,
+        faculty_id: slot.faculty_id,
+        faculty_name: profileMap.get(slot.faculty_id) || "Faculty member",
+        expertise: [],
+      },
+    ];
   });
 
   return {
-    users: (users || []).map((profile) => ({ ...profile, role: profile.role as Role, department: profile.department || "" })),
+    users: (users || []).map((profile) => ({
+      ...profile,
+      role: profile.role as Role,
+      department: profile.department || "",
+    })),
     appointments,
     faqs: (faqs || []) as FaqEntry[],
+    registrationEmails: (registrationEmails || []) as RegistrationEmail[],
   };
 }
 
+export async function approveRegistrationEmail(
+  email: string,
+  administratorId: string,
+) {
+  const normalized = email.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(normalized))
+    throw new Error("Enter a valid participant email address.");
+  const { error } = await supabase.from("registration_allowlist").upsert(
+    {
+      email: normalized,
+      active: true,
+      added_by: administratorId,
+    },
+    { onConflict: "email" },
+  );
+  if (error)
+    throw new Error(
+      friendlyError(error, "The registration email could not be approved."),
+    );
+}
+
+export async function deactivateRegistrationEmail(email: string) {
+  const { error } = await supabase
+    .from("registration_allowlist")
+    .update({ active: false })
+    .eq("email", email.trim().toLowerCase());
+  if (error)
+    throw new Error(
+      friendlyError(error, "The registration approval could not be removed."),
+    );
+}
+
 export async function adminSetRole(userId: string, role: Role) {
-  const { error } = await supabase.rpc("admin_set_user_role", { target_user: userId, new_role: role });
-  if (error) throw new Error(friendlyError(error, "The user role could not be updated."));
+  const { error } = await supabase.rpc("admin_set_user_role", {
+    target_user: userId,
+    new_role: role,
+  });
+  if (error)
+    throw new Error(
+      friendlyError(error, "The user role could not be updated."),
+    );
 }
 
 export async function createFaqEntry(input: {
@@ -388,7 +598,8 @@ export async function createFaqEntry(input: {
   if (input.question.trim().length < 8 || input.answer.trim().length < 15) {
     throw new Error("Provide a complete question and a clear approved answer.");
   }
-  if (input.sourceReference.trim().length < 5) throw new Error("Identify the official source for this answer.");
+  if (input.sourceReference.trim().length < 5)
+    throw new Error("Identify the official source for this answer.");
   const { error } = await supabase.from("faq_entries").insert({
     question: input.question.trim(),
     answer: input.answer.trim(),
@@ -397,23 +608,36 @@ export async function createFaqEntry(input: {
     status: "draft",
     created_by: input.userId,
   });
-  if (error) throw new Error(friendlyError(error, "The FAQ draft could not be saved."));
+  if (error)
+    throw new Error(friendlyError(error, "The FAQ draft could not be saved."));
 }
 
 export async function approveFaqEntry(faqId: string, approverId: string) {
-  const { error } = await supabase.from("faq_entries").update({
-    status: "approved",
-    approved_by: approverId,
-    approved_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }).eq("id", faqId);
-  if (error) throw new Error(friendlyError(error, "The FAQ entry could not be approved."));
+  const { error } = await supabase
+    .from("faq_entries")
+    .update({
+      status: "approved",
+      approved_by: approverId,
+      approved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", faqId);
+  if (error)
+    throw new Error(
+      friendlyError(error, "The FAQ entry could not be approved."),
+    );
 }
 
 export async function archiveFaqEntry(faqId: string) {
-  const { error } = await supabase.from("faq_entries").update({
-    status: "archived",
-    updated_at: new Date().toISOString(),
-  }).eq("id", faqId);
-  if (error) throw new Error(friendlyError(error, "The FAQ entry could not be archived."));
+  const { error } = await supabase
+    .from("faq_entries")
+    .update({
+      status: "archived",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", faqId);
+  if (error)
+    throw new Error(
+      friendlyError(error, "The FAQ entry could not be archived."),
+    );
 }

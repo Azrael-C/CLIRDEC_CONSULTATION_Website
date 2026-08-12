@@ -11,7 +11,7 @@ The production website is developed through GitHub issues, feature branches, pul
 Before requesting review for frontend work, run:
 
 ```powershell
-npm install
+npm ci
 npm run check
 ```
 
@@ -29,14 +29,14 @@ npm run check
 ## Run the web app
 
 1. Copy `.env.example` to `.env.local` and add the Supabase public credentials.
-2. Run `npm install`.
+2. Run `npm ci`.
 3. Run `npm run dev`.
 
 Authentication requires a configured Supabase project; the production portal does not provide a fake sign-in mode.
 
 ## Configure Supabase
 
-Create a free Supabase project and run `supabase/schema.sql` in its SQL Editor. Never commit the real `.env` file. In production, restrict account registration to your institutional email domain and assign faculty/admin roles through an approved administrator workflow.
+Create a Supabase project and run `supabase/schema.sql` in its SQL Editor. Never commit the real `.env` file. The controlled pilot uses a single-use administrator allowlist so approved Gmail and CLSU addresses can register while unknown addresses are rejected. Faculty/admin roles are assigned through the administrator portal.
 
 ## Run the chatbot
 
@@ -62,7 +62,7 @@ Email is sent from the backend, never from React. The database trigger places me
 1. Create a free Resend account and verify the sender domain/address.
 2. Deploy `supabase/functions/send-email-notifications`.
 3. Add these function secrets in Supabase: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_CRON_SECRET`, and `PORTAL_URL`. Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the function.
-4. Schedule an authenticated call to the function every five minutes using Supabase Cron or another trusted scheduler. Send `Authorization: Bearer <EMAIL_CRON_SECRET>`.
+4. Add `SUPABASE_EMAIL_FUNCTION_URL` and `EMAIL_CRON_SECRET` as GitHub repository secrets. The scheduled worker sends `Authorization: Bearer <EMAIL_CRON_SECRET>` every five minutes and also queues due reminders.
 5. Test request submission, approval, decline, cancellation, and reminder emails with a Gmail address before the pilot.
 
 The initial events are request receipt, faculty decision, schedule change/cancellation, and appointment reminder. Students can disable optional email notifications in their profile; legally or operationally required notices should be defined with the Product Owner before implementation.

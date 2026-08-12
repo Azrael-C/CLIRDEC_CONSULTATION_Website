@@ -69,6 +69,7 @@ create table public.email_notifications (
   body text not null,
   status text not null default 'queued' check (status in ('queued','processing','sent','failed')),
   attempts integer not null default 0,
+  processing_started_at timestamptz,
   last_error text,
   scheduled_for timestamptz not null default now(),
   sent_at timestamptz,
@@ -108,6 +109,16 @@ create table public.audit_logs (
   created_at timestamptz not null default now()
 );
 
+-- New public registrations are limited to email addresses approved for the
+-- controlled pilot. Existing users are unaffected. MISO administrators may
+-- add or deactivate entries before asking a participant to register.
+create table public.registration_allowlist (
+  email text primary key check (email=lower(trim(email))),
+  active boolean not null default true,
+  added_by uuid references public.profiles(id),
+  created_at timestamptz not null default now()
+);
+
 alter table public.profiles enable row level security;
 alter table public.faculty_profiles enable row level security;
 alter table public.availability enable row level security;
@@ -115,6 +126,7 @@ alter table public.appointments enable row level security;
 alter table public.email_notifications enable row level security;
 alter table public.faq_entries enable row level security;
 alter table public.audit_logs enable row level security;
+alter table public.registration_allowlist enable row level security;
 
 create function public.current_role() returns public.user_role language sql stable security definer set search_path=public as $$ select role from profiles where id=auth.uid() $$;
 -- Students must retain access to the closed availability slot attached to
@@ -134,7 +146,47 @@ as $$
 $$;
 revoke all on function public.can_read_booked_availability(uuid) from public,anon;
 grant execute on function public.can_read_booked_availability(uuid) to authenticated;
-create policy "read profiles" on public.profiles for select to authenticated using (true);
+create function public.can_read_profile(target_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path=public
+as $$
+  select target_user=auth.uid()
+    or public.current_role()='admin'
+    or (
+      public.current_role()='faculty'
+      and exists(
+        select 1
+        from appointments ap
+        join availability av on av.id=ap.availability_id
+        where ap.student_id=target_user and av.faculty_id=auth.uid()
+      )
+    )
+$$;
+revoke all on function public.can_read_profile(uuid) from public,anon;
+grant execute on function public.can_read_profile(uuid) to authenticated;
+
+create function public.faculty_directory(target_ids uuid[] default null)
+returns table(id uuid,full_name text,department text,expertise text[],bio text)
+language sql
+stable
+security definer
+set search_path=public
+as $$
+  select p.id,p.full_name,p.department,fp.expertise,coalesce(fp.bio,'')
+  from profiles p
+  join faculty_profiles fp on fp.user_id=p.id
+  where p.role='faculty'
+    and fp.active
+    and (target_ids is null or p.id=any(target_ids))
+  order by p.full_name
+$$;
+revoke all on function public.faculty_directory(uuid[]) from public,anon;
+grant execute on function public.faculty_directory(uuid[]) to authenticated;
+
+create policy "read permitted profiles" on public.profiles for select to authenticated using (public.can_read_profile(id));
 create policy "update own profile" on public.profiles for update to authenticated using (id=auth.uid()) with check (id=auth.uid());
 create policy "public faculty information" on public.faculty_profiles for select to authenticated using (true);
 create policy "faculty update own information" on public.faculty_profiles for update to authenticated
@@ -158,6 +210,10 @@ create policy "admins create FAQ entries" on public.faq_entries for insert to au
 create policy "admins update FAQ entries" on public.faq_entries for update to authenticated using (public.current_role()='admin') with check (public.current_role()='admin');
 create policy "admins archive FAQ entries" on public.faq_entries for delete to authenticated using (public.current_role()='admin');
 create policy "admins read audit logs" on public.audit_logs for select to authenticated using (public.current_role()='admin');
+create policy "admins manage registration allowlist" on public.registration_allowlist for all to authenticated
+using (public.current_role()='admin')
+with check (public.current_role()='admin' and (added_by is null or added_by=auth.uid()));
+grant select,insert,update,delete on public.registration_allowlist to authenticated;
 
 -- Availability follows CLSU's weekday pilot window in Philippine Standard Time.
 -- Updating only is_open (when a student books) does not re-run this validation.
@@ -251,9 +307,20 @@ security definer
 set search_path=public
 as $$
 begin
+  update public.email_notifications
+  set status='queued',
+      processing_started_at=null,
+      scheduled_for=now(),
+      last_error=coalesce(last_error,'Email worker lease expired before completion')
+  where status='processing'
+    and processing_started_at<now()-interval '15 minutes'
+    and attempts<4;
+
   return query
   update public.email_notifications as notification
-  set status='processing', attempts=notification.attempts+1
+  set status='processing',
+      attempts=notification.attempts+1,
+      processing_started_at=now()
   where notification.id in (
     select candidate.id
     from public.email_notifications as candidate
@@ -274,7 +341,20 @@ create trigger prevent_double_booking before insert on public.appointments for e
 
 -- New public registrations are always students. Faculty and administrator roles
 -- must be assigned through a trusted administrative process.
-create function public.create_profile() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into profiles(id,full_name,email,role) values(new.id,coalesce(new.raw_user_meta_data->>'full_name','New user'),coalesce(new.email,''),'student'); return new; end $$;
+create function public.create_profile() returns trigger language plpgsql security definer set search_path=public as $$
+declare normalized_email text := lower(trim(coalesce(new.email,'')));
+begin
+  if not exists(
+    select 1 from registration_allowlist
+    where email=normalized_email and active
+  ) then
+    raise exception 'This email address is not approved for the FacultyConnect pilot';
+  end if;
+  insert into profiles(id,full_name,email,role)
+  values(new.id,coalesce(new.raw_user_meta_data->>'full_name','New user'),normalized_email,'student');
+  update registration_allowlist set active=false where email=normalized_email;
+  return new;
+end $$;
 create trigger create_profile_after_signup after insert on auth.users for each row execute function public.create_profile();
 
 create function public.queue_appointment_email() returns trigger language plpgsql security definer set search_path=public as $$
@@ -324,6 +404,8 @@ begin
   ) select count(*) into queued_count from inserted;
   return queued_count;
 end $$;
+revoke all on function public.queue_due_appointment_reminders() from public,anon,authenticated;
+grant execute on function public.queue_due_appointment_reminders() to service_role;
 
 -- Core consultation workflow. Security-definer RPCs keep multi-table changes
 -- atomic and ensure browser clients cannot bypass ownership or status rules.

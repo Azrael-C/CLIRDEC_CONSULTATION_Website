@@ -32,6 +32,12 @@ class AssistantTests(unittest.TestCase):
         self.assertTrue(response.escalation)
         self.assertEqual(response.intent, "sensitive_referral")
 
+    def test_office_hours_without_approved_faq_is_escalated(self):
+        response = build_response("What are the CLIRDEC office hours?", [])
+        self.assertTrue(response.escalation)
+        self.assertEqual(response.intent, "office_hours")
+        self.assertEqual(response.source, "Official office-hours source required")
+
     def test_harassment_word_variants_are_escalated(self):
         for message in (
             "My professor is harassing me and I feel unsafe",
