@@ -75,12 +75,6 @@ export type ConsultationReview = {
   updated_at: string;
 };
 
-export type RegistrationEmail = {
-  email: string;
-  active: boolean;
-  created_at: string;
-};
-
 export type FaqStatus = "draft" | "review" | "approved" | "archived";
 export type FaqEntry = {
   id: string;
@@ -99,7 +93,6 @@ export type AdminPortal = {
   users: AdminUser[];
   appointments: PortalAppointment[];
   faqs: FaqEntry[];
-  registrationEmails: RegistrationEmail[];
   reviews: ConsultationReview[];
 };
 
@@ -558,7 +551,6 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     { data: users, error: userError },
     { data: rows, error: appointmentError },
     { data: faqs, error: faqError },
-    { data: registrationEmails, error: registrationError },
     { data: reviews, error: reviewError },
   ] = await Promise.all([
     supabase
@@ -578,18 +570,14 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       )
       .order("updated_at", { ascending: false }),
     supabase
-      .from("registration_allowlist")
-      .select("email,active,created_at")
-      .order("created_at", { ascending: false }),
-    supabase
       .from("consultation_reviews")
       .select("id,appointment_id,student_id,faculty_id,rating,comment,year_level,college,program,created_at,updated_at")
       .order("created_at", { ascending: false }),
   ]);
-  if (userError || appointmentError || faqError || registrationError || reviewError) {
+  if (userError || appointmentError || faqError || reviewError) {
     throw new Error(
       friendlyError(
-        userError || appointmentError || faqError || registrationError || reviewError,
+        userError || appointmentError || faqError || reviewError,
         "The administration workspace could not be loaded.",
       ),
     );
@@ -630,7 +618,6 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     })),
     appointments,
     faqs: (faqs || []) as FaqEntry[],
-    registrationEmails: (registrationEmails || []) as RegistrationEmail[],
     reviews: (reviews || []) as ConsultationReview[],
   };
 }
@@ -714,38 +701,6 @@ export async function loadAdminNotificationSummary(): Promise<AdminNotificationS
     }];
   });
   return { appointments, faqs: (faqs || []) as FaqEntry[] };
-}
-
-export async function approveRegistrationEmail(
-  email: string,
-  administratorId: string,
-) {
-  const normalized = email.trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(normalized))
-    throw new Error("Enter a valid participant email address.");
-  const { error } = await supabase.from("registration_allowlist").upsert(
-    {
-      email: normalized,
-      active: true,
-      added_by: administratorId,
-    },
-    { onConflict: "email" },
-  );
-  if (error)
-    throw new Error(
-      friendlyError(error, "The registration email could not be approved."),
-    );
-}
-
-export async function deactivateRegistrationEmail(email: string) {
-  const { error } = await supabase
-    .from("registration_allowlist")
-    .update({ active: false })
-    .eq("email", email.trim().toLowerCase());
-  if (error)
-    throw new Error(
-      friendlyError(error, "The registration approval could not be removed."),
-    );
 }
 
 export async function adminSetRole(userId: string, role: Role) {

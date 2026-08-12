@@ -12,12 +12,13 @@ const functionConfig = read("supabase/config.toml");
 const reviewMigration = read("supabase/consultation_reviews_migration.sql");
 const auditMigration = read("supabase/production_audit_hardening_migration.sql");
 const realtimeMigration = read("supabase/realtime_portal_migration.sql");
+const registrationMigration = read("supabase/student_email_domain_registration_migration.sql");
 const app = read("src/App.tsx");
 const backend = read("src/backend.ts");
 const styles = read("src/figma.css");
 
 for (const sql of [schema, migration]) {
-  assertIncludes(sql, "registration_allowlist", "Controlled registration SQL");
+  assertIncludes(sql, "gmail\\.com|clsu2\\.edu\\.ph", "Student email-domain registration SQL");
   assertIncludes(sql, "can_read_profile", "Profile privacy SQL");
   assertIncludes(sql, "faculty_directory", "Safe faculty directory SQL");
   assertIncludes(sql, "processing_started_at", "Email worker lease SQL");
@@ -44,6 +45,12 @@ assertIncludes(auditMigration, "grant select,insert on public.availability to au
 assertIncludes(auditMigration, "revoke all on function public.create_profile()", "Trigger function permissions");
 assertIncludes(realtimeMigration, "supabase_realtime add table public.availability", "Availability realtime publication");
 assertIncludes(realtimeMigration, "supabase_realtime add table public.appointments", "Appointment realtime publication");
+assertIncludes(registrationMigration, "gmail\\.com|clsu2\\.edu\\.ph", "Production student registration domains");
+assertIncludes(registrationMigration, "'student'", "Student-only public registration role");
+assertIncludes(app, "@gmail.com or @clsu2.edu.ph", "Student signup domain guidance");
+if (app.includes("Approve a student registration") || app.includes("Approve email")) {
+  throw new Error("The legacy per-email registration approval UI is still present.");
+}
 assertIncludes(app, 'table: "availability"', "Student availability realtime subscription");
 assertIncludes(app, "slot.booking_open", "Student booking-window display state");
 assertIncludes(backend, '.gt("starts_at", now)', "Future availability visibility");

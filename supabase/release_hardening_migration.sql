@@ -81,11 +81,8 @@ set search_path=public
 as $$
 declare normalized_email text := lower(trim(coalesce(new.email,'')));
 begin
-  if not exists(
-    select 1 from registration_allowlist
-    where email=normalized_email and active
-  ) then
-    raise exception 'This email address is not approved for the FacultyConnect pilot';
+  if normalized_email !~ '^[^@[:space:]]+@(gmail\.com|clsu2\.edu\.ph)$' then
+    raise exception 'Student registration requires a gmail.com or clsu2.edu.ph email address';
   end if;
   insert into profiles(
     id,full_name,email,role,student_number,college,program,year_level,department
@@ -104,7 +101,6 @@ begin
       nullif(trim(new.raw_user_meta_data->>'year_level'),'')
     )
   );
-  update registration_allowlist set active=false where email=normalized_email;
   return new;
 end $$;
 
