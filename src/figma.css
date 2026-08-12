@@ -991,6 +991,10 @@ body {
 .faculty-profile-guidance p { display: grid; gap: .2rem; margin: 0; padding-bottom: .65rem; border-bottom: 1px solid #e3eae5; color: var(--figma-muted); font-size: .64rem; line-height: 1.5; }
 .faculty-profile-guidance p:last-child { border-bottom: 0; padding-bottom: 0; }
 .faculty-profile-guidance b { color: var(--figma-ink); font-size: .66rem; }
+.faculty-card.booking-closed { background: linear-gradient(145deg,#f5f7f5,#fff); }
+.booking-status.closed { display: inline-flex; width: fit-content; padding: .28rem .5rem; border-radius: 999px; background: #f1e7e4; color: #91483d; font-size: .62rem; font-weight: 800; }
+.faculty-card.booking-closed .primary:disabled { opacity: 1; background: #dfe6e1; color: #66736b; box-shadow: none; cursor: not-allowed; }
+.faculty-availability-empty { grid-column: 1/-1; }
 
 @media (max-width: 600px) {
   .auth-panel { padding: 1rem; }
@@ -1011,6 +1015,12 @@ body {
   .review-breakdowns { grid-template-columns: 1fr; }
   .consultation-review > .primary { width: 100%; }
   .content { padding-bottom: 6.6rem; }
+  .sidebar {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: calc(6.25rem + env(safe-area-inset-bottom));
+  }
+  .sidebar .side-foot { flex: 0 0 auto; margin-top: 1.25rem; }
   .mobile-portal-nav {
     position: fixed;
     z-index: 90;

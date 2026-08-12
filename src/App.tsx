@@ -78,6 +78,7 @@ type Slot = {
   notes?: string;
   updated_at?: string;
   review?: ConsultationReview;
+  booking_open?: boolean;
 };
 type ChatMessage = {
   who: "you" | "bot";
@@ -282,7 +283,7 @@ function App() {
     const interval = window.setInterval(refresh, 30_000);
     window.addEventListener("focus", refresh);
     const channel = supabase
-      .channel(`student-appointments:${user.id}`)
+      .channel(`student-portal:${user.id}`)
       .on(
         "postgres_changes",
         {
@@ -290,6 +291,15 @@ function App() {
           schema: "public",
           table: "appointments",
           filter: `student_id=eq.${user.id}`,
+        },
+        refresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "availability",
         },
         refresh,
       )
@@ -317,6 +327,7 @@ function App() {
           ends_at: slot.ends_at,
           location: slot.location,
           color: ["coral", "blue", "gold", "mint"][i % 4],
+          booking_open: slot.booking_open,
         })),
       );
       setBooked(
@@ -339,6 +350,7 @@ function App() {
           notes: item.notes,
           updated_at: item.updated_at,
           review: item.review,
+          booking_open: false,
         })),
       );
     } catch (cause) {
@@ -1912,12 +1924,21 @@ function FindFaculty({
         <span>Source: faculty-approved CLIRDEC schedules</span>
       </div>
       <section className="faculty-grid">
+        {!slots.length && (
+          <div className="empty-card faculty-availability-empty">
+            No future faculty availability is currently published. This list updates automatically when faculty add new times.
+          </div>
+        )}
         {slots.map((s) => (
-          <article className="faculty-card" key={s.id}>
+          <article className={`faculty-card${s.booking_open === false ? " booking-closed" : ""}`} key={s.id}>
             <div className="faculty-top">
               <span className={`avatar large ${s.color}`}>{s.initials}</span>
               <div>
-                <span className="available">● Faculty-published</span>
+                <span className={s.booking_open === false ? "booking-status closed" : "available"}>
+                  {s.booking_open === false
+                    ? "Booking window closed"
+                    : "● Faculty-published"}
+                </span>
                 <h3>{s.faculty_name}</h3>
                 <p>{s.expertise}</p>
               </div>
@@ -1935,8 +1956,14 @@ function FindFaculty({
                 · Philippine time
               </b>
             </div>
-            <button className="primary wide" onClick={() => select(s)}>
-              Review and request →
+            <button
+              className="primary wide"
+              disabled={s.booking_open === false}
+              onClick={() => select(s)}
+            >
+              {s.booking_open === false
+                ? "Less than 24 hours remaining"
+                : "Review and request →"}
             </button>
           </article>
         ))}
@@ -2991,7 +3018,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
     setMessage("");
     setPublishing(true);
     try {
-      await createFacultyAvailability({
+      const published = await createFacultyAvailability({
         facultyId: user.id,
         startsAt: selectedStart.toISOString(),
         endsAt: end.toISOString(),
@@ -3000,6 +3027,12 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           | "in_person"
           | "online",
       });
+      setFacultySlots((current) =>
+        [...current.filter((slot) => slot.id !== published.id), published].sort(
+          (left, right) =>
+            new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime(),
+        ),
+      );
       formElement.reset();
       setSelectedStart(null);
       setDuration(30);
@@ -3019,6 +3052,11 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   const removeSlot = async (id: string) => {
     try {
       await removeFacultyAvailability(id);
+      setFacultySlots((current) =>
+        current.map((slot) =>
+          slot.id === id ? { ...slot, is_open: false } : slot,
+        ),
+      );
       setMessage("Open availability removed.");
       await refresh();
       window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));

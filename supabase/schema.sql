@@ -140,6 +140,22 @@ alter table public.faq_entries enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.registration_allowlist enable row level security;
 
+-- Realtime keeps active role portals synchronized across devices. The guarded
+-- publication changes make the canonical schema safe to re-run.
+alter table public.availability replica identity full;
+alter table public.appointments replica identity full;
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname='supabase_realtime') then
+    if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='availability') then
+      execute 'alter publication supabase_realtime add table public.availability';
+    end if;
+    if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='appointments') then
+      execute 'alter publication supabase_realtime add table public.appointments';
+    end if;
+  end if;
+end $$;
+
 create function public.current_role() returns public.user_role language sql stable security definer set search_path=public as $$ select role from profiles where id=auth.uid() $$;
 -- Students must retain access to the closed availability slot attached to
 -- their own request. A security-definer helper avoids recursive RLS checks

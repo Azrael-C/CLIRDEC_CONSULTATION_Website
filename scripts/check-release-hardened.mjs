@@ -11,6 +11,10 @@ const worker = read("supabase/functions/send-email-notifications/index.ts");
 const functionConfig = read("supabase/config.toml");
 const reviewMigration = read("supabase/consultation_reviews_migration.sql");
 const auditMigration = read("supabase/production_audit_hardening_migration.sql");
+const realtimeMigration = read("supabase/realtime_portal_migration.sql");
+const app = read("src/App.tsx");
+const backend = read("src/backend.ts");
+const styles = read("src/figma.css");
 
 for (const sql of [schema, migration]) {
   assertIncludes(sql, "registration_allowlist", "Controlled registration SQL");
@@ -38,6 +42,13 @@ assertIncludes(worker, "expiredSlotsClosed", "Expired availability maintenance")
 assertIncludes(auditMigration, "revoke all on table public.appointments from anon,authenticated", "Least-privilege appointment grants");
 assertIncludes(auditMigration, "grant select,insert on public.availability to authenticated", "Faculty availability grants");
 assertIncludes(auditMigration, "revoke all on function public.create_profile()", "Trigger function permissions");
+assertIncludes(realtimeMigration, "supabase_realtime add table public.availability", "Availability realtime publication");
+assertIncludes(realtimeMigration, "supabase_realtime add table public.appointments", "Appointment realtime publication");
+assertIncludes(app, 'table: "availability"', "Student availability realtime subscription");
+assertIncludes(app, "slot.booking_open", "Student booking-window display state");
+assertIncludes(backend, '.gt("starts_at", now)', "Future availability visibility");
+assertIncludes(backend, "Date.now() + MINIMUM_NOTICE_MS", "Minimum-notice booking gate");
+assertIncludes(styles, "padding-bottom: calc(6.25rem + env(safe-area-inset-bottom))", "Mobile drawer bottom clearance");
 assertIncludes(functionConfig, "verify_jwt = false", "Custom-secret worker configuration");
 for (const sql of [schema, reviewMigration]) {
   assertIncludes(sql, "consultation_reviews", "Consultation review storage");

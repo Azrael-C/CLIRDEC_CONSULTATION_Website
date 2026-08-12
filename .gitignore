@@ -13,6 +13,7 @@ __pycache__/
 coverage/
 playwright-report/
 test-results/
+.builder/
 *.log
 .DS_Store
 Thumbs.db
