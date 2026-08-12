@@ -64,8 +64,10 @@ h1, h2, h3, b, strong { color: var(--figma-ink); letter-spacing: -.025em; }
 .login .muted { font-size: .9rem; line-height: 1.45; }
 .login label { gap: .45rem; margin: 1.05rem 0; font-size: .9rem; }
 .signup-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1rem; }
-.signup-fields label { min-width: 0; }
+.signup-fields label { min-width: 0; align-content: start; }
 .signup-fields label small { color: var(--figma-muted); font-size: .66rem; font-weight: 500; line-height: 1.4; }
+.signup-fields input, .signup-fields select { height: 48px; min-height: 48px; }
+.signup-fields select { padding-block: 0; line-height: normal; }
 .login .auth-field { display: grid; gap: .45rem; margin: 1.05rem 0; font-size: .9rem; font-weight: 700; }
 .login .auth-field > label { display: block; margin: 0; }
 .login input, .login select { width: 100%; min-height: 48px; padding: .9rem 1rem; border: 1px solid #bdcbc6; border-radius: 7px; background: #fff; }

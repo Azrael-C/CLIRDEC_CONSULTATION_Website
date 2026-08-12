@@ -767,8 +767,8 @@ function App() {
 const studentPasswordRules = [
   {
     id: "length",
-    label: "At least 12 characters",
-    test: (value: string) => value.length >= 12,
+    label: "At least 8 characters",
+    test: (value: string) => value.length >= 8,
   },
   {
     id: "uppercase",
@@ -1016,7 +1016,7 @@ function ProductionAuth({
                 name="password"
                 type={passwordVisible ? "text" : "password"}
                 required
-                minLength={creating ? 12 : 8}
+                minLength={8}
                 autoComplete={creating ? "new-password" : "current-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -1096,7 +1096,7 @@ function ProductionAuth({
                     name="confirmation"
                     type={passwordVisible ? "text" : "password"}
                     required
-                    minLength={12}
+                    minLength={8}
                     autoComplete="new-password"
                     value={confirmation}
                     onChange={(event) => setConfirmation(event.target.value)}
@@ -1260,7 +1260,7 @@ function PasswordRecovery({
               name="password"
               type="password"
               required
-              minLength={12}
+              minLength={8}
               autoComplete="new-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -1289,7 +1289,7 @@ function PasswordRecovery({
               name="confirmation"
               type="password"
               required
-              minLength={12}
+              minLength={8}
               autoComplete="new-password"
               value={confirmation}
               onChange={(event) => setConfirmation(event.target.value)}
