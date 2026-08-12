@@ -98,6 +98,6 @@ SUPABASE_EMAIL_FUNCTION_URL
 EMAIL_CRON_SECRET
 ```
 
-The `Email notification worker` workflow calls the protected function every five minutes. Each invocation queues due reminders and drains/retries the email outbox, so a second reminder schedule is not required. Run the workflow manually once and confirm queued rows become `sent` before enabling pilot email expectations.
+The `Email notification worker` workflow calls the protected function every five minutes. Availability publication and request lifecycle events enter the outbox immediately. Confirmed consultations receive emails approximately one hour and 30 minutes before their start; the five-minute worker cadence is the delivery tolerance. Each invocation also drains/retries the outbox, so a second reminder schedule is not required. Run the workflow manually once and confirm queued rows become `sent` before enabling pilot email expectations.
 
 GitHub schedules can be delayed during high load. If the Product Owner requires exact-time delivery, move the same authenticated request to Supabase Cron while keeping the function and secret unchanged.

@@ -2374,7 +2374,7 @@ function StudentProfile({
                 name="email_notifications"
                 defaultChecked={user.email_notifications}
               />
-              <span>Send appointment status and reminder emails</span>
+              <span>Send availability, request, status, cancellation, and reminder emails</span>
             </label>
             <div className="modal-actions">
               <button

@@ -257,7 +257,7 @@ export function NotificationCenter({
           </button>;
         })}
       </div>
-      <footer>{user.email_notifications===false?"Optional email updates are disabled for this account.":"Email updates remain enabled for appointment decisions and reminders."}</footer>
+      <footer>{user.email_notifications===false?"Optional email updates are disabled for this account.":"Email updates are enabled for availability, requests, decisions, cancellations, and 1-hour/30-minute reminders."}</footer>
     </section>}
   </div>;
 }
