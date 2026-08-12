@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase, configured } from "./supabase";
 import {
-  approveRegistrationEmail,
   adminSetRole,
   approveFaqEntry,
   archiveFaqEntry,
@@ -12,7 +11,6 @@ import {
   createFacultyAvailability,
   createFaqEntry,
   decideFacultyRequest,
-  deactivateRegistrationEmail,
   loadAdminPortal,
   loadFacultyProfile,
   loadFacultyPortal,
@@ -89,6 +87,13 @@ type ChatMessage = {
 
 type AuthAction = "login" | "signup" | "reset";
 
+const STUDENT_EMAIL_DOMAINS = ["gmail.com", "clsu2.edu.ph"] as const;
+
+function isAllowedStudentEmail(email: string) {
+  const domain = email.trim().toLowerCase().split("@").at(-1);
+  return STUDENT_EMAIL_DOMAINS.some((allowed) => domain === allowed);
+}
+
 function friendlyAuthError(message: string, action: AuthAction) {
   const normalized = message.toLowerCase();
 
@@ -114,10 +119,10 @@ function friendlyAuthError(message: string, action: AuthAction) {
   if (
     action === "signup" &&
     (normalized.includes("database error") ||
-      normalized.includes("not approved") ||
+      normalized.includes("student registration requires") ||
       normalized.includes("saving new user"))
   ) {
-    return "We couldn't create this account. Confirm that the email address is approved for FacultyConnect registration and that the student number is not already registered.";
+    return "We couldn't create this account. Use a Gmail or CLSU student email address and confirm that the student number is not already registered.";
   }
   if (action === "reset") {
     return "We couldn't send the reset link right now. Check the email address and try again shortly.";
@@ -419,6 +424,10 @@ function App() {
     }
     if (!college || !program || !year_level) {
       setNotice("Complete your college or unit, degree program, and year level.");
+      return;
+    }
+    if (!isAllowedStudentEmail(email)) {
+      setNotice("Use an email address ending in @gmail.com or @clsu2.edu.ph.");
       return;
     }
     if (!studentPasswordIsValid(password)) {
@@ -1046,8 +1055,8 @@ function ProductionAuth({
             <>
               <h2>Create a student account</h2>
               <p className="muted">
-                Register with an approved email address. Faculty and
-                administrator accounts are issued separately by MISO.
+                Students may register with Gmail or their CLSU student email.
+                Faculty and administrator accounts are issued separately by MISO.
               </p>
             </>
           ) : (
@@ -1144,9 +1153,11 @@ function ProductionAuth({
                   maxLength={254}
                   autoComplete="email"
                   placeholder="name@clsu2.edu.ph"
+                  aria-describedby="student-email-guidance"
                 />
-                <small>
-                  This email must be included in the approved registration list.
+                <small id="student-email-guidance">
+                  Accepted domains: @gmail.com and @clsu2.edu.ph. You must
+                  confirm the address before signing in.
                 </small>
               </label>
             </div>
@@ -2596,7 +2607,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
     availability: ["Manage availability | CLSU FacultyConnect", "Publish and manage weekday faculty consultation schedules."],
     fprofile: ["Faculty profile | CLSU FacultyConnect", "Manage faculty expertise and consultation profile information."],
     ahome: ["Administration overview | CLSU FacultyConnect", "Monitor FacultyConnect users, consultations, and service performance."],
-    users: ["Users and roles | CLSU FacultyConnect", "Administer registration approvals and audited FacultyConnect roles."],
+    users: ["Users and roles | CLSU FacultyConnect", "Administer audited FacultyConnect roles and review student self-registration rules."],
     appointments: ["Consultation logs | CLSU FacultyConnect", "Review consultation status, participants, schedules, and service exceptions."],
     reviews: ["Reviews and insights | CLSU FacultyConnect", "Analyze consultation ratings and comments by year level, college, and course."],
     knowledge: ["FAQ knowledge base | CLSU FacultyConnect", "Manage approved sources and answers used by the consultation assistant."],
@@ -3622,7 +3633,6 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     users: [],
     appointments: [],
     faqs: [],
-    registrationEmails: [],
     reviews: [],
   });
   const [loading, setLoading] = useState(true);
@@ -3665,36 +3675,6 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         cause instanceof Error
           ? cause.message
           : "The role could not be changed.",
-      );
-    }
-  };
-  const approveEmail = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const email = String(new FormData(form).get("email") || "");
-    try {
-      await approveRegistrationEmail(email, user.id);
-      form.reset();
-      setMessage("Email approved for one student registration.");
-      await refresh();
-    } catch (cause) {
-      setMessage(
-        cause instanceof Error
-          ? cause.message
-          : "The participant email could not be approved.",
-      );
-    }
-  };
-  const deactivateEmail = async (email: string) => {
-    try {
-      await deactivateRegistrationEmail(email);
-      setMessage("Registration approval deactivated.");
-      await refresh();
-    } catch (cause) {
-      setMessage(
-        cause instanceof Error
-          ? cause.message
-          : "The registration approval could not be removed.",
       );
     }
   };
@@ -3875,52 +3855,15 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <Head
           label="MISO ADMINISTRATION"
           title="Manage users"
-          copy="Approve student registrations, then assign faculty and administrator access through an audited role change."
-          action="Approve email"
+          copy="Students self-register with an accepted email domain. Faculty and administrator access is assigned through an audited role change."
         />
-        <div className="knowledge-layout">
-          <Work title="Approve a student registration">
-            <form className="knowledge-form" onSubmit={approveEmail}>
-              <label>
-                Participant email
-                <input
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="off"
-                  placeholder="approved.participant@example.com"
-                />
-              </label>
-              <button className="primary">Approve email</button>
-            </form>
-          </Work>
-          <Work title="Registration approvals">
-            <div className="faq-list">
-              {data.registrationEmails.map((entry) => (
-                <article key={entry.email}>
-                  <span>{entry.active ? "active" : "closed"}</span>
-                  <div>
-                    <b>{entry.email}</b>
-                    <small>
-                      {entry.active
-                        ? "May create a student account"
-                        : "Registration disabled"}
-                    </small>
-                  </div>
-                  {entry.active && (
-                    <button onClick={() => void deactivateEmail(entry.email)}>
-                      Disable
-                    </button>
-                  )}
-                </article>
-              ))}
-              {!data.registrationEmails.length && (
-                <div className="empty-card">
-                  No participant email addresses approved yet.
-                </div>
-              )}
-            </div>
-          </Work>
+        <div className="scope-note registration-policy-note">
+          <b>Student self-registration</b>
+          <span>
+            Verified <strong>@gmail.com</strong> and <strong>@clsu2.edu.ph</strong>
+            addresses may create student accounts. Faculty and administrator
+            roles remain MISO-controlled and cannot be selected during signup.
+          </span>
         </div>
         <div className="search-box compact-search">
           <span>⌕</span>

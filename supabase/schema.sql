@@ -121,9 +121,8 @@ create table public.audit_logs (
   created_at timestamptz not null default now()
 );
 
--- New public registrations are limited to email addresses approved for the
--- controlled pilot. Existing users are unaffected. MISO administrators may
--- add or deactivate entries before asking a participant to register.
+-- Retained for backward compatibility with early pilot records. New student
+-- registration is domain-based and no longer reads this legacy table.
 create table public.registration_allowlist (
   email text primary key check (email=lower(trim(email))),
   active boolean not null default true,
@@ -388,11 +387,8 @@ create trigger prevent_double_booking before insert on public.appointments for e
 create function public.create_profile() returns trigger language plpgsql security definer set search_path=public as $$
 declare normalized_email text := lower(trim(coalesce(new.email,'')));
 begin
-  if not exists(
-    select 1 from registration_allowlist
-    where email=normalized_email and active
-  ) then
-    raise exception 'This email address is not approved for the FacultyConnect pilot';
+  if normalized_email !~ '^[^@[:space:]]+@(gmail\.com|clsu2\.edu\.ph)$' then
+    raise exception 'Student registration requires a gmail.com or clsu2.edu.ph email address';
   end if;
   insert into profiles(
     id,full_name,email,role,student_number,college,program,year_level,department
@@ -411,7 +407,6 @@ begin
       nullif(trim(new.raw_user_meta_data->>'year_level'),'')
     )
   );
-  update registration_allowlist set active=false where email=normalized_email;
   return new;
 end $$;
 create trigger create_profile_after_signup after insert on auth.users for each row execute function public.create_profile();

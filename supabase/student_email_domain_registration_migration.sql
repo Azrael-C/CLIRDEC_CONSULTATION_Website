@@ -1,26 +1,8 @@
 begin;
 
-alter table public.profiles
-  add column if not exists student_number text,
-  add column if not exists college text,
-  add column if not exists program text,
-  add column if not exists year_level text;
-
-create unique index if not exists profiles_student_number_unique
-on public.profiles (upper(student_number))
-where student_number is not null;
-
-alter table public.profiles
-  drop constraint if exists profiles_year_level_check;
-
-alter table public.profiles
-  add constraint profiles_year_level_check check (
-    year_level is null or year_level in (
-      '1st year','2nd year','3rd year','4th year',
-      '5th year or higher','Graduate student'
-    )
-  );
-
+-- Students may self-register using a verified Gmail or CLSU student address.
+-- Public signup always creates the student role; faculty and administrator
+-- roles continue to require an audited MISO role assignment.
 create or replace function public.create_profile()
 returns trigger
 language plpgsql
@@ -53,5 +35,7 @@ begin
 
   return new;
 end $$;
+
+revoke all on function public.create_profile() from public,anon,authenticated;
 
 commit;

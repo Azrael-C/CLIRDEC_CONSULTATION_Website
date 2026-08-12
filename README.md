@@ -36,7 +36,7 @@ Authentication requires a configured Supabase project; the production portal doe
 
 ## Configure Supabase
 
-Create a Supabase project and run `supabase/schema.sql` in its SQL Editor. Never commit the real `.env` file. The controlled pilot uses a single-use administrator allowlist so approved Gmail and CLSU addresses can register while unknown addresses are rejected. Faculty/admin roles are assigned through the administrator portal.
+Create a Supabase project and run `supabase/schema.sql` in its SQL Editor. Never commit the real `.env` file. Students may self-register with a verified `@gmail.com` or `@clsu2.edu.ph` address. Public signup always creates a student account; faculty and administrator roles are assigned only through the administrator portal.
 
 ## Run the chatbot
 
