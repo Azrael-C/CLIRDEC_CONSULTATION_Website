@@ -756,8 +756,7 @@ function App() {
         <div className="side-foot">
           <span>CLIRDEC</span>
           <small>Official service · Approved content only</small>
-          <a href="/privacy-policy">Privacy policy</a>
-          <button onClick={logout}>Sign out</button>
+          <PortalFooterActions onLogout={logout} />
         </div>
       </aside>
       <main className={`content student-content view-${view}`}>
@@ -1268,7 +1267,9 @@ function ProductionAuth({
             </aside>
           )}
           <div className="legal-links">
-            <a href="/privacy-policy">Privacy policy</a>
+            <a className="legal-link-button" href="/privacy-policy">
+              Privacy policy
+            </a>
             <span>·</span>
             <span>Secure, role-protected access</span>
           </div>
@@ -1612,6 +1613,29 @@ function Nav({
       <NavIcon name={icon} />
       <span>{label}</span>
     </button>
+  );
+}
+function PortalFooterActions({ onLogout }: { onLogout: () => void }) {
+  return (
+    <div className="side-foot-actions">
+      <a className="side-action side-action-privacy" href="/privacy-policy">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3 20 6v5c0 5.2-3.3 8.6-8 10-4.7-1.4-8-4.8-8-10V6l8-3Z" />
+          <path d="M9.5 12 11 13.5l3.8-4" />
+        </svg>
+        <span>Privacy policy</span>
+      </a>
+      <button
+        className="side-action side-action-signout"
+        type="button"
+        onClick={onLogout}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10" />
+        </svg>
+        <span>Sign out</span>
+      </button>
+    </div>
   );
 }
 function MobilePortalNav({
@@ -2483,8 +2507,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         <div className="side-foot">
           <span>Central Luzon State University</span>
           <small>Role-restricted administrative service</small>
-          <a href="/privacy-policy">Privacy policy</a>
-          <button onClick={logout}>Sign out</button>
+          <PortalFooterActions onLogout={logout} />
         </div>
       </aside>
       <main

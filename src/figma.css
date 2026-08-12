@@ -177,7 +177,31 @@ h1, h2, h3, b, strong { color: var(--figma-ink); letter-spacing: -.025em; }
 .side-foot { padding: 1rem .65rem .15rem; }
 .side-foot span { font-size: .75rem; }
 .side-foot small { font-size: .65rem; line-height: 1.45; }
-.side-foot button { color: var(--figma-danger); font-size: .75rem; }
+.side-foot-actions { display: grid; gap: .5rem; margin-top: .8rem; }
+.side-action {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: .55rem;
+  padding: .58rem .7rem;
+  border: 1px solid #d8e4dc;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--figma-green-dark);
+  font: inherit;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.side-action svg { width: 17px; height: 17px; flex: 0 0 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.side-action span { font-size: .68rem; }
+.side-action:hover { border-color: #9dc8ac; background: #f3faf5; box-shadow: 0 6px 16px rgba(18,80,46,.08); transform: translateY(-1px); text-decoration: none; }
+.side-action:focus-visible { outline: 3px solid rgba(243,197,31,.45); outline-offset: 2px; }
+.side-action-signout { border-color: #ebcbc6; color: var(--figma-danger); }
+.side-action-signout:hover { border-color: #d69a91; background: #fff6f4; }
 .content { max-width: 1220px; padding: clamp(2.1rem, 4vw, 3.4rem) clamp(1.5rem, 4vw, 3.5rem); }
 
 /* Shared content */
@@ -792,9 +816,10 @@ body {
 
 /* Public policy, not-found, and mobile actions */
 .legal-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .45rem; margin-top: 1rem; color: var(--figma-muted); font-size: .64rem; }
-.legal-links a, .side-foot a { color: var(--figma-green); text-decoration: none; }
-.legal-links a:hover, .side-foot a:hover { text-decoration: underline; }
-.side-foot a { margin-top: .45rem; font-size: .68rem; }
+.legal-links a { color: var(--figma-green); text-decoration: none; }
+.legal-links a:hover { text-decoration: underline; }
+.legal-link-button { display: inline-flex; align-items: center; min-height: 32px; padding: .42rem .7rem; border: 1px solid #c9d9cf; border-radius: 8px; background: #f7fbf8; font-weight: 800; }
+.legal-links .legal-link-button:hover { border-color: #91bca1; background: #edf7f0; text-decoration: none; }
 .mobile-auth-cta, .mobile-portal-nav { display: none; }
 .public-policy-page { min-height: 100vh; background: #f3f7f3; }
 .public-policy-header {
