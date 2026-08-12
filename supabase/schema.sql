@@ -10,9 +10,21 @@ create table public.profiles (
   email text not null,
   role public.user_role not null default 'student',
   department text,
+  student_number text,
+  college text,
+  program text,
+  year_level text check (
+    year_level is null or year_level in (
+      '1st year','2nd year','3rd year','4th year',
+      '5th year or higher','Graduate student'
+    )
+  ),
   email_notifications boolean not null default true,
   created_at timestamptz not null default now()
 );
+create unique index profiles_student_number_unique
+on public.profiles (upper(student_number))
+where student_number is not null;
 create table public.faculty_profiles (
   user_id uuid primary key references public.profiles(id) on delete cascade,
   expertise text[] not null default '{}',
@@ -350,8 +362,23 @@ begin
   ) then
     raise exception 'This email address is not approved for the FacultyConnect pilot';
   end if;
-  insert into profiles(id,full_name,email,role)
-  values(new.id,coalesce(new.raw_user_meta_data->>'full_name','New user'),normalized_email,'student');
+  insert into profiles(
+    id,full_name,email,role,student_number,college,program,year_level,department
+  )
+  values(
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name','New user'),
+    normalized_email,
+    'student',
+    nullif(trim(new.raw_user_meta_data->>'student_number'),''),
+    nullif(trim(new.raw_user_meta_data->>'college'),''),
+    nullif(trim(new.raw_user_meta_data->>'program'),''),
+    nullif(trim(new.raw_user_meta_data->>'year_level'),''),
+    concat_ws(' · ',
+      nullif(trim(new.raw_user_meta_data->>'program'),''),
+      nullif(trim(new.raw_user_meta_data->>'year_level'),'')
+    )
+  );
   update registration_allowlist set active=false where email=normalized_email;
   return new;
 end $$;

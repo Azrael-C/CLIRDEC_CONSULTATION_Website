@@ -79,8 +79,23 @@ begin
   ) then
     raise exception 'This email address is not approved for the FacultyConnect pilot';
   end if;
-  insert into profiles(id,full_name,email,role)
-  values(new.id,coalesce(new.raw_user_meta_data->>'full_name','New user'),normalized_email,'student');
+  insert into profiles(
+    id,full_name,email,role,student_number,college,program,year_level,department
+  )
+  values(
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name','New user'),
+    normalized_email,
+    'student',
+    nullif(trim(new.raw_user_meta_data->>'student_number'),''),
+    nullif(trim(new.raw_user_meta_data->>'college'),''),
+    nullif(trim(new.raw_user_meta_data->>'program'),''),
+    nullif(trim(new.raw_user_meta_data->>'year_level'),''),
+    concat_ws(' · ',
+      nullif(trim(new.raw_user_meta_data->>'program'),''),
+      nullif(trim(new.raw_user_meta_data->>'year_level'),'')
+    )
+  );
   update registration_allowlist set active=false where email=normalized_email;
   return new;
 end $$;

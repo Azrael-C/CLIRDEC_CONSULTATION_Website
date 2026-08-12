@@ -78,6 +78,46 @@ type ChatMessage = {
   escalation?: boolean;
 };
 
+type AuthAction = "login" | "signup" | "reset";
+
+function friendlyAuthError(message: string, action: AuthAction) {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("invalid login credentials")) {
+    return "The email address or password is incorrect. Check your details and try again.";
+  }
+  if (normalized.includes("email not confirmed")) {
+    return "Confirm your email address using the link we sent before signing in.";
+  }
+  if (
+    normalized.includes("already registered") ||
+    normalized.includes("already been registered") ||
+    normalized.includes("user already exists")
+  ) {
+    return "An account already exists for this email address. Sign in or reset your password instead.";
+  }
+  if (normalized.includes("rate limit")) {
+    return "Too many attempts were made. Wait a few minutes, then try again.";
+  }
+  if (normalized.includes("invalid email")) {
+    return "Enter a valid email address.";
+  }
+  if (
+    action === "signup" &&
+    (normalized.includes("database error") ||
+      normalized.includes("not approved") ||
+      normalized.includes("saving new user"))
+  ) {
+    return "We couldn't create this account. Confirm that the email address is approved for the FacultyConnect pilot and that the student number is not already registered.";
+  }
+  if (action === "reset") {
+    return "We couldn't send the reset link right now. Check the email address and try again shortly.";
+  }
+  return action === "signup"
+    ? "We couldn't create the account right now. Review the information and try again."
+    : "We couldn't sign you in right now. Please try again.";
+}
+
 const demoSlots: Slot[] = [
   {
     id: "1",
@@ -293,7 +333,7 @@ function App() {
       email,
       password,
     });
-    if (error) setNotice(error.message);
+    if (error) setNotice(friendlyAuthError(error.message, "login"));
   }
   async function signup(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -306,9 +346,28 @@ function App() {
     }
     const f = new FormData(e.currentTarget);
     const full_name = String(f.get("full_name")).trim();
+    const student_number = String(f.get("student_number")).trim();
+    const college = String(f.get("college")).trim();
+    const program = String(f.get("program")).trim();
+    const year_level = String(f.get("year_level")).trim();
     const email = String(f.get("email")).trim().toLowerCase();
     const password = String(f.get("password"));
     const confirmation = String(f.get("confirmation"));
+    const privacyAcknowledged = f.get("privacy_acknowledged") === "on";
+    if (full_name.length < 3) {
+      setNotice("Enter your complete name as it appears in your student record.");
+      return;
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9 -]{3,29}$/.test(student_number)) {
+      setNotice(
+        "Enter a valid student number using 4–30 letters, numbers, spaces, or hyphens.",
+      );
+      return;
+    }
+    if (!college || !program || !year_level) {
+      setNotice("Complete your college or unit, degree program, and year level.");
+      return;
+    }
     if (!studentPasswordIsValid(password)) {
       setNotice(
         "Your password must meet every requirement shown below the password field.",
@@ -319,19 +378,33 @@ function App() {
       setNotice("The password confirmation does not match.");
       return;
     }
+    if (!privacyAcknowledged) {
+      setNotice(
+        "Confirm that your information is accurate and may be used to manage consultation requests.",
+      );
+      return;
+    }
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name } },
+      options: {
+        data: {
+          full_name,
+          student_number,
+          college,
+          program,
+          year_level,
+        },
+      },
     });
     if (error) {
-      setNotice(error.message);
+      setNotice(friendlyAuthError(error.message, "signup"));
       return;
     }
     setNotice(
       data.session
-        ? "Student account created."
-        : "Student account created. Check your email for the confirmation link before signing in.",
+        ? "Your student account is ready."
+        : "Account created. Check your email and select the confirmation link before signing in.",
     );
   }
   async function requestPasswordReset(email: string) {
@@ -351,7 +424,7 @@ function App() {
     });
     setNotice(
       error
-        ? error.message
+        ? friendlyAuthError(error.message, "reset")
         : "Check your email for the secure password-reset link.",
     );
   }
@@ -532,6 +605,7 @@ function App() {
         login={login}
         signup={signup}
         resetPassword={requestPasswordReset}
+        clearNotice={() => setNotice("")}
         notice={notice}
       />
     );
@@ -749,19 +823,25 @@ function ProductionAuth({
   login,
   signup,
   resetPassword,
+  clearNotice,
   notice,
 }: {
-  login: (e: FormEvent<HTMLFormElement>) => void;
-  signup: (e: FormEvent<HTMLFormElement>) => void;
+  login: (e: FormEvent<HTMLFormElement>) => Promise<void>;
+  signup: (e: FormEvent<HTMLFormElement>) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  clearNotice: () => void;
   notice: string;
 }) {
   const [creating, setCreating] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [submittingAuth, setSubmittingAuth] = useState(false);
   const passwordValid = studentPasswordIsValid(password);
   const passwordsMatch = confirmation.length > 0 && password === confirmation;
+  const noticeIsSuccess = /account (created|is ready)|check your email|reset link/i.test(
+    notice,
+  );
   const passedRuleCount = studentPasswordRules.filter((rule) =>
     rule.test(password),
   ).length;
@@ -770,6 +850,15 @@ function ProductionAuth({
     setPassword("");
     setConfirmation("");
     setPasswordVisible(false);
+    clearNotice();
+  };
+  const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
+    setSubmittingAuth(true);
+    try {
+      await (creating ? signup(event) : login(event));
+    } finally {
+      setSubmittingAuth(false);
+    }
   };
   return (
     <main className="auth">
@@ -798,7 +887,7 @@ function ProductionAuth({
       <section className="auth-panel">
         <form
           className={creating ? "login student-signup" : "login"}
-          onSubmit={creating ? signup : login}
+          onSubmit={submitAuth}
         >
           <span className="mobile-brand">
             <BrandLogo />
@@ -809,8 +898,8 @@ function ProductionAuth({
             <>
               <h2>Create a student account</h2>
               <p className="muted">
-                Only MISO-approved pilot email addresses can register. Faculty
-                and administrator accounts are issued only by MISO.
+                Register with an approved pilot email address. Faculty and
+                administrator accounts are issued separately by MISO.
               </p>
             </>
           ) : (
@@ -822,16 +911,103 @@ function ProductionAuth({
               </p>
             </>
           )}
-          {creating && (
+          {notice && (
+            <div
+              className={
+                noticeIsSuccess ? "form-notice success" : "form-notice error"
+              }
+              role={noticeIsSuccess ? "status" : "alert"}
+            >
+              <b>
+                {noticeIsSuccess ? "Success" : "Please check your information"}
+              </b>
+              <span>{notice}</span>
+            </div>
+          )}
+          {creating ? (
+            <div className="signup-fields">
+              <label>
+                Full name
+                <input
+                  name="full_name"
+                  required
+                  minLength={3}
+                  maxLength={100}
+                  autoComplete="name"
+                  placeholder="Juan Dela Cruz"
+                />
+                <small>Use the name shown in your student record.</small>
+              </label>
+              <label>
+                Student number
+                <input
+                  name="student_number"
+                  required
+                  minLength={4}
+                  maxLength={30}
+                  pattern="[A-Za-z0-9][A-Za-z0-9 -]{3,29}"
+                  title="Use 4–30 letters, numbers, spaces, or hyphens."
+                  autoComplete="off"
+                  placeholder="22-1234"
+                />
+                <small>Enter the number on your CLSU student ID.</small>
+              </label>
+              <label>
+                College or unit
+                <input
+                  name="college"
+                  required
+                  minLength={2}
+                  maxLength={120}
+                  autoComplete="organization"
+                  placeholder="College of Engineering"
+                />
+              </label>
+              <label>
+                Degree program
+                <input
+                  name="program"
+                  required
+                  minLength={2}
+                  maxLength={120}
+                  placeholder="BS Information Technology"
+                />
+              </label>
+              <label>
+                Year level
+                <select name="year_level" required defaultValue="">
+                  <option value="" disabled>
+                    Select your year level
+                  </option>
+                  <option value="1st year">1st year</option>
+                  <option value="2nd year">2nd year</option>
+                  <option value="3rd year">3rd year</option>
+                  <option value="4th year">4th year</option>
+                  <option value="5th year or higher">5th year or higher</option>
+                  <option value="Graduate student">Graduate student</option>
+                </select>
+              </label>
+              <label>
+                Student email address
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  maxLength={254}
+                  autoComplete="email"
+                  placeholder="name@clsu2.edu.ph"
+                />
+                <small>
+                  This email must be included in the approved pilot list.
+                </small>
+              </label>
+            </div>
+          ) : (
             <label>
-              Full name
-              <input name="full_name" required autoComplete="name" />
+              Email address
+              <input name="email" type="email" required autoComplete="email" />
             </label>
           )}
-          <label>
-            {creating ? "Student email address" : "Email address"}
-            <input name="email" type="email" required autoComplete="email" />
-          </label>
           <div className="auth-field password-label">
             <label htmlFor="portal-password">Password</label>
             <span className="password-field">
@@ -932,7 +1108,11 @@ function ProductionAuth({
               <p
                 id="password-match-status"
                 className={
-                  passwordsMatch ? "password-match passed" : "password-match"
+                  confirmation.length === 0
+                    ? "password-match neutral"
+                    : passwordsMatch
+                      ? "password-match passed"
+                      : "password-match"
                 }
                 aria-live="polite"
               >
@@ -942,13 +1122,29 @@ function ProductionAuth({
                     ? "✓ Passwords match."
                     : "Passwords do not match yet."}
               </p>
+              <label className="privacy-confirmation">
+                <input name="privacy_acknowledged" type="checkbox" required />
+                <span>
+                  I confirm that the information above is accurate and may be
+                  used to identify me and manage my consultation requests.
+                </span>
+              </label>
             </>
           )}
           <button
             className="primary"
-            disabled={creating && (!passwordValid || !passwordsMatch)}
+            disabled={
+              submittingAuth ||
+              (creating && (!passwordValid || !passwordsMatch))
+            }
           >
-            {creating ? "Create student account" : "Log in"}
+            {submittingAuth
+              ? creating
+                ? "Creating account…"
+                : "Signing in…"
+              : creating
+                ? "Create student account"
+                : "Log in"}
           </button>
           <div className="auth-options">
             {!creating && (
@@ -1004,11 +1200,6 @@ function ProductionAuth({
               Backend setup required · Supabase environment variables are not
               configured.
             </small>
-          )}
-          {notice && (
-            <p className="error" aria-live="polite">
-              {notice}
-            </p>
           )}
         </form>
       </section>
