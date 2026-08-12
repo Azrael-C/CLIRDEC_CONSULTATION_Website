@@ -20,6 +20,9 @@ const robotsBody = await robots.text();
 if (!robotsBody.includes("Sitemap: https://www.clsufacultyconnect.com/sitemap.xml")) {
   throw new Error("Production robots.txt does not reference the sitemap.");
 }
+if (!robotsBody.includes("Disallow: /api/") || /User-agent:\s*(Googlebot|Bingbot)/i.test(robotsBody)) {
+  throw new Error("Production robots.txt must apply the API exclusion to every crawler.");
+}
 const sitemap = await request("/sitemap.xml");
 const sitemapBody = await sitemap.text();
 if (!sitemapBody.includes("/privacy-policy")) {
@@ -42,9 +45,24 @@ if (missing.status !== 404 || !missingBody.includes("This page is not available.
 }
 
 const health = await request("/api/health");
+if (health.headers.get("cache-control") !== "no-store") {
+  throw new Error("Dynamic API responses must not be cached.");
+}
 const healthBody = await health.json();
 if (healthBody.status !== "ok" || healthBody.nlp !== "spaCy") {
   throw new Error(`Unexpected chatbot health payload: ${JSON.stringify(healthBody)}`);
+}
+
+const preflight = await request("/api/chat", {
+  method: "OPTIONS",
+  headers: {
+    Origin: "https://www.clsufacultyconnect.com",
+    "Access-Control-Request-Method": "POST",
+    "Access-Control-Request-Headers": "authorization,content-type",
+  },
+});
+if (preflight.headers.get("access-control-allow-origin") !== "https://www.clsufacultyconnect.com") {
+  throw new Error("The production custom domain is missing from chatbot CORS.");
 }
 
 const chat = await request("/api/chat", {
