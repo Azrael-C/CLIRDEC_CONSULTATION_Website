@@ -66,17 +66,130 @@ begin
   new.updated_at=now();
   return new;
 end $$;
+
+-- Transactional email outbox is created before the notification functions
+-- that write to it. A guarded declaration appears again below so older schema
+-- snapshots can continue to be applied safely.
+create table public.email_notifications (
+  id uuid primary key default gen_random_uuid(),
+  appointment_id uuid references public.appointments(id) on delete cascade,
+  availability_id uuid references public.availability(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  event_type text not null check (event_type in ('availability_published','request_submitted','request_approved','request_declined','schedule_changed','appointment_cancelled','appointment_reminder','reminder_60_minutes','reminder_30_minutes')),
+  subject text not null,
+  body text not null,
+  status text not null default 'queued' check (status in ('queued','processing','sent','failed')),
+  attempts integer not null default 0,
+  processing_started_at timestamptz,
+  last_error text,
+  scheduled_for timestamptz not null default now(),
+  sent_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+-- Complete notification coverage: availability confirmations, both
+-- participants on lifecycle changes, and scheduled 60/30-minute reminders.
+create or replace function public.queue_availability_email()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  insert into email_notifications(availability_id,recipient_id,event_type,subject,body)
+  select new.id,new.faculty_id,'availability_published','Availability published',
+    'Your consultation availability was published successfully and is now visible to eligible students.'
+  where exists(select 1 from profiles where id=new.faculty_id and email_notifications)
+  on conflict do nothing;
+  return new;
+end $$;
+create trigger queue_availability_email_after_insert
+after insert on public.availability
+for each row execute function public.queue_availability_email();
+
+create or replace function public.queue_appointment_email()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare faculty_user uuid; slot_start timestamptz; event_name text;
+mail_subject text; mail_body text; recipient uuid;
+begin
+  select faculty_id,starts_at into faculty_user,slot_start
+  from availability where id=new.availability_id;
+  if tg_op='INSERT' then
+    insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body)
+    select new.id,new.availability_id,new.student_id,'request_submitted','Consultation request received','Your consultation request was received and is pending faculty approval.'
+    where exists(select 1 from profiles where id=new.student_id and email_notifications)
+    on conflict do nothing;
+    insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body)
+    select new.id,new.availability_id,faculty_user,'request_submitted','New consultation request','A student submitted a consultation request for your review.'
+    where exists(select 1 from profiles where id=faculty_user and email_notifications)
+    on conflict do nothing;
+  elsif new.status is distinct from old.status then
+    event_name := case new.status when 'confirmed' then 'request_approved' when 'declined' then 'request_declined' when 'cancelled' then 'appointment_cancelled' else null end;
+    mail_subject := case new.status when 'confirmed' then 'Consultation request approved' when 'declined' then 'Consultation request declined' when 'cancelled' then 'Consultation cancelled' else null end;
+    mail_body := case new.status when 'confirmed' then 'The faculty consultation request was approved. Open FacultyConnect to review the confirmed time and location.' when 'declined' then 'The consultation request was declined. Open FacultyConnect to review the status and official next steps.' when 'cancelled' then 'The consultation was cancelled. Open FacultyConnect to review the updated schedule.' else null end;
+    if event_name is not null then
+      foreach recipient in array array[new.student_id,faculty_user] loop
+        insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body)
+        select new.id,new.availability_id,recipient,event_name,mail_subject,mail_body
+        where exists(select 1 from profiles where id=recipient and email_notifications)
+        on conflict do nothing;
+      end loop;
+    end if;
+    if new.status='confirmed' then
+      foreach recipient in array array[new.student_id,faculty_user] loop
+        insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body,scheduled_for)
+        select new.id,new.availability_id,recipient,'reminder_60_minutes','Consultation in 1 hour','Your confirmed faculty consultation begins in approximately one hour. Open FacultyConnect to review the time and location.',slot_start-interval '1 hour'
+        where slot_start>now()+interval '1 hour' and exists(select 1 from profiles where id=recipient and email_notifications)
+        on conflict do nothing;
+        insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body,scheduled_for)
+        select new.id,new.availability_id,recipient,'reminder_30_minutes','Consultation in 30 minutes','Your confirmed faculty consultation begins in approximately 30 minutes. Please prepare and open FacultyConnect for the approved details.',slot_start-interval '30 minutes'
+        where slot_start>now()+interval '30 minutes' and exists(select 1 from profiles where id=recipient and email_notifications)
+        on conflict do nothing;
+      end loop;
+    elsif new.status in ('declined','cancelled') then
+      delete from email_notifications where appointment_id=new.id
+        and event_type in ('appointment_reminder','reminder_60_minutes','reminder_30_minutes')
+        and status='queued';
+    end if;
+  end if;
+  return new;
+end $$;
+
+create or replace function public.queue_due_appointment_reminders()
+returns integer language plpgsql security definer set search_path=public as $$
+declare queued_count integer;
+begin
+  with due as (
+    select ap.id appointment_id,ap.student_id,av.id availability_id,av.faculty_id,av.starts_at
+    from appointments ap join availability av on av.id=ap.availability_id
+    where ap.status='confirmed' and av.starts_at>now()+interval '25 minutes'
+  ), recipients as (
+    select appointment_id,availability_id,student_id recipient_id,starts_at from due
+    union all select appointment_id,availability_id,faculty_id,starts_at from due
+  ), reminder_rows as (
+    select appointment_id,availability_id,recipient_id,'reminder_60_minutes'::text event_type,'Consultation in 1 hour'::text subject,'Your confirmed faculty consultation begins in approximately one hour. Open FacultyConnect to review the time and location.'::text body,starts_at-interval '1 hour' scheduled_for from recipients where starts_at>now()+interval '1 hour'
+    union all
+    select appointment_id,availability_id,recipient_id,'reminder_30_minutes','Consultation in 30 minutes','Your confirmed faculty consultation begins in approximately 30 minutes. Please prepare and open FacultyConnect for the approved details.',starts_at-interval '30 minutes' from recipients where starts_at>now()+interval '30 minutes'
+  ), inserted as (
+    insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body,scheduled_for)
+    select r.appointment_id,r.availability_id,r.recipient_id,r.event_type,r.subject,r.body,r.scheduled_for
+    from reminder_rows r join profiles p on p.id=r.recipient_id and p.email_notifications
+    on conflict do nothing returning 1
+  ) select count(*) into queued_count from inserted;
+  return queued_count;
+end $$;
+revoke all on function public.queue_availability_email() from public,anon,authenticated;
+revoke all on function public.queue_appointment_email() from public,anon,authenticated;
+revoke all on function public.queue_due_appointment_reminders() from public,anon,authenticated;
+grant execute on function public.queue_due_appointment_reminders() to service_role;
 create trigger set_appointment_updated_at_before_update
 before update on public.appointments
 for each row execute function public.set_appointment_updated_at();
 
 -- Transactional email outbox. A scheduled server-side function sends queued
 -- messages to the user's registered address (Gmail and CLSU email supported).
-create table public.email_notifications (
+create table if not exists public.email_notifications (
   id uuid primary key default gen_random_uuid(),
   appointment_id uuid references public.appointments(id) on delete cascade,
+  availability_id uuid references public.availability(id) on delete cascade,
   recipient_id uuid not null references public.profiles(id) on delete cascade,
-  event_type text not null check (event_type in ('request_submitted','request_approved','request_declined','schedule_changed','appointment_cancelled','appointment_reminder')),
+  event_type text not null check (event_type in ('availability_published','request_submitted','request_approved','request_declined','schedule_changed','appointment_cancelled','appointment_reminder','reminder_60_minutes','reminder_30_minutes')),
   subject text not null,
   body text not null,
   status text not null default 'queued' check (status in ('queued','processing','sent','failed')),
@@ -88,6 +201,9 @@ create table public.email_notifications (
   created_at timestamptz not null default now()
 );
 create unique index one_email_event_per_recipient on public.email_notifications(appointment_id,recipient_id,event_type);
+create unique index one_availability_email_event_per_recipient
+  on public.email_notifications(availability_id,recipient_id,event_type)
+  where availability_id is not null and appointment_id is null;
 
 -- Product Owner-approved knowledge used by the NLP service. Draft and review
 -- entries remain invisible to students until an administrator approves them.
@@ -489,29 +605,6 @@ end $$;
 revoke all on function public.submit_consultation_review(uuid,integer,text) from public,anon;
 grant execute on function public.submit_consultation_review(uuid,integer,text) to authenticated;
 
--- Call this from Supabase Cron every 15 minutes. It queues one reminder per
--- participant when a confirmed consultation is 23-24 hours away.
-create function public.queue_due_appointment_reminders() returns integer language plpgsql security definer set search_path=public as $$
-declare queued_count integer;
-begin
-  with due as (
-    select ap.id appointment_id, ap.student_id, av.faculty_id, av.starts_at
-    from appointments ap join availability av on av.id=ap.availability_id
-    where ap.status='confirmed' and av.starts_at between now()+interval '23 hours' and now()+interval '24 hours'
-  ), recipients as (
-    select appointment_id,student_id recipient_id,starts_at from due
-    union all select appointment_id,faculty_id,starts_at from due
-  ), inserted as (
-    insert into email_notifications(appointment_id,recipient_id,event_type,subject,body)
-    select r.appointment_id,r.recipient_id,'appointment_reminder','Consultation reminder','You have a confirmed faculty consultation within the next 24 hours. Sign in to review the approved time and location.'
-    from recipients r join profiles p on p.id=r.recipient_id and p.email_notifications
-    on conflict (appointment_id,recipient_id,event_type) do nothing returning 1
-  ) select count(*) into queued_count from inserted;
-  return queued_count;
-end $$;
-revoke all on function public.queue_due_appointment_reminders() from public,anon,authenticated;
-grant execute on function public.queue_due_appointment_reminders() to service_role;
-
 -- Core consultation workflow. Security-definer RPCs keep multi-table changes
 -- atomic and ensure browser clients cannot bypass ownership or status rules.
 create or replace function public.book_consultation(
@@ -695,31 +788,34 @@ revoke all on function public.reopen_slot_after_inactive_appointment() from publ
 -- Queue status notifications for every affected participant. The email worker
 -- remains responsible for delivery and retry handling.
 create or replace function public.queue_appointment_email() returns trigger language plpgsql security definer set search_path=public as $$
-declare faculty_user uuid; event_name text; mail_subject text; mail_body text;
+declare faculty_user uuid; slot_start timestamptz; event_name text;
+mail_subject text; mail_body text; recipient uuid;
 begin
-  select faculty_id into faculty_user from availability where id=new.availability_id;
+  select faculty_id,starts_at into faculty_user,slot_start from availability where id=new.availability_id;
   if tg_op='INSERT' then
-    insert into email_notifications(appointment_id,recipient_id,event_type,subject,body)
-    select new.id,new.student_id,'request_submitted','Consultation request received','Your consultation request was received and is pending faculty approval.'
-    where exists(select 1 from profiles where id=new.student_id and email_notifications);
-    insert into email_notifications(appointment_id,recipient_id,event_type,subject,body)
-    select new.id,faculty_user,'request_submitted','New consultation request','A student submitted a consultation request for your review.'
-    where exists(select 1 from profiles where id=faculty_user and email_notifications);
+    insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body)
+    select new.id,new.availability_id,new.student_id,'request_submitted','Consultation request received','Your consultation request was received and is pending faculty approval.' where exists(select 1 from profiles where id=new.student_id and email_notifications) on conflict do nothing;
+    insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body)
+    select new.id,new.availability_id,faculty_user,'request_submitted','New consultation request','A student submitted a consultation request for your review.' where exists(select 1 from profiles where id=faculty_user and email_notifications) on conflict do nothing;
   elsif new.status is distinct from old.status then
     event_name := case new.status when 'confirmed' then 'request_approved' when 'declined' then 'request_declined' when 'cancelled' then 'appointment_cancelled' else null end;
     mail_subject := case new.status when 'confirmed' then 'Consultation request approved' when 'declined' then 'Consultation request declined' when 'cancelled' then 'Consultation cancelled' else null end;
-    mail_body := case new.status when 'confirmed' then 'Your faculty consultation request was approved. Sign in to view the confirmed details.' when 'declined' then 'Your consultation request was not approved. Sign in to view the status and official next steps.' when 'cancelled' then 'A consultation was cancelled. Sign in to review the updated information.' else null end;
+    mail_body := case new.status when 'confirmed' then 'The faculty consultation request was approved. Open FacultyConnect to review the confirmed time and location.' when 'declined' then 'The consultation request was declined. Open FacultyConnect to review the status and official next steps.' when 'cancelled' then 'The consultation was cancelled. Open FacultyConnect to review the updated schedule.' else null end;
     if event_name is not null then
-      insert into email_notifications(appointment_id,recipient_id,event_type,subject,body)
-      select new.id,new.student_id,event_name,mail_subject,mail_body
-      where exists(select 1 from profiles where id=new.student_id and email_notifications)
-      on conflict (appointment_id,recipient_id,event_type) do nothing;
-      if new.status='cancelled' then
-        insert into email_notifications(appointment_id,recipient_id,event_type,subject,body)
-        select new.id,faculty_user,event_name,mail_subject,mail_body
-        where exists(select 1 from profiles where id=faculty_user and email_notifications)
-        on conflict (appointment_id,recipient_id,event_type) do nothing;
-      end if;
+      foreach recipient in array array[new.student_id,faculty_user] loop
+        insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body)
+        select new.id,new.availability_id,recipient,event_name,mail_subject,mail_body where exists(select 1 from profiles where id=recipient and email_notifications) on conflict do nothing;
+      end loop;
+    end if;
+    if new.status='confirmed' then
+      foreach recipient in array array[new.student_id,faculty_user] loop
+        insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body,scheduled_for)
+        select new.id,new.availability_id,recipient,'reminder_60_minutes','Consultation in 1 hour','Your confirmed faculty consultation begins in approximately one hour. Open FacultyConnect to review the time and location.',slot_start-interval '1 hour' where slot_start>now()+interval '1 hour' and exists(select 1 from profiles where id=recipient and email_notifications) on conflict do nothing;
+        insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body,scheduled_for)
+        select new.id,new.availability_id,recipient,'reminder_30_minutes','Consultation in 30 minutes','Your confirmed faculty consultation begins in approximately 30 minutes. Please prepare and open FacultyConnect for the approved details.',slot_start-interval '30 minutes' where slot_start>now()+interval '30 minutes' and exists(select 1 from profiles where id=recipient and email_notifications) on conflict do nothing;
+      end loop;
+    elsif new.status in ('declined','cancelled') then
+      delete from email_notifications where appointment_id=new.id and event_type in ('appointment_reminder','reminder_60_minutes','reminder_30_minutes') and status='queued';
     end if;
   end if;
   return new;

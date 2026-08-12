@@ -8,6 +8,7 @@ const headers = {
 type NotificationItem = {
   id: string;
   appointment_id: string | null;
+  availability_id: string | null;
   recipient_id: string;
   event_type: string;
   subject: string;
@@ -30,12 +31,15 @@ type AppointmentSummary = {
 };
 
 const eventPresentation: Record<string, { label: string; color: string; background: string }> = {
+  availability_published: { label: "Availability published", color: "#075f3f", background: "#e6f4ed" },
   request_submitted: { label: "Request received", color: "#075f3f", background: "#e6f4ed" },
   request_approved: { label: "Appointment approved", color: "#075f3f", background: "#e6f4ed" },
   request_declined: { label: "Request declined", color: "#9b2c2c", background: "#fdecec" },
   schedule_changed: { label: "Schedule updated", color: "#7a4d00", background: "#fff4d6" },
   appointment_cancelled: { label: "Appointment cancelled", color: "#9b2c2c", background: "#fdecec" },
   appointment_reminder: { label: "Appointment reminder", color: "#075f3f", background: "#e6f4ed" },
+  reminder_60_minutes: { label: "1-hour reminder", color: "#075f3f", background: "#e6f4ed" },
+  reminder_30_minutes: { label: "30-minute reminder", color: "#7a4d00", background: "#fff4d6" },
 };
 
 function escapeHtml(value: unknown) {
@@ -62,9 +66,13 @@ function availabilityFor(appointment?: AppointmentSummary) {
     : appointment.availability;
 }
 
-function appointmentDetails(appointment?: AppointmentSummary) {
-  const availability = availabilityFor(appointment);
-  if (!appointment || !availability) return "";
+function consultationDetails(options: {
+  appointment?: AppointmentSummary;
+  availability?: AvailabilitySummary;
+}) {
+  const { appointment } = options;
+  const availability = options.availability || availabilityFor(appointment);
+  if (!availability) return "";
 
   const startsAt = new Date(availability.starts_at);
   const endsAt = new Date(availability.ends_at);
@@ -85,7 +93,7 @@ function appointmentDetails(appointment?: AppointmentSummary) {
     minute: "2-digit",
   }).format(endsAt)}`;
   const rows = [
-    ["Consultation", appointment.topic],
+    ["Consultation", appointment?.topic || "Published faculty availability"],
     ["Date", date],
     ["Time", `${time} (Philippine Time)`],
     ["Mode", availability.consultation_mode === "online" ? "Online" : "In person"],
@@ -104,9 +112,10 @@ function emailTemplate(options: {
   profileName: string;
   item: NotificationItem;
   appointment?: AppointmentSummary;
+  availability?: AvailabilitySummary;
   portalUrl: string;
 }) {
-  const { profileName, item, appointment, portalUrl } = options;
+  const { profileName, item, appointment, availability, portalUrl } = options;
   const presentation = eventPresentation[item.event_type] ?? {
     label: "Appointment update",
     color: "#075f3f",
@@ -130,7 +139,7 @@ function emailTemplate(options: {
             <h1 style="margin:18px 0 12px;color:#10251a;font-size:27px;line-height:1.2">${escapeHtml(item.subject)}</h1>
             <p style="margin:0 0 12px;color:#41564a;font-size:15px;line-height:1.65">Hello ${escapeHtml(profileName || "there")},</p>
             <p style="margin:0;color:#41564a;font-size:15px;line-height:1.65">${escapeTextBlock(item.body)}</p>
-            ${appointmentDetails(appointment)}
+            ${consultationDetails({ appointment, availability })}
             <table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0 18px"><tr><td style="border-radius:8px;background:#007a4b">
               <a href="${escapeHtml(portalUrl)}" style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800">Open FacultyConnect →</a>
             </td></tr></table>
@@ -202,7 +211,14 @@ Deno.serve(async (request) => {
   const appointmentIds = [
     ...new Set(typedClaimed.map((item) => item.appointment_id).filter((id): id is string => Boolean(id))),
   ];
-  const [{ data: profiles, error: profileError }, { data: appointments, error: appointmentError }] = await Promise.all([
+  const availabilityIds = [
+    ...new Set(typedClaimed.map((item) => item.availability_id).filter((id): id is string => Boolean(id))),
+  ];
+  const [
+    { data: profiles, error: profileError },
+    { data: appointments, error: appointmentError },
+    { data: availabilityRows, error: availabilityError },
+  ] = await Promise.all([
     supabase.from("profiles").select("id,email,full_name").in("id", recipientIds),
     appointmentIds.length
       ? supabase
@@ -210,10 +226,16 @@ Deno.serve(async (request) => {
         .select("id,topic,status,availability:availability_id(starts_at,ends_at,location,consultation_mode)")
         .in("id", appointmentIds)
       : Promise.resolve({ data: [], error: null }),
+    availabilityIds.length
+      ? supabase
+        .from("availability")
+        .select("id,starts_at,ends_at,location,consultation_mode")
+        .in("id", availabilityIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
-  if (profileError || appointmentError) {
-    const fetchError = profileError ?? appointmentError;
+  if (profileError || appointmentError || availabilityError) {
+    const fetchError = profileError ?? appointmentError ?? availabilityError;
     await supabase
       .from("email_notifications")
       .update({
@@ -230,6 +252,9 @@ Deno.serve(async (request) => {
   const appointmentById = new Map(
     ((appointments || []) as AppointmentSummary[]).map((appointment) => [appointment.id, appointment]),
   );
+  const availabilityById = new Map(
+    ((availabilityRows || []) as Array<AvailabilitySummary & { id: string }>).map((availability) => [availability.id, availability]),
+  );
 
   let sent = 0;
   let failed = 0;
@@ -237,6 +262,9 @@ Deno.serve(async (request) => {
     const profile = recipientById.get(item.recipient_id);
     const appointment = item.appointment_id
       ? appointmentById.get(item.appointment_id)
+      : undefined;
+    const availability = item.availability_id
+      ? availabilityById.get(item.availability_id)
       : undefined;
     try {
       if (!profile?.email) throw new Error("Recipient profile or email is missing");
@@ -255,6 +283,7 @@ Deno.serve(async (request) => {
             profileName: profile.full_name,
             item,
             appointment,
+            availability,
             portalUrl,
           }),
         }),
