@@ -108,7 +108,7 @@ function friendlyAuthError(message: string, action: AuthAction) {
       normalized.includes("not approved") ||
       normalized.includes("saving new user"))
   ) {
-    return "We couldn't create this account. Confirm that the email address is approved for the FacultyConnect pilot and that the student number is not already registered.";
+    return "We couldn't create this account. Confirm that the email address is approved for FacultyConnect registration and that the student number is not already registered.";
   }
   if (action === "reset") {
     return "We couldn't send the reset link right now. Check the email address and try again shortly.";
@@ -118,55 +118,12 @@ function friendlyAuthError(message: string, action: AuthAction) {
     : "We couldn't sign you in right now. Please try again.";
 }
 
-const demoSlots: Slot[] = [
-  {
-    id: "1",
-    faculty_name: "Dr. Maria Santos",
-    initials: "MS",
-    expertise: "Software Engineering",
-    starts_at: "2026-08-05T09:00",
-    ends_at: "2026-08-05T09:30",
-    location: "CLIRDEC Consultation Room",
-    color: "coral",
-  },
-  {
-    id: "2",
-    faculty_name: "Prof. Juan Dela Cruz",
-    initials: "JD",
-    expertise: "Data Analytics",
-    starts_at: "2026-08-05T13:00",
-    ends_at: "2026-08-05T13:30",
-    location: "CLIRDEC Consultation Room",
-    color: "blue",
-  },
-  {
-    id: "3",
-    faculty_name: "Dr. Ana Reyes",
-    initials: "AR",
-    expertise: "Research Methods",
-    starts_at: "2026-08-06T10:00",
-    ends_at: "2026-08-06T10:30",
-    location: "CLIRDEC Consultation Room",
-    color: "gold",
-  },
-  {
-    id: "4",
-    faculty_name: "Prof. Carlo Mendoza",
-    initials: "CM",
-    expertise: "Web Development",
-    starts_at: "2026-08-07T14:00",
-    ends_at: "2026-08-07T14:30",
-    location: "CLIRDEC Consultation Room",
-    color: "mint",
-  },
-];
-
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(configured);
   const [recoveringPassword, setRecoveringPassword] = useState(false);
   const [view, setView] = useState<View>("home");
-  const [slots, setSlots] = useState<Slot[]>(configured ? [] : demoSlots);
+  const [slots, setSlots] = useState<Slot[]>([]);
   const [booked, setBooked] = useState<Slot[]>([]);
   const [selected, setSelected] = useState<Slot | null>(null);
   const [bookingTopic, setBookingTopic] = useState("");
@@ -639,7 +596,7 @@ function App() {
           <BrandLogo />
           <span>
             <b>CLSU FacultyConnect</b>
-            <small>Managed by MISO · CLIRDEC pilot</small>
+            <small>Faculty consultation and verified guidance</small>
           </span>
         </button>
         <div className="top-actions">
@@ -703,7 +660,7 @@ function App() {
         </nav>
         <div className="side-foot">
           <span>CLIRDEC</span>
-          <small>Controlled pilot · Approved content only</small>
+          <small>Official service · Approved content only</small>
           <button onClick={logout}>Sign out</button>
         </div>
       </aside>
@@ -868,7 +825,7 @@ function ProductionAuth({
           <span>CLSU FacultyConnect</span>
         </div>
         <div>
-          <span className="pilot-label">MISO · CLIRDEC PILOT</span>
+          <span className="service-label">CLSU FACULTY CONNECT</span>
           <h1>Approved answers. Clear next steps.</h1>
           <p>
             Use your registered email to access faculty consultation services
@@ -898,7 +855,7 @@ function ProductionAuth({
             <>
               <h2>Create a student account</h2>
               <p className="muted">
-                Register with an approved pilot email address. Faculty and
+                Register with an approved email address. Faculty and
                 administrator accounts are issued separately by MISO.
               </p>
             </>
@@ -998,7 +955,7 @@ function ProductionAuth({
                   placeholder="name@clsu2.edu.ph"
                 />
                 <small>
-                  This email must be included in the approved pilot list.
+                  This email must be included in the approved registration list.
                 </small>
               </label>
             </div>
@@ -1195,12 +1152,6 @@ function ProductionAuth({
               </div>
             </aside>
           )}
-          {!configured && (
-            <small className="demo-note">
-              Backend setup required · Supabase environment variables are not
-              configured.
-            </small>
-          )}
         </form>
       </section>
     </main>
@@ -1242,7 +1193,7 @@ function PasswordRecovery({
           <span>CLSU FacultyConnect</span>
         </div>
         <div>
-          <span className="pilot-label">SECURE ACCOUNT RECOVERY</span>
+          <span className="service-label">SECURE ACCOUNT RECOVERY</span>
           <h1>Choose a new password.</h1>
           <p>
             Your new password must meet the same security requirements used for
@@ -1446,7 +1397,7 @@ function Dashboard({
     <>
       <section className="page-head">
         <div>
-          <p className="eyebrow">CLIRDEC FAQ PILOT</p>
+          <p className="eyebrow">VERIFIED CONSULTATION GUIDANCE</p>
           <h1>What do you need help with, {user.name.split(" ")[0]}?</h1>
           <p>
             Start with the approved-information assistant or view
@@ -1532,7 +1483,7 @@ function Dashboard({
             <p className="eyebrow">SAFE BY DESIGN</p>
             <h2>Approved answer or official referral</h2>
           </div>
-          <p>The pilot does not provide unrestricted generative answers.</p>
+          <p>The assistant does not provide unrestricted generative answers.</p>
         </div>
         <div className="steps">
           <article>
@@ -1887,7 +1838,7 @@ function Chat({
     <>
       <section className="page-head compact">
         <div>
-          <p className="eyebrow">CLIRDEC FAQ PILOT</p>
+          <p className="eyebrow">VERIFIED CONSULTATION GUIDANCE</p>
           <h1>Ask Consult AI</h1>
           <p>
             Answers use Product Owner or CLIRDEC-approved information.
@@ -2080,11 +2031,11 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         ["fprofile", "Profile", "profile"],
       ]
     : [
-        ["ahome", "Pilot overview", "home"],
+        ["ahome", "Service overview", "home"],
         ["knowledge", "FAQ knowledge base", "assistant"],
         ["users", "Users and roles", "users"],
         ["appointments", "Consultation logs", "calendar"],
-        ["reports", "Pilot QA", "report"],
+        ["reports", "Quality assurance", "report"],
       ];
   const navigate = (target: FView | AView) => {
     setView(target);
@@ -2100,7 +2051,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
           <BrandLogo />
           <span>
             <b>CLSU FacultyConnect</b>
-            <small>Managed by MISO · CLIRDEC pilot</small>
+            <small>Faculty consultation administration</small>
           </span>
         </button>
         <div className="top-actions">
@@ -2153,7 +2104,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         </div>
         <div className="side-foot">
           <span>Central Luzon State University</span>
-          <small>Role-restricted controlled pilot</small>
+          <small>Role-restricted administrative service</small>
           <button onClick={logout}>Sign out</button>
         </div>
       </aside>
@@ -2961,7 +2912,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     try {
       await approveRegistrationEmail(email, user.id);
       form.reset();
-      setMessage("Participant email approved for one controlled student registration.");
+      setMessage("Email approved for one student registration.");
       await refresh();
     } catch (cause) {
       setMessage(
@@ -3081,8 +3032,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         {feedback}
         <Head
           label="MISO ADMINISTRATION"
-          title="Pilot Overview"
-          copy="Monitor the CLIRDEC pilot before university-wide expansion."
+          title="Service overview"
+          copy="Monitor FacultyConnect activity, service quality, and access."
         />
         <Stats
           data={[
@@ -3111,8 +3062,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
               </div>
             )}
           </Work>
-          <Work title="Pilot totals">
-            <Line a="Now" b="Pilot data refreshed" c="Live Supabase records" />
+          <Work title="Service totals">
+            <Line a="Now" b="Service data refreshed" c="Live Supabase records" />
             <Line
               a={String(
                 data.faqs.filter((item) => item.status === "approved").length,
@@ -3123,7 +3074,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             <Line
               a={String(completed)}
               b="Completed consultations"
-              c="Pilot records"
+              c="Service records"
             />
           </Work>
         </div>
@@ -3136,7 +3087,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <Head
           label="MISO ADMINISTRATION"
           title="Manage users"
-          copy="Approve pilot student registrations, then assign faculty and administrator access through an audited role change."
+          copy="Approve student registrations, then assign faculty and administrator access through an audited role change."
           action="Approve email"
         />
         <div className="knowledge-layout">
@@ -3235,7 +3186,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <Head
           label="MISO ADMINISTRATION"
           title="Manage appointments"
-          copy="Monitor schedules and investigate pilot exceptions."
+          copy="Monitor schedules and investigate service exceptions."
         />
         <div className="filter-tabs" aria-label="Appointment status filters">
           <button
@@ -3411,7 +3362,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         ]}
       />
       <div className="report-grid">
-        <Work title="Required pilot checks">
+        <Work title="Required service checks">
           <div className="qa-list">
             <p>
               <b>FAQ test set</b>
