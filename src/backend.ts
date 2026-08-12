@@ -42,6 +42,7 @@ export type PortalAppointment = {
   faculty_id: string;
   faculty_name: string;
   expertise: string[];
+  review?: ConsultationReview;
 };
 
 export type FacultyRequest = PortalAppointment;
@@ -57,6 +58,20 @@ export type AdminUser = {
   full_name: string;
   role: Role;
   department: string;
+};
+
+export type ConsultationReview = {
+  id: string;
+  appointment_id: string;
+  student_id: string;
+  faculty_id: string;
+  rating: number;
+  comment: string | null;
+  year_level: string | null;
+  college: string | null;
+  program: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type RegistrationEmail = {
@@ -84,6 +99,7 @@ export type AdminPortal = {
   appointments: PortalAppointment[];
   faqs: FaqEntry[];
   registrationEmails: RegistrationEmail[];
+  reviews: ConsultationReview[];
 };
 
 type DbError = { message?: string; code?: string; details?: string } | null;
@@ -133,6 +149,7 @@ export async function loadStudentPortal(studentId: string) {
   const [
     { data: open, error: slotError },
     { data: appointmentRows, error: appointmentError },
+    { data: reviewRows, error: reviewError },
   ] = await Promise.all([
     supabase
       .from("availability")
@@ -149,6 +166,10 @@ export async function loadStudentPortal(studentId: string) {
       )
       .eq("student_id", studentId)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("consultation_reviews")
+      .select("id,appointment_id,student_id,faculty_id,rating,comment,year_level,college,program,created_at,updated_at")
+      .eq("student_id", studentId),
   ]);
   if (slotError)
     throw new Error(
@@ -158,6 +179,17 @@ export async function loadStudentPortal(studentId: string) {
     throw new Error(
       friendlyError(appointmentError, "Your requests could not be loaded."),
     );
+  if (reviewError)
+    throw new Error(
+      friendlyError(reviewError, "Your consultation reviews could not be loaded."),
+    );
+
+  const reviews = new Map(
+    ((reviewRows || []) as ConsultationReview[]).map((review) => [
+      review.appointment_id,
+      review,
+    ]),
+  );
 
   const facultyIds = [
     ...new Set(
@@ -221,12 +253,34 @@ export async function loadStudentPortal(studentId: string) {
           faculty_id: slot.faculty_id,
           faculty_name: names.get(slot.faculty_id) || "Faculty member",
           expertise: expertise.get(slot.faculty_id) || [],
+          review: reviews.get(row.id),
         },
       ];
     },
   );
 
   return { slots, appointments };
+}
+
+export async function submitConsultationReview(input: {
+  appointmentId: string;
+  rating: number;
+  comment?: string;
+}) {
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5)
+    throw new Error("Choose a rating from 1 to 5 stars.");
+  if ((input.comment || "").trim().length > 1000)
+    throw new Error("Review comments may contain at most 1000 characters.");
+  const { data, error } = await supabase.rpc("submit_consultation_review", {
+    target_appointment: input.appointmentId,
+    review_rating: input.rating,
+    review_comment: input.comment?.trim() || null,
+  });
+  return requireData(
+    data as string | null,
+    error,
+    "Your consultation review could not be submitted.",
+  );
 }
 
 export async function bookAppointment(input: {
@@ -475,6 +529,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     { data: rows, error: appointmentError },
     { data: faqs, error: faqError },
     { data: registrationEmails, error: registrationError },
+    { data: reviews, error: reviewError },
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -496,11 +551,15 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       .from("registration_allowlist")
       .select("email,active,created_at")
       .order("created_at", { ascending: false }),
+    supabase
+      .from("consultation_reviews")
+      .select("id,appointment_id,student_id,faculty_id,rating,comment,year_level,college,program,created_at,updated_at")
+      .order("created_at", { ascending: false }),
   ]);
-  if (userError || appointmentError || faqError || registrationError) {
+  if (userError || appointmentError || faqError || registrationError || reviewError) {
     throw new Error(
       friendlyError(
-        userError || appointmentError || faqError || registrationError,
+        userError || appointmentError || faqError || registrationError || reviewError,
         "The administration workspace could not be loaded.",
       ),
     );
@@ -542,6 +601,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     appointments,
     faqs: (faqs || []) as FaqEntry[],
     registrationEmails: (registrationEmails || []) as RegistrationEmail[],
+    reviews: (reviews || []) as ConsultationReview[],
   };
 }
 

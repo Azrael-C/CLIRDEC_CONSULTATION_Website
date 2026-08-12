@@ -19,9 +19,11 @@ import {
   loadStudentPortal,
   removeFacultyAvailability,
   rescheduleAppointment,
+  submitConsultationReview,
   updateFacultyProfile,
   type AdminPortal,
   type AppointmentStatus,
+  type ConsultationReview,
   type FaqEntry,
   type FacultyAvailability,
   type FacultyProfile,
@@ -70,6 +72,7 @@ type Slot = {
   topic?: string;
   notes?: string;
   updated_at?: string;
+  review?: ConsultationReview;
 };
 type ChatMessage = {
   who: "you" | "bot";
@@ -118,6 +121,19 @@ function friendlyAuthError(message: string, action: AuthAction) {
     : "We couldn't sign you in right now. Please try again.";
 }
 
+function usePageMetadata(title: string, description: string) {
+  useEffect(() => {
+    document.title = title;
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "description";
+      document.head.appendChild(meta);
+    }
+    meta.content = description;
+  }, [title, description]);
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(configured);
@@ -139,6 +155,54 @@ function App() {
     },
   ]);
   const [question, setQuestion] = useState("");
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const studentMetadata: Record<View, [string, string]> = {
+    home: [
+      "Student overview | CLSU FacultyConnect",
+      "Access approved consultation guidance, requests, and faculty availability.",
+    ],
+    find: [
+      "Faculty availability | CLSU FacultyConnect",
+      "Browse faculty-published consultation schedules and expertise categories.",
+    ],
+    schedule: [
+      "My consultation requests | CLSU FacultyConnect",
+      "Review consultation request status, appointment details, and completed-session feedback.",
+    ],
+    assistant: [
+      "Consult AI | CLSU FacultyConnect",
+      "Ask questions using the approved CLSU consultation knowledge base.",
+    ],
+    profile: [
+      "My profile | CLSU FacultyConnect",
+      "Manage your FacultyConnect student profile and notification preferences.",
+    ],
+  };
+  const defaultMetadata: [string, string] =
+    pathname === "/privacy" ||
+    pathname === "/privacy-policy" ||
+    pathname === "/privacy-policy.html"
+      ? [
+          "Privacy Policy | CLSU FacultyConnect",
+          "Learn how CLSU FacultyConnect collects, uses, protects, and retains consultation information.",
+        ]
+      : pathname !== "/"
+        ? [
+            "Page not found | CLSU FacultyConnect",
+            "The requested FacultyConnect page could not be found.",
+          ]
+        : recoveringPassword
+          ? [
+              "Reset password | CLSU FacultyConnect",
+              "Securely update your FacultyConnect account password.",
+            ]
+          : user?.role === "student"
+            ? studentMetadata[view]
+            : [
+                "Secure portal | CLSU FacultyConnect",
+                "Access CLSU faculty consultation scheduling, approved guidance, and role-protected services.",
+              ];
+  usePageMetadata(defaultMetadata[0], defaultMetadata[1]);
   useEffect(() => {
     if (!configured) {
       setAuthLoading(false);
@@ -255,6 +319,7 @@ function App() {
           topic: item.topic,
           notes: item.notes,
           updated_at: item.updated_at,
+          review: item.review,
         })),
       );
     } catch (cause) {
@@ -493,6 +558,29 @@ function App() {
       setSubmitting(false);
     }
   }
+  async function saveConsultationReview(
+    appointmentId: string,
+    rating: number,
+    comment: string,
+  ) {
+    if (!user || submitting) return false;
+    setSubmitting(true);
+    try {
+      await submitConsultationReview({ appointmentId, rating, comment });
+      setNotice("Thank you. Your consultation review has been recorded.");
+      await loadStudentData(user.id);
+      return true;
+    } catch (cause) {
+      setNotice(
+        cause instanceof Error
+          ? cause.message
+          : "Your consultation review could not be submitted.",
+      );
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  }
   function beginReschedule(slot: Slot) {
     if (!slot.appointment_id) return;
     setReschedulingId(slot.appointment_id);
@@ -548,6 +636,13 @@ function App() {
       ]);
     }
   }
+  if (
+    pathname === "/privacy" ||
+    pathname === "/privacy-policy" ||
+    pathname === "/privacy-policy.html"
+  )
+    return <PrivacyPolicyPage />;
+  if (pathname !== "/") return <NotFoundPage />;
   if (authLoading)
     return (
       <main className="auth-loading">
@@ -661,6 +756,7 @@ function App() {
         <div className="side-foot">
           <span>CLIRDEC</span>
           <small>Official service · Approved content only</small>
+          <a href="/privacy-policy">Privacy policy</a>
           <button onClick={logout}>Sign out</button>
         </div>
       </aside>
@@ -688,6 +784,7 @@ function App() {
             reschedule={beginReschedule}
             busy={submitting}
             emailNotifications={user.email_notifications}
+            review={saveConsultationReview}
           />
         )}{" "}
         {view === "assistant" && (
@@ -702,6 +799,16 @@ function App() {
           <StudentProfile user={user} save={saveStudentProfile} />
         )}
       </main>
+      <MobilePortalNav
+        active={view}
+        navigate={(target) => nav(target as View)}
+        items={[
+          ["home", "Overview", "home"],
+          ["assistant", "Ask AI", "assistant"],
+          ["find", "Faculty", "search"],
+          ["schedule", "Requests", "requests"],
+        ]}
+      />
       {selected && (
         <BookingModal
           slot={selected}
@@ -794,6 +901,14 @@ function ProductionAuth({
   const [confirmation, setConfirmation] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [submittingAuth, setSubmittingAuth] = useState(false);
+  usePageMetadata(
+    creating
+      ? "Create student account | CLSU FacultyConnect"
+      : "Sign in | CLSU FacultyConnect",
+    creating
+      ? "Create an approved CLSU FacultyConnect student account."
+      : "Sign in securely to the CLSU FacultyConnect student, faculty, or administrator portal.",
+  );
   const passwordValid = studentPasswordIsValid(password);
   const passwordsMatch = confirmation.length > 0 && password === confirmation;
   const noticeIsSuccess = /account (created|is ready)|check your email|reset link/i.test(
@@ -1152,8 +1267,18 @@ function ProductionAuth({
               </div>
             </aside>
           )}
+          <div className="legal-links">
+            <a href="/privacy-policy">Privacy policy</a>
+            <span>·</span>
+            <span>Secure, role-protected access</span>
+          </div>
         </form>
       </section>
+      <div className="mobile-auth-cta">
+        <button type="button" onClick={changeMode}>
+          {creating ? "Return to sign in" : "Create a student account"}
+        </button>
+      </div>
     </main>
   );
 }
@@ -1256,6 +1381,123 @@ function PasswordRecovery({
             </p>
           )}
         </form>
+      </section>
+    </main>
+  );
+}
+function PrivacyPolicyPage() {
+  return (
+    <main className="public-policy-page">
+      <header className="public-policy-header">
+        <a className="public-brand" href="/">
+          <BrandLogo tone="light" size="hero" />
+          <span>CLSU FacultyConnect</span>
+        </a>
+        <div>
+          <p className="eyebrow">PRIVACY AND DATA PROTECTION</p>
+          <h1>Privacy Policy</h1>
+          <p>
+            How FacultyConnect handles information used for faculty
+            consultations, service administration, and quality improvement.
+          </p>
+          <small>Effective August 12, 2026</small>
+        </div>
+      </header>
+      <section className="policy-layout">
+        <nav aria-label="Privacy policy sections">
+          <a href="#information">Information collected</a>
+          <a href="#use">How information is used</a>
+          <a href="#access">Access and sharing</a>
+          <a href="#reviews">Consultation reviews</a>
+          <a href="#security">Security and retention</a>
+          <a href="#choices">Your choices</a>
+        </nav>
+        <article className="policy-copy">
+          <section id="information">
+            <h2>Information we collect</h2>
+            <p>
+              FacultyConnect stores the account information needed to identify
+              authorized users, including name, registered email address,
+              student number, college or unit, degree program, year level, role,
+              and notification preferences. Consultation records include the
+              requested topic, notes, faculty member, schedule, mode, location,
+              and request status.
+            </p>
+          </section>
+          <section id="use">
+            <h2>How information is used</h2>
+            <p>
+              Information is used to authenticate users, match consultation
+              requests with faculty-published schedules, communicate status
+              updates, provide approved guidance, prevent scheduling conflicts,
+              maintain operational records, and evaluate service quality.
+            </p>
+          </section>
+          <section id="access">
+            <h2>Access and sharing</h2>
+            <p>
+              Students can access their own requests. Faculty members can access
+              requests assigned to their schedules. Authorized MISO
+              administrators can access records required for support, quality
+              assurance, security, and account administration. FacultyConnect
+              does not sell personal information.
+            </p>
+          </section>
+          <section id="reviews">
+            <h2>Consultation reviews</h2>
+            <p>
+              After a completed consultation, students may provide a one-to-five
+              star rating and an optional written comment. Administrators can
+              review comments and aggregated results by year level, college, and
+              course to improve the service. Demographic values are recorded as
+              a snapshot at the time of review so historical reports remain
+              accurate.
+            </p>
+          </section>
+          <section id="security">
+            <h2>Security and retention</h2>
+            <p>
+              Role-based access, database row-level security, secure account
+              authentication, audit records, and encrypted network connections
+              protect portal data. Records are retained only for as long as
+              required for consultation operations, accountability, academic
+              support, and applicable university requirements.
+            </p>
+          </section>
+          <section id="choices">
+            <h2>Your choices and questions</h2>
+            <p>
+              Users may update supported profile details and optional email
+              notifications from the portal. Requests to correct or review other
+              personal information should be directed to MISO or the authorized
+              FacultyConnect administrator through official CLSU channels.
+            </p>
+          </section>
+          <footer>
+            <a className="primary" href="/">Return to FacultyConnect</a>
+          </footer>
+        </article>
+      </section>
+    </main>
+  );
+}
+
+function NotFoundPage() {
+  return (
+    <main className="not-found-page">
+      <section>
+        <a className="public-brand" href="/">
+          <BrandLogo tone="light" size="hero" />
+          <span>CLSU FacultyConnect</span>
+        </a>
+        <div className="not-found-code">404</div>
+        <p className="eyebrow">PAGE NOT FOUND</p>
+        <h1>This page is not available.</h1>
+        <p>
+          The address may be incorrect, or the page may have moved. Return to
+          the secure FacultyConnect portal to continue.
+        </p>
+        <a className="primary" href="/">Return to the portal →</a>
       </section>
     </main>
   );
@@ -1370,6 +1612,31 @@ function Nav({
       <NavIcon name={icon} />
       <span>{label}</span>
     </button>
+  );
+}
+function MobilePortalNav({
+  active,
+  items,
+  navigate,
+}: {
+  active: string;
+  items: Array<[string, string, NavIconName]>;
+  navigate: (target: string) => void;
+}) {
+  return (
+    <nav className="mobile-portal-nav" aria-label="Mobile portal navigation">
+      {items.map(([target, label, icon]) => (
+        <button
+          key={target}
+          className={active === target ? "active" : ""}
+          aria-current={active === target ? "page" : undefined}
+          onClick={() => navigate(target)}
+        >
+          <NavIcon name={icon} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 function statusLabel(status: AppointmentStatus = "pending") {
@@ -1590,12 +1857,18 @@ function Schedule({
   reschedule,
   busy,
   emailNotifications,
+  review,
 }: {
   booked: Slot[];
   cancel: (id: string) => void;
   reschedule: (slot: Slot) => void;
   busy: boolean;
   emailNotifications: boolean;
+  review: (
+    appointmentId: string,
+    rating: number,
+    comment: string,
+  ) => Promise<boolean>;
 }) {
   return (
     <>
@@ -1684,6 +1957,14 @@ function Schedule({
                     </button>
                   </div>
                 )}
+                {s.status === "completed" && s.appointment_id && (
+                  <ConsultationReviewForm
+                    appointmentId={s.appointment_id}
+                    existing={s.review}
+                    busy={busy}
+                    submit={review}
+                  />
+                )}
               </div>
             </article>
           );
@@ -1696,6 +1977,83 @@ function Schedule({
         )}
       </div>
     </>
+  );
+}
+
+function ConsultationReviewForm({
+  appointmentId,
+  existing,
+  busy,
+  submit,
+}: {
+  appointmentId: string;
+  existing?: ConsultationReview;
+  busy: boolean;
+  submit: (
+    appointmentId: string,
+    rating: number,
+    comment: string,
+  ) => Promise<boolean>;
+}) {
+  const [rating, setRating] = useState(existing?.rating || 0);
+  const [comment, setComment] = useState(existing?.comment || "");
+  const [saved, setSaved] = useState(Boolean(existing));
+  useEffect(() => {
+    setRating(existing?.rating || 0);
+    setComment(existing?.comment || "");
+    setSaved(Boolean(existing));
+  }, [existing?.id, existing?.rating, existing?.comment]);
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!rating) return;
+    if (await submit(appointmentId, rating, comment)) setSaved(true);
+  };
+  return (
+    <form className="consultation-review" onSubmit={handleSubmit}>
+      <div className="review-heading">
+        <div>
+          <b>{saved ? "Your consultation review" : "How was your consultation?"}</b>
+          <small>Ratings help MISO improve FacultyConnect services.</small>
+        </div>
+        {saved && <span>Saved</span>}
+      </div>
+      <fieldset className="star-rating">
+        <legend>Consultation rating</legend>
+        <div>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <button
+              type="button"
+              key={star}
+              className={star <= rating ? "selected" : ""}
+              aria-label={`${star} star${star === 1 ? "" : "s"}`}
+              aria-pressed={rating === star}
+              onClick={() => {
+                setRating(star);
+                setSaved(false);
+              }}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <label>
+        Optional comment
+        <textarea
+          value={comment}
+          maxLength={1000}
+          placeholder="Share what worked well or what could be improved."
+          onChange={(event) => {
+            setComment(event.target.value);
+            setSaved(false);
+          }}
+        />
+        <small>{comment.length}/1000 characters</small>
+      </label>
+      <button className="primary" disabled={busy || rating === 0}>
+        {busy ? "Saving…" : saved ? "Update review" : "Submit review"}
+      </button>
+    </form>
   );
 }
 function StudentProfile({
@@ -2018,11 +2376,30 @@ function BookingModal({
   );
 }
 type FView = "fhome" | "requests" | "availability" | "fprofile";
-type AView = "ahome" | "users" | "appointments" | "knowledge" | "reports";
+type AView =
+  | "ahome"
+  | "users"
+  | "appointments"
+  | "reviews"
+  | "knowledge"
+  | "reports";
 function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   const faculty = user.role === "faculty";
   const [view, setView] = useState<FView | AView>(faculty ? "fhome" : "ahome");
   const [menu, setMenu] = useState(false);
+  const portalMetadata: Record<FView | AView, [string, string]> = {
+    fhome: ["Faculty overview | CLSU FacultyConnect", "Review consultation activity and published faculty availability."],
+    requests: ["Consultation requests | CLSU FacultyConnect", "Review, approve, decline, and complete student consultation requests."],
+    availability: ["Manage availability | CLSU FacultyConnect", "Publish and manage weekday faculty consultation schedules."],
+    fprofile: ["Faculty profile | CLSU FacultyConnect", "Manage faculty expertise and consultation profile information."],
+    ahome: ["Administration overview | CLSU FacultyConnect", "Monitor FacultyConnect users, consultations, and service performance."],
+    users: ["Users and roles | CLSU FacultyConnect", "Administer registration approvals and audited FacultyConnect roles."],
+    appointments: ["Consultation logs | CLSU FacultyConnect", "Review consultation status, participants, schedules, and service exceptions."],
+    reviews: ["Reviews and insights | CLSU FacultyConnect", "Analyze consultation ratings and comments by year level, college, and course."],
+    knowledge: ["FAQ knowledge base | CLSU FacultyConnect", "Manage approved sources and answers used by the consultation assistant."],
+    reports: ["Quality assurance | CLSU FacultyConnect", "Track service acceptance criteria, quality targets, and release evidence."],
+  };
+  usePageMetadata(portalMetadata[view][0], portalMetadata[view][1]);
   const nav: [FView | AView, string, NavIconName][] = faculty
     ? [
         ["fhome", "Overview", "home"],
@@ -2035,6 +2412,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         ["knowledge", "FAQ knowledge base", "assistant"],
         ["users", "Users and roles", "users"],
         ["appointments", "Consultation logs", "calendar"],
+        ["reviews", "Reviews and insights", "report"],
         ["reports", "Quality assurance", "report"],
       ];
   const navigate = (target: FView | AView) => {
@@ -2105,6 +2483,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         <div className="side-foot">
           <span>Central Luzon State University</span>
           <small>Role-restricted administrative service</small>
+          <a href="/privacy-policy">Privacy policy</a>
           <button onClick={logout}>Sign out</button>
         </div>
       </aside>
@@ -2117,6 +2496,25 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
           <AdminPages view={view as AView} user={user} />
         )}
       </main>
+      <MobilePortalNav
+        active={view}
+        navigate={(target) => navigate(target as FView | AView)}
+        items={
+          faculty
+            ? [
+                ["fhome", "Overview", "home"],
+                ["requests", "Requests", "requests"],
+                ["availability", "Schedule", "calendar"],
+                ["fprofile", "Profile", "profile"],
+              ]
+            : [
+                ["ahome", "Overview", "home"],
+                ["users", "Users", "users"],
+                ["reviews", "Reviews", "report"],
+                ["reports", "QA", "calendar"],
+              ]
+        }
+      />
     </div>
   );
 }
@@ -2869,6 +3267,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     appointments: [],
     faqs: [],
     registrationEmails: [],
+    reviews: [],
   });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -3027,6 +3426,31 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     0,
     activeAppointments.length -
       new Set(activeAppointments.map((item) => item.availability_id)).size,
+  );
+  const reviewAverage = data.reviews.length
+    ? data.reviews.reduce((sum, review) => sum + review.rating, 0) /
+      data.reviews.length
+    : 0;
+  const reviewGroups = (field: "college" | "program" | "year_level") => {
+    const groups = new Map<string, { count: number; total: number }>();
+    data.reviews.forEach((review) => {
+      const label = review[field]?.trim() || "Not provided";
+      const current = groups.get(label) || { count: 0, total: 0 };
+      groups.set(label, {
+        count: current.count + 1,
+        total: current.total + review.rating,
+      });
+    });
+    return [...groups.entries()]
+      .map(([label, values]) => ({
+        label,
+        count: values.count,
+        average: values.total / values.count,
+      }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  };
+  const appointmentById = new Map(
+    data.appointments.map((appointment) => [appointment.id, appointment]),
   );
   if (view === "ahome")
     return (
@@ -3346,6 +3770,70 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         </div>
       </>
     );
+  if (view === "reviews")
+    return (
+      <>
+        {feedback}
+        <Head
+          label="SERVICE EXPERIENCE"
+          title="Reviews and insights"
+          copy="Monitor post-consultation ratings and comments alongside the students’ year level, college, and course."
+        />
+        <Stats
+          data={[
+            [reviewAverage ? reviewAverage.toFixed(1) : "—", "Average rating"],
+            [String(data.reviews.length), "Submitted reviews"],
+            [
+              String(data.reviews.filter((review) => review.comment).length),
+              "Written comments",
+            ],
+            [
+              String(data.reviews.filter((review) => review.rating >= 4).length),
+              "Positive ratings",
+            ],
+          ]}
+        />
+        <section className="review-breakdowns">
+          <ReviewBreakdown title="By year level" rows={reviewGroups("year_level")} />
+          <ReviewBreakdown title="By college or unit" rows={reviewGroups("college")} />
+          <ReviewBreakdown title="By course or program" rows={reviewGroups("program")} />
+        </section>
+        <Work title="Written consultation feedback">
+          <div className="admin-review-list">
+            {data.reviews.map((review) => {
+              const appointment = appointmentById.get(review.appointment_id);
+              return (
+                <article key={review.id}>
+                  <div className="admin-review-head">
+                    <span aria-label={`${review.rating} out of 5 stars`}>
+                      {"★".repeat(review.rating)}
+                      <i>{"★".repeat(5 - review.rating)}</i>
+                    </span>
+                    <time dateTime={review.created_at}>
+                      {formatManilaDateTime(new Date(review.created_at), {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </time>
+                  </div>
+                  <b>{appointment?.topic || "Completed consultation"}</b>
+                  <small>
+                    {appointment?.faculty_name || "Faculty member"} · {review.year_level || "Year not provided"} · {review.college || "College not provided"} · {review.program || "Course not provided"}
+                  </small>
+                  <p>{review.comment || "No written comment was provided."}</p>
+                </article>
+              );
+            })}
+            {!data.reviews.length && (
+              <div className="empty-card">
+                No completed-consultation reviews have been submitted yet.
+              </div>
+            )}
+          </div>
+        </Work>
+      </>
+    );
   return (
     <>
       {feedback}
@@ -3417,6 +3905,33 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         </Work>
       </div>
     </>
+  );
+}
+function ReviewBreakdown({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; count: number; average: number }>;
+}) {
+  return (
+    <section className="review-breakdown-card">
+      <div className="card-title">
+        <h2>{title}</h2>
+      </div>
+      <div className="review-breakdown-list">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <span>
+              <b>{row.label}</b>
+              <small>{row.count} review{row.count === 1 ? "" : "s"}</small>
+            </span>
+            <strong>{row.average.toFixed(1)} ★</strong>
+          </div>
+        ))}
+        {!rows.length && <p>No review data yet.</p>}
+      </div>
+    </section>
   );
 }
 function Work({ title, children }: { title: string; children: ReactNode }) {

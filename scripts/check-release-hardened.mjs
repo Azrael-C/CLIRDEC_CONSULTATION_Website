@@ -9,6 +9,7 @@ const schema = read("supabase/schema.sql");
 const migration = read("supabase/release_hardening_migration.sql");
 const worker = read("supabase/functions/send-email-notifications/index.ts");
 const functionConfig = read("supabase/config.toml");
+const reviewMigration = read("supabase/consultation_reviews_migration.sql");
 
 for (const sql of [schema, migration]) {
   assertIncludes(sql, "registration_allowlist", "Controlled registration SQL");
@@ -29,5 +30,13 @@ assertIncludes(worker, '"queue_due_appointment_reminders"', "Reminder queue invo
 assertIncludes(worker, '"claim_email_notifications"', "Email claim invocation");
 assertIncludes(worker, "Idempotency-Key", "Idempotent email delivery");
 assertIncludes(functionConfig, "verify_jwt = false", "Custom-secret worker configuration");
+for (const sql of [schema, reviewMigration]) {
+  assertIncludes(sql, "consultation_reviews", "Consultation review storage");
+  assertIncludes(sql, "submit_consultation_review", "Secure review submission");
+  assertIncludes(sql, "Only your completed consultations may be reviewed", "Completed-consultation review gate");
+  assertIncludes(sql, "year_level", "Review year-level snapshot");
+  assertIncludes(sql, "college", "Review college snapshot");
+  assertIncludes(sql, "program", "Review program snapshot");
+}
 
 console.log("Release hardening checks passed.");
