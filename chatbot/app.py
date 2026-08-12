@@ -20,7 +20,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import spacy
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -30,7 +30,10 @@ from spacy.matcher import PhraseMatcher
 def _origins() -> list[str]:
     configured = os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:5173,https://clsu-faculty-connect.vercel.app",
+        (
+            "http://localhost:5173,https://clsu-faculty-connect.vercel.app,"
+            "https://clsufacultyconnect.com,https://www.clsufacultyconnect.com"
+        ),
     )
     return [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
 
@@ -53,6 +56,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def protect_dynamic_responses(request: FastAPIRequest, call_next):
+    """Prevent browsers and intermediary caches from storing API responses."""
+    response = await call_next(request)
+    if request.url.path.startswith(("/api/", "/chat", "/health", "/knowledge-status")):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 nlp = spacy.blank("en")
 nlp.add_pipe("sentencizer")

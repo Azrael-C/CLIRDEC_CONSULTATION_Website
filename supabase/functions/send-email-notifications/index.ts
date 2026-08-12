@@ -169,6 +169,14 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  const { data: expiredSlots, error: maintenanceError } = await supabase
+    .from("availability")
+    .update({ is_open: false })
+    .eq("is_open", true)
+    .lte("ends_at", new Date().toISOString())
+    .select("id");
+  const expiredSlotsClosed = expiredSlots?.length ?? 0;
+
   const { data: remindersQueued, error: reminderError } = await supabase.rpc(
     "queue_due_appointment_reminders",
   );
@@ -184,6 +192,8 @@ Deno.serve(async (request) => {
       failed: 0,
       remindersQueued: remindersQueued ?? 0,
       reminderError: reminderError?.message ?? null,
+      expiredSlotsClosed,
+      maintenanceError: maintenanceError?.message ?? null,
     });
   }
 
@@ -283,5 +293,7 @@ Deno.serve(async (request) => {
     failed,
     remindersQueued: remindersQueued ?? 0,
     reminderError: reminderError?.message ?? null,
+    expiredSlotsClosed,
+    maintenanceError: maintenanceError?.message ?? null,
   });
 });

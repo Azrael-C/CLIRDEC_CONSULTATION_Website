@@ -255,15 +255,30 @@ create trigger validate_availability_schedule_before_write
 before insert or update of starts_at,ends_at on public.availability
 for each row execute function public.validate_availability_schedule();
 
--- A user may edit safe profile preferences but cannot promote their own role.
-revoke update on public.profiles from authenticated;
+-- Browser roles receive only the operations used by the portal. RLS remains
+-- the row-level ownership boundary for every granted operation.
+revoke all on table public.profiles from anon,authenticated;
+revoke all on table public.faculty_profiles from anon,authenticated;
+revoke all on table public.availability from anon,authenticated;
+revoke all on table public.appointments from anon,authenticated;
+revoke all on table public.email_notifications from anon,authenticated;
+revoke all on table public.faq_entries from anon,authenticated;
+revoke all on table public.audit_logs from anon,authenticated;
+revoke all on table public.registration_allowlist from anon,authenticated;
+
 grant update (full_name,department,email_notifications,college,program,year_level) on public.profiles to authenticated;
-revoke select on public.profiles from anon,authenticated;
 grant select (id,full_name,role,department,email_notifications,student_number,college,program,year_level) on public.profiles to authenticated;
-revoke update on public.appointments from authenticated;
-revoke all on public.availability from anon;
-revoke update,delete on public.availability from authenticated;
+grant select on public.faculty_profiles to authenticated;
+grant update (expertise,bio) on public.faculty_profiles to authenticated;
 grant select,insert on public.availability to authenticated;
+grant select on public.appointments to authenticated;
+grant select on public.email_notifications to authenticated;
+grant select,insert,update,delete on public.faq_entries to authenticated;
+grant select on public.audit_logs to authenticated;
+grant select,insert,update,delete on public.registration_allowlist to authenticated;
+
+revoke all on function public.current_role() from public,anon;
+grant execute on function public.current_role() to authenticated;
 
 -- Only trusted administrators can assign faculty or administrator roles. The
 -- browser cannot directly update the role column.
@@ -411,6 +426,13 @@ begin
 end $$;
 create trigger queue_appointment_email_after_insert after insert on public.appointments for each row execute function public.queue_appointment_email();
 create trigger queue_appointment_email_after_status after update of status on public.appointments for each row execute function public.queue_appointment_email();
+
+revoke all on function public.set_appointment_updated_at() from public,anon,authenticated;
+revoke all on function public.validate_availability_schedule() from public,anon,authenticated;
+revoke all on function public.close_slot_after_booking() from public,anon,authenticated;
+revoke all on function public.create_profile() from public,anon,authenticated;
+revoke all on function public.queue_appointment_email() from public,anon,authenticated;
+revoke all on function public.audit_faq_change() from public,anon,authenticated;
 
 -- Post-consultation reviews are available only after a faculty member marks a
 -- consultation completed. Demographic snapshots support historical reports.
@@ -657,6 +679,7 @@ end $$;
 create trigger reopen_slot_after_inactive_appointment
 after update of status on public.appointments
 for each row execute function public.reopen_slot_after_inactive_appointment();
+revoke all on function public.reopen_slot_after_inactive_appointment() from public,anon,authenticated;
 
 -- Queue status notifications for every affected participant. The email worker
 -- remains responsible for delivery and retry handling.

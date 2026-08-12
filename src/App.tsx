@@ -139,6 +139,14 @@ function usePageMetadata(title: string, description: string) {
   }, [title, description]);
 }
 
+function SkipLink() {
+  return (
+    <a className="skip-link" href="#main-content">
+      Skip to main content
+    </a>
+  );
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(configured);
@@ -491,16 +499,40 @@ function App() {
   }) {
     if (!user) return false;
     setNotice("");
+    const fullName = values.fullName.trim();
+    const college = values.college.trim();
+    const program = values.program.trim();
+    const yearLevel = values.yearLevel.trim();
+    const validYearLevels = new Set([
+      "1st year",
+      "2nd year",
+      "3rd year",
+      "4th year",
+      "5th year or higher",
+      "Graduate student",
+    ]);
+    if (fullName.length < 3 || fullName.length > 120) {
+      setNotice("Enter your complete name using 3 to 120 characters.");
+      return false;
+    }
+    if (!college || college.length > 120 || !program || program.length > 120) {
+      setNotice("Enter a valid college or unit and degree program.");
+      return false;
+    }
+    if (!validYearLevels.has(yearLevel)) {
+      setNotice("Choose a valid year level.");
+      return false;
+    }
     if (configured) {
       const { error } = await supabase
         .from("profiles")
         .update({
-          full_name: values.fullName,
-          college: values.college || null,
-          program: values.program || null,
-          year_level: values.yearLevel || null,
+          full_name: fullName,
+          college,
+          program,
+          year_level: yearLevel,
           department:
-            [values.program, values.yearLevel].filter(Boolean).join(" · ") ||
+            [program, yearLevel].filter(Boolean).join(" · ") ||
             null,
           email_notifications: values.emailNotifications,
         })
@@ -512,11 +544,11 @@ function App() {
     }
     setUser({
       ...user,
-      name: values.fullName,
-      college: values.college,
-      program: values.program,
-      year_level: values.yearLevel,
-      department: [values.program, values.yearLevel].filter(Boolean).join(" · "),
+      name: fullName,
+      college,
+      program,
+      year_level: yearLevel,
+      department: [program, yearLevel].filter(Boolean).join(" · "),
       email_notifications: values.emailNotifications,
     });
     setNotice("Profile has been updated.");
@@ -666,7 +698,7 @@ function App() {
   if (pathname !== "/") return <NotFoundPage />;
   if (authLoading)
     return (
-      <main className="auth-loading">
+      <main className="auth-loading" id="main-content">
         <p>Loading FacultyConnect…</p>
       </main>
     );
@@ -707,8 +739,9 @@ function App() {
     }));
   return (
     <div className="app student-app">
+      <SkipLink />
       <header className="topbar">
-        <button className="brand-button" onClick={() => nav("home")}>
+        <button type="button" className="brand-button" onClick={() => nav("home")}>
           <BrandLogo />
           <span>
             <b>CLSU FacultyConnect</b>
@@ -722,6 +755,7 @@ function App() {
             onNavigate={(target) => nav(target as View)}
           />
           <button
+            type="button"
             className="profile-chip"
             onClick={() => nav("profile")}
             aria-label="Open my profile"
@@ -739,9 +773,11 @@ function App() {
             </i>
           </button>
           <button
+            type="button"
             className="menu-button"
             onClick={() => setMenu(!menu)}
             aria-label="Toggle menu"
+            aria-expanded={menu}
           >
             ☰
           </button>
@@ -773,6 +809,12 @@ function App() {
             icon="requests"
             onClick={() => nav("schedule")}
           />
+          <Nav
+            active={view === "profile"}
+            label="My profile"
+            icon="profile"
+            onClick={() => nav("profile")}
+          />
         </nav>
         <div className="side-foot">
           <span>CLIRDEC</span>
@@ -780,12 +822,12 @@ function App() {
           <PortalFooterActions onLogout={logout} />
         </div>
       </aside>
-      <main className={`content student-content view-${view}`}>
+      <main id="main-content" className={`content student-content view-${view}`}>
         {notice && (
-          <div className="notice">
+          <div className="notice" role="status" aria-live="polite">
             <b>✓</b>
             <span>{notice}</span>
-            <button onClick={() => setNotice("")}>×</button>
+            <button type="button" aria-label="Dismiss message" onClick={() => setNotice("")}>×</button>
           </div>
         )}
         {view === "home" && <Dashboard user={user} booked={booked} go={nav} />}{" "}
@@ -827,6 +869,7 @@ function App() {
           ["assistant", "Ask AI", "assistant"],
           ["find", "Faculty", "search"],
           ["schedule", "Requests", "requests"],
+          ["profile", "Profile", "profile"],
         ]}
       />
       {selected && (
@@ -953,7 +996,8 @@ function ProductionAuth({
     }
   };
   return (
-    <main className="auth">
+    <main className="auth" id="main-content">
+      <SkipLink />
       <section className="auth-story">
         <div className="public-brand">
           <BrandLogo tone="light" size="hero" />
@@ -1333,7 +1377,8 @@ function PasswordRecovery({
     setSaving(false);
   };
   return (
-    <main className="auth">
+    <main className="auth" id="main-content">
+      <SkipLink />
       <section className="auth-story">
         <div className="public-brand">
           <BrandLogo tone="light" size="hero" />
@@ -1409,7 +1454,8 @@ function PasswordRecovery({
 }
 function PrivacyPolicyPage() {
   return (
-    <main className="public-policy-page">
+    <main className="public-policy-page" id="main-content">
+      <SkipLink />
       <header className="public-policy-header">
         <a className="public-brand" href="/">
           <BrandLogo tone="light" size="hero" />
@@ -1506,7 +1552,8 @@ function PrivacyPolicyPage() {
 
 function NotFoundPage() {
   return (
-    <main className="not-found-page">
+    <main className="not-found-page" id="main-content">
+      <SkipLink />
       <section>
         <a className="public-brand" href="/">
           <BrandLogo tone="light" size="hero" />
@@ -1672,6 +1719,7 @@ function MobilePortalNav({
     <nav className="mobile-portal-nav" aria-label="Mobile portal navigation">
       {items.map(([target, label, icon]) => (
         <button
+          type="button"
           key={target}
           className={active === target ? "active" : ""}
           aria-current={active === target ? "page" : undefined}
@@ -2226,7 +2274,13 @@ function StudentProfile({
             <h2 id="profile-edit-title">Edit profile</h2>
             <label className="topic">
               Full name
-              <input name="full_name" defaultValue={user.name} required />
+              <input
+                name="full_name"
+                defaultValue={user.name}
+                required
+                minLength={3}
+                maxLength={120}
+              />
             </label>
             <label className="topic">
               Email
@@ -2240,6 +2294,8 @@ function StudentProfile({
                   defaultValue={user.college || ""}
                   placeholder="College of Engineering"
                   required
+                  minLength={2}
+                  maxLength={120}
                 />
               </label>
               <label className="topic">
@@ -2249,6 +2305,8 @@ function StudentProfile({
                   defaultValue={user.program || ""}
                   placeholder="BS Information Technology"
                   required
+                  minLength={2}
+                  maxLength={120}
                 />
               </label>
               <label className="topic">
@@ -2467,6 +2525,7 @@ function BookingModal({
           <textarea
             required
             value={topic}
+            maxLength={240}
             disabled={rescheduling}
             onChange={(e) => setTopic(e.target.value)}
             placeholder="Provide enough context for the faculty member to review your request"
@@ -2538,8 +2597,10 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   };
   return (
     <div className={`app role-app ${faculty ? "faculty-app" : "admin-app"}`}>
+      <SkipLink />
       <header className="topbar">
         <button
+          type="button"
           className="brand-button"
           onClick={() => navigate(faculty ? "fhome" : "ahome")}
         >
@@ -2555,6 +2616,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
             onNavigate={(target) => navigate(target as FView | AView)}
           />
           <button
+            type="button"
             className="profile-chip"
             onClick={() => navigate(faculty ? "fprofile" : "users")}
             aria-label={faculty ? "Open my profile" : "Open users and roles"}
@@ -2572,9 +2634,11 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
             </i>
           </button>
           <button
+            type="button"
             className="menu-button"
             onClick={() => setMenu(!menu)}
             aria-label="Toggle menu"
+            aria-expanded={menu}
           >
             ☰
           </button>
@@ -2604,6 +2668,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         </div>
       </aside>
       <main
+        id="main-content"
         className={`content ${faculty ? "faculty-content" : "admin-content"} view-${view}`}
       >
         {faculty ? (
@@ -2625,7 +2690,9 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
               ]
             : [
                 ["ahome", "Overview", "home"],
+                ["knowledge", "FAQ", "assistant"],
                 ["users", "Users", "users"],
+                ["appointments", "Logs", "calendar"],
                 ["reviews", "Reviews", "report"],
                 ["reports", "QA", "calendar"],
               ]
@@ -2810,9 +2877,9 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   const [duration, setDuration] = useState(30);
   const [publishing, setPublishing] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  const refresh = async () => {
+  const refresh = async (showLoading = false) => {
     if (!configured) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       const [data, facultyProfile] = await Promise.all([
         loadFacultyPortal(user.id),
@@ -2821,7 +2888,6 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       setRequests(data.requests);
       setFacultySlots(data.availability);
       setProfile(facultyProfile);
-      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2829,11 +2895,37 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           : "Faculty data could not be loaded.",
       );
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
   useEffect(() => {
-    void refresh();
+    const backgroundRefresh = () => void refresh(false);
+    void refresh(true);
+    const interval = window.setInterval(backgroundRefresh, 30_000);
+    window.addEventListener("focus", backgroundRefresh);
+    const appointmentChannel = supabase
+      .channel(`faculty-appointments:${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "appointments" },
+        backgroundRefresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "availability",
+          filter: `faculty_id=eq.${user.id}`,
+        },
+        backgroundRefresh,
+      )
+      .subscribe();
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", backgroundRefresh);
+      void supabase.removeChannel(appointmentChannel);
+    };
   }, [user.id]);
   const pending = requests.filter((item) => item.status === "pending");
   const confirmed = requests.filter((item) => item.status === "confirmed");
@@ -2854,6 +2946,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           : "Request declined. The student email notification was queued.",
       );
       await refresh();
+      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2868,6 +2961,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       await completeFacultyRequest(id);
       setMessage("Consultation marked completed.");
       await refresh();
+      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2911,6 +3005,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       setDuration(30);
       setMessage("Availability published for students.");
       await refresh();
+      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2926,6 +3021,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       await removeFacultyAvailability(id);
       setMessage("Open availability removed.");
       await refresh();
+      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2960,10 +3056,10 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   if (loading)
     return <div className="empty-card">Loading your faculty workspace…</div>;
   const feedback = message && (
-    <div className="notice">
+    <div className="notice" role="status" aria-live="polite">
       <b>✓</b>
       <span>{message}</span>
-      <button onClick={() => setMessage("")}>×</button>
+      <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
     </div>
   );
   if (view === "fhome")
@@ -3314,6 +3410,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                 defaultValue={profile.expertise.join(", ")}
                 placeholder="Software Engineering, Web Development"
                 required
+                maxLength={960}
               />
               <small>Separate categories with commas. Add only verified areas.</small>
             </label>
@@ -3330,6 +3427,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                 defaultValue={profile.bio}
                 placeholder="Briefly describe your background and the consultation concerns you can support."
                 rows={6}
+                maxLength={2000}
               />
               <small>Students see this before requesting a consultation.</small>
             </label>
@@ -3495,11 +3593,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [appointmentFilter, setAppointmentFilter] = useState<
     "all" | AppointmentStatus
   >("all");
-  const refresh = async () => {
-    setLoading(true);
+  const refresh = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       setData(await loadAdminPortal());
-      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -3507,11 +3604,18 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           : "Administration data could not be loaded.",
       );
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
   useEffect(() => {
-    void refresh();
+    const backgroundRefresh = () => void refresh(false);
+    void refresh(true);
+    const interval = window.setInterval(backgroundRefresh, 60_000);
+    window.addEventListener("focus", backgroundRefresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", backgroundRefresh);
+    };
   }, []);
   const changeRole = async (id: string, role: Role) => {
     try {
@@ -3609,10 +3713,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       <div className="empty-card">Loading the administration workspace…</div>
     );
   const feedback = message && (
-    <div className="notice">
+    <div className="notice" role="status" aria-live="polite">
       <b>✓</b>
       <span>{message}</span>
-      <button onClick={() => setMessage("")}>×</button>
+      <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
     </div>
   );
   const pending = data.appointments.filter(
@@ -3929,6 +4033,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   name="question"
                   required
                   placeholder="Enter a frequently asked question"
+                  maxLength={500}
                 />
               </label>
               <label>
@@ -3937,6 +4042,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   name="source"
                   required
                   placeholder="Official page, advisory, procedure, or faculty schedule"
+                  maxLength={500}
                 />
               </label>
               <label>
@@ -3945,6 +4051,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   name="answer"
                   required
                   placeholder="Write the verified response"
+                  maxLength={5000}
                 />
               </label>
               <label>
