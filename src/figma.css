@@ -544,9 +544,220 @@ body {
 .notice { box-shadow: 0 8px 22px rgba(8,122,73,.08); }
 .empty-card { border: 1px dashed #c4d3c8; border-radius: 12px; background: linear-gradient(145deg, #fbfdfb, #f3f7f3); }
 
+/* Role-wide production surfaces */
+.student-app { --portal-accent: #087a49; --portal-accent-rgb: 8,122,73; }
+.faculty-app { --portal-accent: #006b52; --portal-accent-rgb: 0,107,82; }
+.admin-app { --portal-accent: #285b48; --portal-accent-rgb: 40,91,72; }
+.student-app, .faculty-app, .admin-app { background: #eef4ef; }
+.student-app .topbar, .faculty-app .topbar, .admin-app .topbar {
+  border-top: 3px solid var(--portal-accent);
+}
+.student-app .profile-chip > span,
+.faculty-app .profile-chip > span,
+.admin-app .profile-chip > span {
+  color: var(--portal-accent);
+  background: linear-gradient(145deg, rgba(var(--portal-accent-rgb),.17), rgba(var(--portal-accent-rgb),.07));
+  box-shadow: inset 0 0 0 1px rgba(var(--portal-accent-rgb),.12);
+}
+.student-app .sidebar::before,
+.faculty-app .sidebar::before,
+.admin-app .sidebar::before {
+  content: "";
+  display: block;
+  height: 5px;
+  margin: -.4rem .2rem 1.1rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--portal-accent), var(--figma-yellow));
+  opacity: .9;
+}
+.role-app .sidebar::before { margin-bottom: .55rem; }
+.student-content, .faculty-content, .admin-content { position: relative; isolation: isolate; }
+.student-content::before, .faculty-content::before, .admin-content::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  width: 360px;
+  height: 360px;
+  right: -130px;
+  bottom: -160px;
+  border: 1px solid rgba(var(--portal-accent-rgb),.08);
+  border-radius: 50%;
+  box-shadow: 0 0 0 70px rgba(var(--portal-accent-rgb),.025), 0 0 0 140px rgba(var(--portal-accent-rgb),.015);
+  pointer-events: none;
+}
+
+/* Every portal page starts with a clear visual anchor. */
+.student-content > .page-head,
+.faculty-content > .page-head,
+.admin-content > .page-head {
+  position: relative;
+  overflow: hidden;
+  min-height: 154px;
+  padding: 1.55rem 1.65rem;
+  border: 1px solid #d4e1d7;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(243,197,31,.16), transparent 12rem),
+    linear-gradient(135deg, #fff 0%, rgba(var(--portal-accent-rgb),.045) 100%);
+  box-shadow: 0 16px 42px rgba(25,64,43,.075), 0 2px 8px rgba(25,64,43,.035);
+}
+.student-content > .page-head::before,
+.faculty-content > .page-head::before,
+.admin-content > .page-head::before {
+  content: "";
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  right: -78px;
+  top: -105px;
+  border: 1px solid rgba(var(--portal-accent-rgb),.12);
+  border-radius: 50%;
+  box-shadow: 0 0 0 38px rgba(var(--portal-accent-rgb),.035);
+}
+.student-content > .page-head::after,
+.faculty-content > .page-head::after,
+.admin-content > .page-head::after { left: 1.65rem; bottom: 1.15rem; background: linear-gradient(90deg, var(--portal-accent), var(--figma-yellow)); }
+.student-content > .page-head > *,
+.faculty-content > .page-head > *,
+.admin-content > .page-head > * { position: relative; z-index: 1; }
+.student-content .eyebrow,
+.faculty-content .eyebrow,
+.admin-content .eyebrow {
+  width: fit-content;
+  margin-bottom: .65rem;
+  padding: .32rem .58rem;
+  border: 1px solid rgba(var(--portal-accent-rgb),.17);
+  border-radius: 999px;
+  background: rgba(var(--portal-accent-rgb),.075);
+  color: var(--portal-accent);
+}
+
+/* Student pages */
+.student-content .next-card,
+.student-content .quick-card,
+.student-content .faculty-card,
+.student-content .schedule-list article,
+.student-content .student-identity-card,
+.student-content .student-details-card,
+.student-content .chatbot { position: relative; overflow: hidden; }
+.student-content .next-card::before,
+.student-content .quick-card::before,
+.student-content .faculty-card::before,
+.student-content .student-details-card::before,
+.student-content .chatbot::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--portal-accent), var(--figma-yellow));
+}
+.student-content .next-card {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(243,197,31,.12), transparent 14rem),
+    linear-gradient(145deg, #fff, #f5faf6);
+}
+.student-content .quick-card { background: linear-gradient(145deg, #fff, #f7faf7); }
+.student-content .quick-card > button {
+  margin-top: .25rem;
+  padding: .9rem .75rem;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+.student-content .quick-card > button:hover { border-color: #d4e1d7; background: #f3f8f4; transform: translateX(3px); }
+.student-content .quick-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 10px; background: rgba(var(--portal-accent-rgb),.1); color: var(--portal-accent); }
+.student-content .how { padding: 1.5rem; border: 1px solid #dbe5dc; border-radius: 18px; background: rgba(255,255,255,.58); box-shadow: 0 12px 34px rgba(25,64,43,.045); }
+.student-content .steps article { overflow: hidden; }
+.student-content .steps article::after { content: ""; position: absolute; width: 78px; height: 78px; right: -34px; bottom: -36px; border-radius: 50%; background: rgba(var(--portal-accent-rgb),.07); }
+.student-content .search-box { border: 1px solid #cddbd1; background: rgba(255,255,255,.94); box-shadow: 0 12px 30px rgba(25,64,43,.065); }
+.student-content .search-box:focus-within { border-color: var(--portal-accent); box-shadow: 0 0 0 4px rgba(var(--portal-accent-rgb),.09), 0 14px 34px rgba(25,64,43,.08); }
+.student-content .faculty-card { border-top: 4px solid var(--portal-accent); background: linear-gradient(155deg, #fff, #f8fbf8); }
+.student-content .faculty-card::after { content: ""; position: absolute; width: 74px; height: 74px; right: -30px; top: -32px; border-radius: 50%; background: rgba(243,197,31,.12); }
+.student-content .scope-note { border: 1px solid #d1e0d5; border-left: 5px solid var(--portal-accent); box-shadow: 0 9px 25px rgba(25,64,43,.055); }
+.student-content .schedule-list article { border-left: 4px solid rgba(var(--portal-accent-rgb),.75); background: linear-gradient(145deg, #fff, #f8fbf8); }
+.student-content .schedule-list article:hover { border-color: var(--portal-accent); transform: translateY(-2px); }
+.student-content .student-identity-card {
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(243,197,31,.2), transparent 12rem),
+    linear-gradient(135deg, #00482d, var(--portal-accent));
+  box-shadow: 0 18px 44px rgba(0,72,45,.2);
+}
+.student-content .student-identity-card p { color: rgba(255,255,255,.78); }
+.student-content .student-avatar { border: 3px solid rgba(255,255,255,.68); box-shadow: 0 8px 22px rgba(0,42,26,.2); }
+.student-content .student-details-card { background: linear-gradient(145deg, #fff, #f7faf7); }
+.student-content .chat-head { background: linear-gradient(90deg, rgba(var(--portal-accent-rgb),.08), rgba(243,197,31,.06)); }
+.student-content .assistant-safety span { box-shadow: 0 4px 12px rgba(25,64,43,.04); }
+.student-content .message-wrap.bot p { border: 1px solid #d7e4db; box-shadow: 0 5px 14px rgba(25,64,43,.045); }
+.student-content .prompts button:hover { border-color: var(--portal-accent); background: rgba(var(--portal-accent-rgb),.06); }
+
+/* Faculty pages */
+.faculty-content .metrics article,
+.admin-content .metrics article { position: relative; overflow: hidden; border-top-color: var(--portal-accent); }
+.faculty-content .metrics article::before,
+.admin-content .metrics article::before { content: ""; position: absolute; width: 58px; height: 58px; left: -30px; bottom: -31px; border-radius: 50%; background: rgba(var(--portal-accent-rgb),.07); }
+.faculty-content .metrics b,
+.admin-content .metrics b { color: var(--portal-accent); }
+.faculty-content .work-card,
+.admin-content .work-card,
+.admin-content .data-card {
+  background: linear-gradient(145deg, #fff, rgba(var(--portal-accent-rgb),.025));
+}
+.faculty-content .work-card,
+.admin-content .work-card { position: relative; overflow: hidden; border-top: 3px solid rgba(var(--portal-accent-rgb),.78); }
+.faculty-content .card-title,
+.admin-content .card-title { margin: -1.15rem -1.15rem 1rem; padding: 1rem 1.15rem .85rem; background: linear-gradient(90deg, rgba(var(--portal-accent-rgb),.075), transparent); }
+.faculty-content .timeline-line i,
+.admin-content .timeline-line i { background: var(--portal-accent); box-shadow: 0 0 0 4px rgba(var(--portal-accent-rgb),.1); }
+.faculty-content .request-list > article { border-left: 4px solid var(--portal-accent); background: linear-gradient(145deg, #fff, #f6faf7); box-shadow: 0 8px 22px rgba(25,64,43,.045); }
+.faculty-content .request-list > article:hover { box-shadow: 0 14px 32px rgba(25,64,43,.09); transform: translateY(-1px); }
+.faculty-content .weekly-calendar { border-color: #ccdbd0; box-shadow: 0 10px 28px rgba(25,64,43,.055); }
+.faculty-content .calendar-toolbar { background: linear-gradient(90deg, rgba(var(--portal-accent-rgb),.1), rgba(243,197,31,.07)); }
+.faculty-content .slot-toggle:not(:disabled):hover { border-color: var(--portal-accent); box-shadow: inset 0 0 0 2px rgba(var(--portal-accent-rgb),.08); }
+.faculty-content .selected-slot-summary { border: 1px solid #d1e0d5; border-left: 4px solid var(--figma-yellow); background: linear-gradient(135deg, #fffdf3, #fff); }
+.faculty-content .profile-summary {
+  color: #fff;
+  background: radial-gradient(circle at 95% 5%, rgba(243,197,31,.2), transparent 10rem), linear-gradient(145deg, #004d3b, var(--portal-accent));
+}
+.faculty-content .profile-summary p,
+.faculty-content .profile-summary small { color: rgba(255,255,255,.76); }
+.faculty-content .profile-avatar { border: 3px solid rgba(255,255,255,.68); box-shadow: 0 9px 24px rgba(0,44,33,.22); }
+
+/* Administrator pages */
+.admin-content .data-card { border-top: 4px solid var(--portal-accent); }
+.admin-content .data-head { background: linear-gradient(90deg, rgba(var(--portal-accent-rgb),.14), rgba(243,197,31,.08)); }
+.admin-content .data-row:not(.data-head) { transition: background .15s ease, transform .15s ease; }
+.admin-content .data-row:not(.data-head):nth-child(odd) { background: rgba(var(--portal-accent-rgb),.018); }
+.admin-content .data-row:not(.data-head):hover { background: rgba(var(--portal-accent-rgb),.065); }
+.admin-content .filter-tabs { width: fit-content; padding: .35rem; border: 1px solid #d4e0d7; border-radius: 999px; background: #fff; box-shadow: 0 7px 20px rgba(25,64,43,.055); }
+.admin-content .filter-tabs button.active { background: var(--portal-accent); box-shadow: 0 5px 12px rgba(var(--portal-accent-rgb),.18); }
+.admin-content .knowledge-form label { padding: .72rem; border: 1px solid #dce5de; border-radius: 10px; background: rgba(255,255,255,.72); }
+.admin-content .knowledge-form input,
+.admin-content .knowledge-form textarea,
+.admin-content .knowledge-form select { background: #fff; transition: border-color .16s ease, box-shadow .16s ease; }
+.admin-content .knowledge-form input:focus,
+.admin-content .knowledge-form textarea:focus,
+.admin-content .knowledge-form select:focus { border-color: var(--portal-accent); outline: 0; box-shadow: 0 0 0 4px rgba(var(--portal-accent-rgb),.09); }
+.admin-content .faq-list article { border-left: 4px solid rgba(var(--portal-accent-rgb),.7); box-shadow: 0 6px 18px rgba(25,64,43,.04); }
+.admin-content .qa-list p { margin-bottom: .55rem; padding: .8rem; border: 1px solid #dde6df; border-radius: 10px; background: rgba(255,255,255,.78); }
+.admin-content .qa-list p:last-child { margin-bottom: 0; }
+
 @media (max-width: 600px) {
   .auth-panel { padding: 1rem; }
   .login, .login.student-signup { padding: 1.25rem; border-radius: 16px; }
+  .student-content > .page-head,
+  .faculty-content > .page-head,
+  .admin-content > .page-head { min-height: 0; padding: 1.25rem 1.1rem 1.6rem; border-radius: 14px; }
+  .student-content > .page-head::after,
+  .faculty-content > .page-head::after,
+  .admin-content > .page-head::after { left: 1.1rem; bottom: .8rem; }
+  .student-content .how { padding: 1rem; border-radius: 14px; }
+  .student-content .quick-card > button:hover,
+  .student-content .schedule-list article:hover,
+  .faculty-content .request-list > article:hover { transform: none; }
+  .admin-content .filter-tabs { width: 100%; overflow-x: auto; border-radius: 12px; scrollbar-width: none; }
+  .admin-content .filter-tabs::-webkit-scrollbar { display: none; }
+  .admin-content .filter-tabs button { flex: 0 0 auto; }
   .signup-fields { grid-template-columns: 1fr; }
   .password-rules { grid-template-columns: 1fr; }
   .password-privacy small { font-size: .62rem; }

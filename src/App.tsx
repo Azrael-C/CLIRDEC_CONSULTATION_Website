@@ -590,7 +590,7 @@ function App() {
       location: item.location,
     }));
   return (
-    <div className="app">
+    <div className="app student-app">
       <header className="topbar">
         <button className="brand-button" onClick={() => nav("home")}>
           <BrandLogo />
@@ -664,7 +664,7 @@ function App() {
           <button onClick={logout}>Sign out</button>
         </div>
       </aside>
-      <main className="content">
+      <main className={`content student-content view-${view}`}>
         {notice && (
           <div className="notice">
             <b>✓</b>
@@ -2042,7 +2042,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
     setMenu(false);
   };
   return (
-    <div className="app role-app">
+    <div className={`app role-app ${faculty ? "faculty-app" : "admin-app"}`}>
       <header className="topbar">
         <button
           className="brand-button"
@@ -2108,7 +2108,9 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
           <button onClick={logout}>Sign out</button>
         </div>
       </aside>
-      <main className="content">
+      <main
+        className={`content ${faculty ? "faculty-content" : "admin-content"} view-${view}`}
+      >
         {faculty ? (
           <FacultyPages view={view as FView} user={user} />
         ) : (
