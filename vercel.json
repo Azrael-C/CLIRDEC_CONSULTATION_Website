@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
   "services": {
     "web": {
       "root": ".",
@@ -29,6 +30,13 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/privacy",
+      "destination": "/privacy-policy",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
@@ -37,9 +45,57 @@
       }
     },
     {
-      "source": "/(.*)",
+      "source": "/",
       "destination": {
         "service": "web"
+      }
+    },
+    {
+      "source": "/privacy-policy",
+      "destination": {
+        "service": "web"
+      }
+    },
+    {
+      "source": "/assets/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    },
+    {
+      "source": "/brand/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    },
+    {
+      "source": "/robots.txt",
+      "destination": {
+        "service": "web"
+      }
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": {
+        "service": "web"
+      }
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": {
+        "service": "web"
+      }
+    },
+    {
+      "source": "/placeholder.svg",
+      "destination": {
+        "service": "web"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "api"
       }
     }
   ]

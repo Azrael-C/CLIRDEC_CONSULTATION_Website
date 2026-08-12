@@ -19,9 +19,11 @@ import {
   loadStudentPortal,
   removeFacultyAvailability,
   rescheduleAppointment,
+  submitConsultationReview,
   updateFacultyProfile,
   type AdminPortal,
   type AppointmentStatus,
+  type ConsultationReview,
   type FaqEntry,
   type FacultyAvailability,
   type FacultyProfile,
@@ -34,6 +36,7 @@ import {
   formatCalendarDay,
   formatManilaDateTime,
   formatTime,
+  firstBookableStart,
   initialCalendarWeek,
   isUpcomingSlot,
   manilaDateKey,
@@ -54,6 +57,10 @@ type User = {
   email: string;
   role: Role;
   department?: string;
+  student_number?: string;
+  college?: string;
+  program?: string;
+  year_level?: string;
   email_notifications: boolean;
 };
 type Slot = {
@@ -70,6 +77,7 @@ type Slot = {
   topic?: string;
   notes?: string;
   updated_at?: string;
+  review?: ConsultationReview;
 };
 type ChatMessage = {
   who: "you" | "bot";
@@ -78,55 +86,73 @@ type ChatMessage = {
   escalation?: boolean;
 };
 
-const demoSlots: Slot[] = [
-  {
-    id: "1",
-    faculty_name: "Dr. Maria Santos",
-    initials: "MS",
-    expertise: "Software Engineering",
-    starts_at: "2026-08-05T09:00",
-    ends_at: "2026-08-05T09:30",
-    location: "CLIRDEC Consultation Room",
-    color: "coral",
-  },
-  {
-    id: "2",
-    faculty_name: "Prof. Juan Dela Cruz",
-    initials: "JD",
-    expertise: "Data Analytics",
-    starts_at: "2026-08-05T13:00",
-    ends_at: "2026-08-05T13:30",
-    location: "CLIRDEC Consultation Room",
-    color: "blue",
-  },
-  {
-    id: "3",
-    faculty_name: "Dr. Ana Reyes",
-    initials: "AR",
-    expertise: "Research Methods",
-    starts_at: "2026-08-06T10:00",
-    ends_at: "2026-08-06T10:30",
-    location: "CLIRDEC Consultation Room",
-    color: "gold",
-  },
-  {
-    id: "4",
-    faculty_name: "Prof. Carlo Mendoza",
-    initials: "CM",
-    expertise: "Web Development",
-    starts_at: "2026-08-07T14:00",
-    ends_at: "2026-08-07T14:30",
-    location: "CLIRDEC Consultation Room",
-    color: "mint",
-  },
-];
+type AuthAction = "login" | "signup" | "reset";
+
+function friendlyAuthError(message: string, action: AuthAction) {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("invalid login credentials")) {
+    return "The email address or password is incorrect. Check your details and try again.";
+  }
+  if (normalized.includes("email not confirmed")) {
+    return "Confirm your email address using the link we sent before signing in.";
+  }
+  if (
+    normalized.includes("already registered") ||
+    normalized.includes("already been registered") ||
+    normalized.includes("user already exists")
+  ) {
+    return "An account already exists for this email address. Sign in or reset your password instead.";
+  }
+  if (normalized.includes("rate limit")) {
+    return "Too many attempts were made. Wait a few minutes, then try again.";
+  }
+  if (normalized.includes("invalid email")) {
+    return "Enter a valid email address.";
+  }
+  if (
+    action === "signup" &&
+    (normalized.includes("database error") ||
+      normalized.includes("not approved") ||
+      normalized.includes("saving new user"))
+  ) {
+    return "We couldn't create this account. Confirm that the email address is approved for FacultyConnect registration and that the student number is not already registered.";
+  }
+  if (action === "reset") {
+    return "We couldn't send the reset link right now. Check the email address and try again shortly.";
+  }
+  return action === "signup"
+    ? "We couldn't create the account right now. Review the information and try again."
+    : "We couldn't sign you in right now. Please try again.";
+}
+
+function usePageMetadata(title: string, description: string) {
+  useEffect(() => {
+    document.title = title;
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "description";
+      document.head.appendChild(meta);
+    }
+    meta.content = description;
+  }, [title, description]);
+}
+
+function SkipLink() {
+  return (
+    <a className="skip-link" href="#main-content">
+      Skip to main content
+    </a>
+  );
+}
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(configured);
   const [recoveringPassword, setRecoveringPassword] = useState(false);
   const [view, setView] = useState<View>("home");
-  const [slots, setSlots] = useState<Slot[]>(configured ? [] : demoSlots);
+  const [slots, setSlots] = useState<Slot[]>([]);
   const [booked, setBooked] = useState<Slot[]>([]);
   const [selected, setSelected] = useState<Slot | null>(null);
   const [bookingTopic, setBookingTopic] = useState("");
@@ -142,6 +168,54 @@ function App() {
     },
   ]);
   const [question, setQuestion] = useState("");
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const studentMetadata: Record<View, [string, string]> = {
+    home: [
+      "Student overview | CLSU FacultyConnect",
+      "Access approved consultation guidance, requests, and faculty availability.",
+    ],
+    find: [
+      "Faculty availability | CLSU FacultyConnect",
+      "Browse faculty-published consultation schedules and expertise categories.",
+    ],
+    schedule: [
+      "My consultation requests | CLSU FacultyConnect",
+      "Review consultation request status, appointment details, and completed-session feedback.",
+    ],
+    assistant: [
+      "Consult AI | CLSU FacultyConnect",
+      "Ask questions using the approved CLSU consultation knowledge base.",
+    ],
+    profile: [
+      "My profile | CLSU FacultyConnect",
+      "Manage your FacultyConnect student profile and notification preferences.",
+    ],
+  };
+  const defaultMetadata: [string, string] =
+    pathname === "/privacy" ||
+    pathname === "/privacy-policy" ||
+    pathname === "/privacy-policy.html"
+      ? [
+          "Privacy Policy | CLSU FacultyConnect",
+          "Learn how CLSU FacultyConnect collects, uses, protects, and retains consultation information.",
+        ]
+      : pathname !== "/"
+        ? [
+            "Page not found | CLSU FacultyConnect",
+            "The requested FacultyConnect page could not be found.",
+          ]
+        : recoveringPassword
+          ? [
+              "Reset password | CLSU FacultyConnect",
+              "Securely update your FacultyConnect account password.",
+            ]
+          : user?.role === "student"
+            ? studentMetadata[view]
+            : [
+                "Secure portal | CLSU FacultyConnect",
+                "Access CLSU faculty consultation scheduling, approved guidance, and role-protected services.",
+              ];
+  usePageMetadata(defaultMetadata[0], defaultMetadata[1]);
   useEffect(() => {
     if (!configured) {
       setAuthLoading(false);
@@ -151,7 +225,9 @@ function App() {
     const loadUser = async (id: string, email: string) => {
       const { data: p, error } = await supabase
         .from("profiles")
-        .select("full_name,role,department,email_notifications")
+        .select(
+          "full_name,role,department,student_number,college,program,year_level,email_notifications",
+        )
         .eq("id", id)
         .single();
       if (!active) return;
@@ -168,6 +244,10 @@ function App() {
         name: p.full_name,
         role: p.role as Role,
         department: p.department || "",
+        student_number: p.student_number || "",
+        college: p.college || "",
+        program: p.program || "",
+        year_level: p.year_level || "",
         email_notifications: p.email_notifications ?? true,
       });
     };
@@ -258,6 +338,7 @@ function App() {
           topic: item.topic,
           notes: item.notes,
           updated_at: item.updated_at,
+          review: item.review,
         })),
       );
     } catch (cause) {
@@ -293,7 +374,7 @@ function App() {
       email,
       password,
     });
-    if (error) setNotice(error.message);
+    if (error) setNotice(friendlyAuthError(error.message, "login"));
   }
   async function signup(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -306,9 +387,28 @@ function App() {
     }
     const f = new FormData(e.currentTarget);
     const full_name = String(f.get("full_name")).trim();
+    const student_number = String(f.get("student_number")).trim();
+    const college = String(f.get("college")).trim();
+    const program = String(f.get("program")).trim();
+    const year_level = String(f.get("year_level")).trim();
     const email = String(f.get("email")).trim().toLowerCase();
     const password = String(f.get("password"));
     const confirmation = String(f.get("confirmation"));
+    const privacyAcknowledged = f.get("privacy_acknowledged") === "on";
+    if (full_name.length < 3) {
+      setNotice("Enter your complete name as it appears in your student record.");
+      return;
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9 -]{3,29}$/.test(student_number)) {
+      setNotice(
+        "Enter a valid student number using 4–30 letters, numbers, spaces, or hyphens.",
+      );
+      return;
+    }
+    if (!college || !program || !year_level) {
+      setNotice("Complete your college or unit, degree program, and year level.");
+      return;
+    }
     if (!studentPasswordIsValid(password)) {
       setNotice(
         "Your password must meet every requirement shown below the password field.",
@@ -319,19 +419,33 @@ function App() {
       setNotice("The password confirmation does not match.");
       return;
     }
+    if (!privacyAcknowledged) {
+      setNotice(
+        "Confirm that your information is accurate and may be used to manage consultation requests.",
+      );
+      return;
+    }
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name } },
+      options: {
+        data: {
+          full_name,
+          student_number,
+          college,
+          program,
+          year_level,
+        },
+      },
     });
     if (error) {
-      setNotice(error.message);
+      setNotice(friendlyAuthError(error.message, "signup"));
       return;
     }
     setNotice(
       data.session
-        ? "Student account created."
-        : "Student account created. Check your email for the confirmation link before signing in.",
+        ? "Your student account is ready."
+        : "Account created. Check your email and select the confirmation link before signing in.",
     );
   }
   async function requestPasswordReset(email: string) {
@@ -351,7 +465,7 @@ function App() {
     });
     setNotice(
       error
-        ? error.message
+        ? friendlyAuthError(error.message, "reset")
         : "Check your email for the secure password-reset link.",
     );
   }
@@ -378,17 +492,48 @@ function App() {
   }
   async function saveStudentProfile(values: {
     fullName: string;
-    department: string;
+    college: string;
+    program: string;
+    yearLevel: string;
     emailNotifications: boolean;
   }) {
     if (!user) return false;
     setNotice("");
+    const fullName = values.fullName.trim();
+    const college = values.college.trim();
+    const program = values.program.trim();
+    const yearLevel = values.yearLevel.trim();
+    const validYearLevels = new Set([
+      "1st year",
+      "2nd year",
+      "3rd year",
+      "4th year",
+      "5th year or higher",
+      "Graduate student",
+    ]);
+    if (fullName.length < 3 || fullName.length > 120) {
+      setNotice("Enter your complete name using 3 to 120 characters.");
+      return false;
+    }
+    if (!college || college.length > 120 || !program || program.length > 120) {
+      setNotice("Enter a valid college or unit and degree program.");
+      return false;
+    }
+    if (!validYearLevels.has(yearLevel)) {
+      setNotice("Choose a valid year level.");
+      return false;
+    }
     if (configured) {
       const { error } = await supabase
         .from("profiles")
         .update({
-          full_name: values.fullName,
-          department: values.department || null,
+          full_name: fullName,
+          college,
+          program,
+          year_level: yearLevel,
+          department:
+            [program, yearLevel].filter(Boolean).join(" · ") ||
+            null,
           email_notifications: values.emailNotifications,
         })
         .eq("id", user.id);
@@ -399,8 +544,11 @@ function App() {
     }
     setUser({
       ...user,
-      name: values.fullName,
-      department: values.department,
+      name: fullName,
+      college,
+      program,
+      year_level: yearLevel,
+      department: [program, yearLevel].filter(Boolean).join(" · "),
       email_notifications: values.emailNotifications,
     });
     setNotice("Profile has been updated.");
@@ -463,6 +611,29 @@ function App() {
       setSubmitting(false);
     }
   }
+  async function saveConsultationReview(
+    appointmentId: string,
+    rating: number,
+    comment: string,
+  ) {
+    if (!user || submitting) return false;
+    setSubmitting(true);
+    try {
+      await submitConsultationReview({ appointmentId, rating, comment });
+      setNotice("Thank you. Your consultation review has been recorded.");
+      await loadStudentData(user.id);
+      return true;
+    } catch (cause) {
+      setNotice(
+        cause instanceof Error
+          ? cause.message
+          : "Your consultation review could not be submitted.",
+      );
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  }
   function beginReschedule(slot: Slot) {
     if (!slot.appointment_id) return;
     setReschedulingId(slot.appointment_id);
@@ -518,9 +689,16 @@ function App() {
       ]);
     }
   }
+  if (
+    pathname === "/privacy" ||
+    pathname === "/privacy-policy" ||
+    pathname === "/privacy-policy.html"
+  )
+    return <PrivacyPolicyPage />;
+  if (pathname !== "/") return <NotFoundPage />;
   if (authLoading)
     return (
-      <main className="auth-loading">
+      <main className="auth-loading" id="main-content">
         <p>Loading FacultyConnect…</p>
       </main>
     );
@@ -532,6 +710,7 @@ function App() {
         login={login}
         signup={signup}
         resetPassword={requestPasswordReset}
+        clearNotice={() => setNotice("")}
         notice={notice}
       />
     );
@@ -559,13 +738,14 @@ function App() {
       location: item.location,
     }));
   return (
-    <div className="app">
+    <div className="app student-app">
+      <SkipLink />
       <header className="topbar">
-        <button className="brand-button" onClick={() => nav("home")}>
+        <button type="button" className="brand-button" onClick={() => nav("home")}>
           <BrandLogo />
           <span>
             <b>CLSU FacultyConnect</b>
-            <small>Managed by MISO · CLIRDEC pilot</small>
+            <small>Faculty consultation and verified guidance</small>
           </span>
         </button>
         <div className="top-actions">
@@ -575,6 +755,7 @@ function App() {
             onNavigate={(target) => nav(target as View)}
           />
           <button
+            type="button"
             className="profile-chip"
             onClick={() => nav("profile")}
             aria-label="Open my profile"
@@ -592,9 +773,11 @@ function App() {
             </i>
           </button>
           <button
+            type="button"
             className="menu-button"
             onClick={() => setMenu(!menu)}
             aria-label="Toggle menu"
+            aria-expanded={menu}
           >
             ☰
           </button>
@@ -626,19 +809,25 @@ function App() {
             icon="requests"
             onClick={() => nav("schedule")}
           />
+          <Nav
+            active={view === "profile"}
+            label="My profile"
+            icon="profile"
+            onClick={() => nav("profile")}
+          />
         </nav>
         <div className="side-foot">
           <span>CLIRDEC</span>
-          <small>Controlled pilot · Approved content only</small>
-          <button onClick={logout}>Sign out</button>
+          <small>Official service · Approved content only</small>
+          <PortalFooterActions onLogout={logout} />
         </div>
       </aside>
-      <main className="content">
+      <main id="main-content" className={`content student-content view-${view}`}>
         {notice && (
-          <div className="notice">
+          <div className="notice" role="status" aria-live="polite">
             <b>✓</b>
             <span>{notice}</span>
-            <button onClick={() => setNotice("")}>×</button>
+            <button type="button" aria-label="Dismiss message" onClick={() => setNotice("")}>×</button>
           </div>
         )}
         {view === "home" && <Dashboard user={user} booked={booked} go={nav} />}{" "}
@@ -657,6 +846,7 @@ function App() {
             reschedule={beginReschedule}
             busy={submitting}
             emailNotifications={user.email_notifications}
+            review={saveConsultationReview}
           />
         )}{" "}
         {view === "assistant" && (
@@ -671,6 +861,17 @@ function App() {
           <StudentProfile user={user} save={saveStudentProfile} />
         )}
       </main>
+      <MobilePortalNav
+        active={view}
+        navigate={(target) => nav(target as View)}
+        items={[
+          ["home", "Overview", "home"],
+          ["assistant", "Ask AI", "assistant"],
+          ["find", "Faculty", "search"],
+          ["schedule", "Requests", "requests"],
+          ["profile", "Profile", "profile"],
+        ]}
+      />
       {selected && (
         <BookingModal
           slot={selected}
@@ -693,8 +894,8 @@ function App() {
 const studentPasswordRules = [
   {
     id: "length",
-    label: "At least 12 characters",
-    test: (value: string) => value.length >= 12,
+    label: "At least 8 characters",
+    test: (value: string) => value.length >= 8,
   },
   {
     id: "uppercase",
@@ -749,19 +950,33 @@ function ProductionAuth({
   login,
   signup,
   resetPassword,
+  clearNotice,
   notice,
 }: {
-  login: (e: FormEvent<HTMLFormElement>) => void;
-  signup: (e: FormEvent<HTMLFormElement>) => void;
+  login: (e: FormEvent<HTMLFormElement>) => Promise<void>;
+  signup: (e: FormEvent<HTMLFormElement>) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  clearNotice: () => void;
   notice: string;
 }) {
   const [creating, setCreating] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [submittingAuth, setSubmittingAuth] = useState(false);
+  usePageMetadata(
+    creating
+      ? "Create student account | CLSU FacultyConnect"
+      : "Sign in | CLSU FacultyConnect",
+    creating
+      ? "Create an approved CLSU FacultyConnect student account."
+      : "Sign in securely to the CLSU FacultyConnect student, faculty, or administrator portal.",
+  );
   const passwordValid = studentPasswordIsValid(password);
   const passwordsMatch = confirmation.length > 0 && password === confirmation;
+  const noticeIsSuccess = /account (created|is ready)|check your email|reset link/i.test(
+    notice,
+  );
   const passedRuleCount = studentPasswordRules.filter((rule) =>
     rule.test(password),
   ).length;
@@ -770,16 +985,26 @@ function ProductionAuth({
     setPassword("");
     setConfirmation("");
     setPasswordVisible(false);
+    clearNotice();
+  };
+  const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
+    setSubmittingAuth(true);
+    try {
+      await (creating ? signup(event) : login(event));
+    } finally {
+      setSubmittingAuth(false);
+    }
   };
   return (
-    <main className="auth">
+    <main className="auth" id="main-content">
+      <SkipLink />
       <section className="auth-story">
         <div className="public-brand">
           <BrandLogo tone="light" size="hero" />
           <span>CLSU FacultyConnect</span>
         </div>
         <div>
-          <span className="pilot-label">MISO · CLIRDEC PILOT</span>
+          <span className="service-label">CLSU FACULTY CONNECT</span>
           <h1>Approved answers. Clear next steps.</h1>
           <p>
             Use your registered email to access faculty consultation services
@@ -798,7 +1023,7 @@ function ProductionAuth({
       <section className="auth-panel">
         <form
           className={creating ? "login student-signup" : "login"}
-          onSubmit={creating ? signup : login}
+          onSubmit={submitAuth}
         >
           <span className="mobile-brand">
             <BrandLogo />
@@ -809,8 +1034,8 @@ function ProductionAuth({
             <>
               <h2>Create a student account</h2>
               <p className="muted">
-                Only MISO-approved pilot email addresses can register. Faculty
-                and administrator accounts are issued only by MISO.
+                Register with an approved email address. Faculty and
+                administrator accounts are issued separately by MISO.
               </p>
             </>
           ) : (
@@ -822,16 +1047,103 @@ function ProductionAuth({
               </p>
             </>
           )}
-          {creating && (
+          {notice && (
+            <div
+              className={
+                noticeIsSuccess ? "form-notice success" : "form-notice error"
+              }
+              role={noticeIsSuccess ? "status" : "alert"}
+            >
+              <b>
+                {noticeIsSuccess ? "Success" : "Please check your information"}
+              </b>
+              <span>{notice}</span>
+            </div>
+          )}
+          {creating ? (
+            <div className="signup-fields">
+              <label>
+                Full name
+                <input
+                  name="full_name"
+                  required
+                  minLength={3}
+                  maxLength={100}
+                  autoComplete="name"
+                  placeholder="Juan Dela Cruz"
+                />
+                <small>Use the name shown in your student record.</small>
+              </label>
+              <label>
+                Student number
+                <input
+                  name="student_number"
+                  required
+                  minLength={4}
+                  maxLength={30}
+                  pattern="[A-Za-z0-9][A-Za-z0-9 -]{3,29}"
+                  title="Use 4–30 letters, numbers, spaces, or hyphens."
+                  autoComplete="off"
+                  placeholder="22-1234"
+                />
+                <small>Enter the number on your CLSU student ID.</small>
+              </label>
+              <label>
+                College or unit
+                <input
+                  name="college"
+                  required
+                  minLength={2}
+                  maxLength={120}
+                  autoComplete="organization"
+                  placeholder="College of Engineering"
+                />
+              </label>
+              <label>
+                Degree program
+                <input
+                  name="program"
+                  required
+                  minLength={2}
+                  maxLength={120}
+                  placeholder="BS Information Technology"
+                />
+              </label>
+              <label>
+                Year level
+                <select name="year_level" required defaultValue="">
+                  <option value="" disabled>
+                    Select your year level
+                  </option>
+                  <option value="1st year">1st year</option>
+                  <option value="2nd year">2nd year</option>
+                  <option value="3rd year">3rd year</option>
+                  <option value="4th year">4th year</option>
+                  <option value="5th year or higher">5th year or higher</option>
+                  <option value="Graduate student">Graduate student</option>
+                </select>
+              </label>
+              <label>
+                Student email address
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  maxLength={254}
+                  autoComplete="email"
+                  placeholder="name@clsu2.edu.ph"
+                />
+                <small>
+                  This email must be included in the approved registration list.
+                </small>
+              </label>
+            </div>
+          ) : (
             <label>
-              Full name
-              <input name="full_name" required autoComplete="name" />
+              Email address
+              <input name="email" type="email" required autoComplete="email" />
             </label>
           )}
-          <label>
-            {creating ? "Student email address" : "Email address"}
-            <input name="email" type="email" required autoComplete="email" />
-          </label>
           <div className="auth-field password-label">
             <label htmlFor="portal-password">Password</label>
             <span className="password-field">
@@ -840,7 +1152,7 @@ function ProductionAuth({
                 name="password"
                 type={passwordVisible ? "text" : "password"}
                 required
-                minLength={creating ? 12 : 8}
+                minLength={8}
                 autoComplete={creating ? "new-password" : "current-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -920,7 +1232,7 @@ function ProductionAuth({
                     name="confirmation"
                     type={passwordVisible ? "text" : "password"}
                     required
-                    minLength={12}
+                    minLength={8}
                     autoComplete="new-password"
                     value={confirmation}
                     onChange={(event) => setConfirmation(event.target.value)}
@@ -932,7 +1244,11 @@ function ProductionAuth({
               <p
                 id="password-match-status"
                 className={
-                  passwordsMatch ? "password-match passed" : "password-match"
+                  confirmation.length === 0
+                    ? "password-match neutral"
+                    : passwordsMatch
+                      ? "password-match passed"
+                      : "password-match"
                 }
                 aria-live="polite"
               >
@@ -942,13 +1258,29 @@ function ProductionAuth({
                     ? "✓ Passwords match."
                     : "Passwords do not match yet."}
               </p>
+              <label className="privacy-confirmation">
+                <input name="privacy_acknowledged" type="checkbox" required />
+                <span>
+                  I confirm that the information above is accurate and may be
+                  used to identify me and manage my consultation requests.
+                </span>
+              </label>
             </>
           )}
           <button
             className="primary"
-            disabled={creating && (!passwordValid || !passwordsMatch)}
+            disabled={
+              submittingAuth ||
+              (creating && (!passwordValid || !passwordsMatch))
+            }
           >
-            {creating ? "Create student account" : "Log in"}
+            {submittingAuth
+              ? creating
+                ? "Creating account…"
+                : "Signing in…"
+              : creating
+                ? "Create student account"
+                : "Log in"}
           </button>
           <div className="auth-options">
             {!creating && (
@@ -999,19 +1331,20 @@ function ProductionAuth({
               </div>
             </aside>
           )}
-          {!configured && (
-            <small className="demo-note">
-              Backend setup required · Supabase environment variables are not
-              configured.
-            </small>
-          )}
-          {notice && (
-            <p className="error" aria-live="polite">
-              {notice}
-            </p>
-          )}
+          <div className="legal-links">
+            <a className="legal-link-button" href="/privacy-policy">
+              Privacy policy
+            </a>
+            <span>·</span>
+            <span>Secure, role-protected access</span>
+          </div>
         </form>
       </section>
+      <div className="mobile-auth-cta">
+        <button type="button" onClick={changeMode}>
+          {creating ? "Return to sign in" : "Create a student account"}
+        </button>
+      </div>
     </main>
   );
 }
@@ -1044,14 +1377,15 @@ function PasswordRecovery({
     setSaving(false);
   };
   return (
-    <main className="auth">
+    <main className="auth" id="main-content">
+      <SkipLink />
       <section className="auth-story">
         <div className="public-brand">
           <BrandLogo tone="light" size="hero" />
           <span>CLSU FacultyConnect</span>
         </div>
         <div>
-          <span className="pilot-label">SECURE ACCOUNT RECOVERY</span>
+          <span className="service-label">SECURE ACCOUNT RECOVERY</span>
           <h1>Choose a new password.</h1>
           <p>
             Your new password must meet the same security requirements used for
@@ -1069,7 +1403,7 @@ function PasswordRecovery({
               name="password"
               type="password"
               required
-              minLength={12}
+              minLength={8}
               autoComplete="new-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -1098,7 +1432,7 @@ function PasswordRecovery({
               name="confirmation"
               type="password"
               required
-              minLength={12}
+              minLength={8}
               autoComplete="new-password"
               value={confirmation}
               onChange={(event) => setConfirmation(event.target.value)}
@@ -1114,6 +1448,125 @@ function PasswordRecovery({
             </p>
           )}
         </form>
+      </section>
+    </main>
+  );
+}
+function PrivacyPolicyPage() {
+  return (
+    <main className="public-policy-page" id="main-content">
+      <SkipLink />
+      <header className="public-policy-header">
+        <a className="public-brand" href="/">
+          <BrandLogo tone="light" size="hero" />
+          <span>CLSU FacultyConnect</span>
+        </a>
+        <div>
+          <p className="eyebrow">PRIVACY AND DATA PROTECTION</p>
+          <h1>Privacy Policy</h1>
+          <p>
+            How FacultyConnect handles information used for faculty
+            consultations, service administration, and quality improvement.
+          </p>
+          <small>Effective August 12, 2026</small>
+        </div>
+      </header>
+      <section className="policy-layout">
+        <nav aria-label="Privacy policy sections">
+          <a href="#information">Information collected</a>
+          <a href="#use">How information is used</a>
+          <a href="#access">Access and sharing</a>
+          <a href="#reviews">Consultation reviews</a>
+          <a href="#security">Security and retention</a>
+          <a href="#choices">Your choices</a>
+        </nav>
+        <article className="policy-copy">
+          <section id="information">
+            <h2>Information we collect</h2>
+            <p>
+              FacultyConnect stores the account information needed to identify
+              authorized users, including name, registered email address,
+              student number, college or unit, degree program, year level, role,
+              and notification preferences. Consultation records include the
+              requested topic, notes, faculty member, schedule, mode, location,
+              and request status.
+            </p>
+          </section>
+          <section id="use">
+            <h2>How information is used</h2>
+            <p>
+              Information is used to authenticate users, match consultation
+              requests with faculty-published schedules, communicate status
+              updates, provide approved guidance, prevent scheduling conflicts,
+              maintain operational records, and evaluate service quality.
+            </p>
+          </section>
+          <section id="access">
+            <h2>Access and sharing</h2>
+            <p>
+              Students can access their own requests. Faculty members can access
+              requests assigned to their schedules. Authorized MISO
+              administrators can access records required for support, quality
+              assurance, security, and account administration. FacultyConnect
+              does not sell personal information.
+            </p>
+          </section>
+          <section id="reviews">
+            <h2>Consultation reviews</h2>
+            <p>
+              After a completed consultation, students may provide a one-to-five
+              star rating and an optional written comment. Administrators can
+              review comments and aggregated results by year level, college, and
+              course to improve the service. Demographic values are recorded as
+              a snapshot at the time of review so historical reports remain
+              accurate.
+            </p>
+          </section>
+          <section id="security">
+            <h2>Security and retention</h2>
+            <p>
+              Role-based access, database row-level security, secure account
+              authentication, audit records, and encrypted network connections
+              protect portal data. Records are retained only for as long as
+              required for consultation operations, accountability, academic
+              support, and applicable university requirements.
+            </p>
+          </section>
+          <section id="choices">
+            <h2>Your choices and questions</h2>
+            <p>
+              Users may update supported profile details and optional email
+              notifications from the portal. Requests to correct or review other
+              personal information should be directed to MISO or the authorized
+              FacultyConnect administrator through official CLSU channels.
+            </p>
+          </section>
+          <footer>
+            <a className="primary" href="/">Return to FacultyConnect</a>
+          </footer>
+        </article>
+      </section>
+    </main>
+  );
+}
+
+function NotFoundPage() {
+  return (
+    <main className="not-found-page" id="main-content">
+      <SkipLink />
+      <section>
+        <a className="public-brand" href="/">
+          <BrandLogo tone="light" size="hero" />
+          <span>CLSU FacultyConnect</span>
+        </a>
+        <div className="not-found-code">404</div>
+        <p className="eyebrow">PAGE NOT FOUND</p>
+        <h1>This page is not available.</h1>
+        <p>
+          The address may be incorrect, or the page may have moved. Return to
+          the secure FacultyConnect portal to continue.
+        </p>
+        <a className="primary" href="/">Return to the portal →</a>
       </section>
     </main>
   );
@@ -1230,6 +1683,55 @@ function Nav({
     </button>
   );
 }
+function PortalFooterActions({ onLogout }: { onLogout: () => void }) {
+  return (
+    <div className="side-foot-actions">
+      <a className="side-action side-action-privacy" href="/privacy-policy">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3 20 6v5c0 5.2-3.3 8.6-8 10-4.7-1.4-8-4.8-8-10V6l8-3Z" />
+          <path d="M9.5 12 11 13.5l3.8-4" />
+        </svg>
+        <span>Privacy policy</span>
+      </a>
+      <button
+        className="side-action side-action-signout"
+        type="button"
+        onClick={onLogout}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10" />
+        </svg>
+        <span>Sign out</span>
+      </button>
+    </div>
+  );
+}
+function MobilePortalNav({
+  active,
+  items,
+  navigate,
+}: {
+  active: string;
+  items: Array<[string, string, NavIconName]>;
+  navigate: (target: string) => void;
+}) {
+  return (
+    <nav className="mobile-portal-nav" aria-label="Mobile portal navigation">
+      {items.map(([target, label, icon]) => (
+        <button
+          type="button"
+          key={target}
+          className={active === target ? "active" : ""}
+          aria-current={active === target ? "page" : undefined}
+          onClick={() => navigate(target)}
+        >
+          <NavIcon name={icon} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
 function statusLabel(status: AppointmentStatus = "pending") {
   return (
     {
@@ -1255,7 +1757,7 @@ function Dashboard({
     <>
       <section className="page-head">
         <div>
-          <p className="eyebrow">CLIRDEC FAQ PILOT</p>
+          <p className="eyebrow">VERIFIED CONSULTATION GUIDANCE</p>
           <h1>What do you need help with, {user.name.split(" ")[0]}?</h1>
           <p>
             Start with the approved-information assistant or view
@@ -1341,7 +1843,7 @@ function Dashboard({
             <p className="eyebrow">SAFE BY DESIGN</p>
             <h2>Approved answer or official referral</h2>
           </div>
-          <p>The pilot does not provide unrestricted generative answers.</p>
+          <p>The assistant does not provide unrestricted generative answers.</p>
         </div>
         <div className="steps">
           <article>
@@ -1448,12 +1950,18 @@ function Schedule({
   reschedule,
   busy,
   emailNotifications,
+  review,
 }: {
   booked: Slot[];
   cancel: (id: string) => void;
   reschedule: (slot: Slot) => void;
   busy: boolean;
   emailNotifications: boolean;
+  review: (
+    appointmentId: string,
+    rating: number,
+    comment: string,
+  ) => Promise<boolean>;
 }) {
   return (
     <>
@@ -1542,6 +2050,14 @@ function Schedule({
                     </button>
                   </div>
                 )}
+                {s.status === "completed" && s.appointment_id && (
+                  <ConsultationReviewForm
+                    appointmentId={s.appointment_id}
+                    existing={s.review}
+                    busy={busy}
+                    submit={review}
+                  />
+                )}
               </div>
             </article>
           );
@@ -1556,6 +2072,83 @@ function Schedule({
     </>
   );
 }
+
+function ConsultationReviewForm({
+  appointmentId,
+  existing,
+  busy,
+  submit,
+}: {
+  appointmentId: string;
+  existing?: ConsultationReview;
+  busy: boolean;
+  submit: (
+    appointmentId: string,
+    rating: number,
+    comment: string,
+  ) => Promise<boolean>;
+}) {
+  const [rating, setRating] = useState(existing?.rating || 0);
+  const [comment, setComment] = useState(existing?.comment || "");
+  const [saved, setSaved] = useState(Boolean(existing));
+  useEffect(() => {
+    setRating(existing?.rating || 0);
+    setComment(existing?.comment || "");
+    setSaved(Boolean(existing));
+  }, [existing?.id, existing?.rating, existing?.comment]);
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!rating) return;
+    if (await submit(appointmentId, rating, comment)) setSaved(true);
+  };
+  return (
+    <form className="consultation-review" onSubmit={handleSubmit}>
+      <div className="review-heading">
+        <div>
+          <b>{saved ? "Your consultation review" : "How was your consultation?"}</b>
+          <small>Ratings help MISO improve FacultyConnect services.</small>
+        </div>
+        {saved && <span>Saved</span>}
+      </div>
+      <fieldset className="star-rating">
+        <legend>Consultation rating</legend>
+        <div>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <button
+              type="button"
+              key={star}
+              className={star <= rating ? "selected" : ""}
+              aria-label={`${star} star${star === 1 ? "" : "s"}`}
+              aria-pressed={rating === star}
+              onClick={() => {
+                setRating(star);
+                setSaved(false);
+              }}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <label>
+        Optional comment
+        <textarea
+          value={comment}
+          maxLength={1000}
+          placeholder="Share what worked well or what could be improved."
+          onChange={(event) => {
+            setComment(event.target.value);
+            setSaved(false);
+          }}
+        />
+        <small>{comment.length}/1000 characters</small>
+      </label>
+      <button className="primary" disabled={busy || rating === 0}>
+        {busy ? "Saving…" : saved ? "Update review" : "Submit review"}
+      </button>
+    </form>
+  );
+}
 function StudentProfile({
   user,
   save,
@@ -1563,7 +2156,9 @@ function StudentProfile({
   user: User;
   save: (values: {
     fullName: string;
-    department: string;
+    college: string;
+    program: string;
+    yearLevel: string;
     emailNotifications: boolean;
   }) => Promise<boolean>;
 }) {
@@ -1580,7 +2175,9 @@ function StudentProfile({
     setSaving(true);
     const saved = await save({
       fullName: String(form.get("full_name") || "").trim(),
-      department: String(form.get("department") || "").trim(),
+      college: String(form.get("college") || "").trim(),
+      program: String(form.get("program") || "").trim(),
+      yearLevel: String(form.get("year_level") || "").trim(),
       emailNotifications: form.get("email_notifications") === "on",
     });
     setSaving(false);
@@ -1590,33 +2187,69 @@ function StudentProfile({
     <>
       <section className="page-head compact student-profile-heading">
         <div>
+          <p className="eyebrow">STUDENT ACCOUNT</p>
           <h1>My profile</h1>
+          <p>
+            Keep your academic details accurate and choose how you receive
+            appointment updates.
+          </p>
         </div>
       </section>
-      <section className="student-profile-layout">
-        <article className="student-identity-card">
-          <span className="avatar student-avatar">{initials}</span>
-          <div>
-            <h2>{user.name}</h2>
-            <p>{user.email}</p>
+      <section className="student-profile-layout profile-v2-layout">
+        <article className="student-identity-card profile-identity-v2">
+          <div className="profile-identity-accent" aria-hidden="true" />
+          <div className="profile-identity-main">
+            <span className="avatar student-avatar">{initials}</span>
+            <div>
+              <span className="profile-status-pill">Active student</span>
+              <h2>{user.name}</h2>
+              <p>{user.email}</p>
+            </div>
+          </div>
+          <div className="profile-identity-meta">
+            <span>
+              <small>Student number</small>
+              <b>{user.student_number || "Not provided"}</b>
+            </span>
+            <span>
+              <small>Account access</small>
+              <b>FacultyConnect student</b>
+            </span>
           </div>
         </article>
-        <article className="student-details-card">
-          <button
-            className="edit-profile-button"
-            onClick={() => setEditing(true)}
-          >
-            Edit profile
-          </button>
-          <Info l="Full name" v={user.name} />
-          <Info l="Email" v={user.email} />
-          <Info l="Course and year" v={user.department || "Not provided"} />
-          <Info
-            l="Email updates"
-            v={user.email_notifications ? "Enabled" : "Disabled"}
-          />
-          <Info l="Account type" v="Student" />
-          <Info l="Profile status" v="Active FacultyConnect account" />
+        <article className="student-details-card profile-details-v2">
+          <header className="profile-card-header">
+            <div>
+              <span>Academic information</span>
+              <h2>Profile details</h2>
+            </div>
+            <button
+              type="button"
+              className="edit-profile-button"
+              onClick={() => setEditing(true)}
+            >
+              Edit profile
+            </button>
+          </header>
+          <div className="profile-information-grid">
+            <Info l="College or unit" v={user.college || "Not provided"} />
+            <Info l="Degree program" v={user.program || "Not provided"} />
+            <Info l="Year level" v={user.year_level || "Not provided"} />
+            <Info l="Registered email" v={user.email} />
+          </div>
+          <div className="profile-preference-card">
+            <div className="profile-preference-icon" aria-hidden="true">✉</div>
+            <div>
+              <span>Appointment email notifications</span>
+              <p>
+                Receive request receipts, faculty decisions, schedule changes,
+                and reminders at your registered email.
+              </p>
+            </div>
+            <b className={user.email_notifications ? "enabled" : "disabled"}>
+              {user.email_notifications ? "Enabled" : "Disabled"}
+            </b>
+          </div>
         </article>
       </section>
       {editing ? (
@@ -1641,27 +2274,69 @@ function StudentProfile({
             <h2 id="profile-edit-title">Edit profile</h2>
             <label className="topic">
               Full name
-              <input name="full_name" defaultValue={user.name} required />
+              <input
+                name="full_name"
+                defaultValue={user.name}
+                required
+                minLength={3}
+                maxLength={120}
+              />
             </label>
             <label className="topic">
               Email
               <input value={user.email} disabled />
             </label>
-            <label className="topic">
-              Course and year
-              <input
-                name="department"
-                defaultValue={user.department || ""}
-                placeholder="For example, BSIT 3-5"
-              />
-            </label>
+            <div className="profile-edit-grid">
+              <label className="topic">
+                College or unit
+                <input
+                  name="college"
+                  defaultValue={user.college || ""}
+                  placeholder="College of Engineering"
+                  required
+                  minLength={2}
+                  maxLength={120}
+                />
+              </label>
+              <label className="topic">
+                Degree program
+                <input
+                  name="program"
+                  defaultValue={user.program || ""}
+                  placeholder="BS Information Technology"
+                  required
+                  minLength={2}
+                  maxLength={120}
+                />
+              </label>
+              <label className="topic">
+                Year level
+                <select
+                  name="year_level"
+                  defaultValue={user.year_level || ""}
+                  required
+                >
+                  <option value="" disabled>Select year level</option>
+                  <option>1st year</option>
+                  <option>2nd year</option>
+                  <option>3rd year</option>
+                  <option>4th year</option>
+                  <option>5th year or higher</option>
+                  <option>Graduate student</option>
+                </select>
+              </label>
+              <label className="topic">
+                Student number
+                <input value={user.student_number || "Not provided"} disabled />
+              </label>
+            </div>
             <label className="check-row">
               <input
                 type="checkbox"
                 name="email_notifications"
                 defaultChecked={user.email_notifications}
               />
-              <span>Send optional appointment emails</span>
+              <span>Send appointment status and reminder emails</span>
             </label>
             <div className="modal-actions">
               <button
@@ -1696,7 +2371,7 @@ function Chat({
     <>
       <section className="page-head compact">
         <div>
-          <p className="eyebrow">CLIRDEC FAQ PILOT</p>
+          <p className="eyebrow">VERIFIED CONSULTATION GUIDANCE</p>
           <h1>Ask Consult AI</h1>
           <p>
             Answers use Product Owner or CLIRDEC-approved information.
@@ -1850,6 +2525,7 @@ function BookingModal({
           <textarea
             required
             value={topic}
+            maxLength={240}
             disabled={rescheduling}
             onChange={(e) => setTopic(e.target.value)}
             placeholder="Provide enough context for the faculty member to review your request"
@@ -1876,11 +2552,30 @@ function BookingModal({
   );
 }
 type FView = "fhome" | "requests" | "availability" | "fprofile";
-type AView = "ahome" | "users" | "appointments" | "knowledge" | "reports";
+type AView =
+  | "ahome"
+  | "users"
+  | "appointments"
+  | "reviews"
+  | "knowledge"
+  | "reports";
 function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   const faculty = user.role === "faculty";
   const [view, setView] = useState<FView | AView>(faculty ? "fhome" : "ahome");
   const [menu, setMenu] = useState(false);
+  const portalMetadata: Record<FView | AView, [string, string]> = {
+    fhome: ["Faculty overview | CLSU FacultyConnect", "Review consultation activity and published faculty availability."],
+    requests: ["Consultation requests | CLSU FacultyConnect", "Review, approve, decline, and complete student consultation requests."],
+    availability: ["Manage availability | CLSU FacultyConnect", "Publish and manage weekday faculty consultation schedules."],
+    fprofile: ["Faculty profile | CLSU FacultyConnect", "Manage faculty expertise and consultation profile information."],
+    ahome: ["Administration overview | CLSU FacultyConnect", "Monitor FacultyConnect users, consultations, and service performance."],
+    users: ["Users and roles | CLSU FacultyConnect", "Administer registration approvals and audited FacultyConnect roles."],
+    appointments: ["Consultation logs | CLSU FacultyConnect", "Review consultation status, participants, schedules, and service exceptions."],
+    reviews: ["Reviews and insights | CLSU FacultyConnect", "Analyze consultation ratings and comments by year level, college, and course."],
+    knowledge: ["FAQ knowledge base | CLSU FacultyConnect", "Manage approved sources and answers used by the consultation assistant."],
+    reports: ["Quality assurance | CLSU FacultyConnect", "Track service acceptance criteria, quality targets, and release evidence."],
+  };
+  usePageMetadata(portalMetadata[view][0], portalMetadata[view][1]);
   const nav: [FView | AView, string, NavIconName][] = faculty
     ? [
         ["fhome", "Overview", "home"],
@@ -1889,27 +2584,30 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         ["fprofile", "Profile", "profile"],
       ]
     : [
-        ["ahome", "Pilot overview", "home"],
+        ["ahome", "Service overview", "home"],
         ["knowledge", "FAQ knowledge base", "assistant"],
         ["users", "Users and roles", "users"],
         ["appointments", "Consultation logs", "calendar"],
-        ["reports", "Pilot QA", "report"],
+        ["reviews", "Reviews and insights", "report"],
+        ["reports", "Quality assurance", "report"],
       ];
   const navigate = (target: FView | AView) => {
     setView(target);
     setMenu(false);
   };
   return (
-    <div className="app role-app">
+    <div className={`app role-app ${faculty ? "faculty-app" : "admin-app"}`}>
+      <SkipLink />
       <header className="topbar">
         <button
+          type="button"
           className="brand-button"
           onClick={() => navigate(faculty ? "fhome" : "ahome")}
         >
           <BrandLogo />
           <span>
             <b>CLSU FacultyConnect</b>
-            <small>Managed by MISO · CLIRDEC pilot</small>
+            <small>Faculty consultation administration</small>
           </span>
         </button>
         <div className="top-actions">
@@ -1918,6 +2616,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
             onNavigate={(target) => navigate(target as FView | AView)}
           />
           <button
+            type="button"
             className="profile-chip"
             onClick={() => navigate(faculty ? "fprofile" : "users")}
             aria-label={faculty ? "Open my profile" : "Open users and roles"}
@@ -1935,9 +2634,11 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
             </i>
           </button>
           <button
+            type="button"
             className="menu-button"
             onClick={() => setMenu(!menu)}
             aria-label="Toggle menu"
+            aria-expanded={menu}
           >
             ☰
           </button>
@@ -1962,17 +2663,41 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         </div>
         <div className="side-foot">
           <span>Central Luzon State University</span>
-          <small>Role-restricted controlled pilot</small>
-          <button onClick={logout}>Sign out</button>
+          <small>Role-restricted administrative service</small>
+          <PortalFooterActions onLogout={logout} />
         </div>
       </aside>
-      <main className="content">
+      <main
+        id="main-content"
+        className={`content ${faculty ? "faculty-content" : "admin-content"} view-${view}`}
+      >
         {faculty ? (
           <FacultyPages view={view as FView} user={user} />
         ) : (
           <AdminPages view={view as AView} user={user} />
         )}
       </main>
+      <MobilePortalNav
+        active={view}
+        navigate={(target) => navigate(target as FView | AView)}
+        items={
+          faculty
+            ? [
+                ["fhome", "Overview", "home"],
+                ["requests", "Requests", "requests"],
+                ["availability", "Schedule", "calendar"],
+                ["fprofile", "Profile", "profile"],
+              ]
+            : [
+                ["ahome", "Overview", "home"],
+                ["knowledge", "FAQ", "assistant"],
+                ["users", "Users", "users"],
+                ["appointments", "Logs", "calendar"],
+                ["reviews", "Reviews", "report"],
+                ["reports", "QA", "calendar"],
+              ]
+        }
+      />
     </div>
   );
 }
@@ -2150,9 +2875,11 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   const [calendarWeek, setCalendarWeek] = useState(() => initialCalendarWeek());
   const [selectedStart, setSelectedStart] = useState<Date | null>(null);
   const [duration, setDuration] = useState(30);
-  const refresh = async () => {
+  const [publishing, setPublishing] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const refresh = async (showLoading = false) => {
     if (!configured) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       const [data, facultyProfile] = await Promise.all([
         loadFacultyPortal(user.id),
@@ -2161,7 +2888,6 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       setRequests(data.requests);
       setFacultySlots(data.availability);
       setProfile(facultyProfile);
-      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2169,11 +2895,37 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           : "Faculty data could not be loaded.",
       );
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
   useEffect(() => {
-    void refresh();
+    const backgroundRefresh = () => void refresh(false);
+    void refresh(true);
+    const interval = window.setInterval(backgroundRefresh, 30_000);
+    window.addEventListener("focus", backgroundRefresh);
+    const appointmentChannel = supabase
+      .channel(`faculty-appointments:${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "appointments" },
+        backgroundRefresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "availability",
+          filter: `faculty_id=eq.${user.id}`,
+        },
+        backgroundRefresh,
+      )
+      .subscribe();
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", backgroundRefresh);
+      void supabase.removeChannel(appointmentChannel);
+    };
   }, [user.id]);
   const pending = requests.filter((item) => item.status === "pending");
   const confirmed = requests.filter((item) => item.status === "confirmed");
@@ -2194,6 +2946,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           : "Request declined. The student email notification was queued.",
       );
       await refresh();
+      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2208,6 +2961,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       await completeFacultyRequest(id);
       setMessage("Consultation marked completed.");
       await refresh();
+      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2218,7 +2972,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   };
   const publish = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    const formElement = e.currentTarget;
+    const form = new FormData(formElement);
     if (!selectedStart) {
       setMessage("Select an available weekday and time from the calendar.");
       return;
@@ -2233,6 +2988,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       setMessage(validation);
       return;
     }
+    setMessage("");
+    setPublishing(true);
     try {
       await createFacultyAvailability({
         facultyId: user.id,
@@ -2243,17 +3000,20 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           | "in_person"
           | "online",
       });
-      e.currentTarget.reset();
+      formElement.reset();
       setSelectedStart(null);
       setDuration(30);
       setMessage("Availability published for students.");
       await refresh();
+      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
           ? cause.message
           : "Availability could not be published.",
       );
+    } finally {
+      setPublishing(false);
     }
   };
   const removeSlot = async (id: string) => {
@@ -2261,6 +3021,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       await removeFacultyAvailability(id);
       setMessage("Open availability removed.");
       await refresh();
+      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2272,6 +3033,8 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   const saveProfile = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+    setMessage("");
+    setSavingProfile(true);
     try {
       await updateFacultyProfile({
         userId: user.id,
@@ -2286,15 +3049,17 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           ? cause.message
           : "The faculty profile could not be updated.",
       );
+    } finally {
+      setSavingProfile(false);
     }
   };
   if (loading)
     return <div className="empty-card">Loading your faculty workspace…</div>;
   const feedback = message && (
-    <div className="notice">
+    <div className="notice" role="status" aria-live="polite">
       <b>✓</b>
       <span>{message}</span>
-      <button onClick={() => setMessage("")}>×</button>
+      <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
     </div>
   );
   if (view === "fhome")
@@ -2391,16 +3156,54 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
             facultySlots,
           )
         : "";
+    const openUpcoming = upcomingSlots.filter((slot) => slot.is_open);
+    const reservedUpcoming = upcomingSlots.filter((slot) => !slot.is_open);
+    const nextBookable = firstBookableStart();
     return (
       <>
         {feedback}
         <Head
           label="FACULTY PORTAL"
           title="Manage availability"
-          copy="Choose weekday consultation times from the calendar. Booked and overlapping slots close automatically."
+          copy="Publish clear consultation hours for students. Times use Philippine Standard Time and close automatically when requested."
         />
-        <div className="availability-layout">
+        <section className="availability-summary-band" aria-label="Schedule summary">
+          <div>
+            <span>Open for students</span>
+            <b>{openUpcoming.length}</b>
+            <small>Upcoming time slots</small>
+          </div>
+          <div>
+            <span>Reserved</span>
+            <b>{reservedUpcoming.length}</b>
+            <small>Awaiting or holding requests</small>
+          </div>
+          <div>
+            <span>Earliest publishable time</span>
+            <b className="availability-summary-date">
+              {formatManilaDateTime(nextBookable, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              })}
+            </b>
+            <small>
+              {formatManilaDateTime(nextBookable, {
+                hour: "numeric",
+                minute: "2-digit",
+              })} · 24-hour notice
+            </small>
+          </div>
+        </section>
+        <div className="availability-layout availability-layout-v2">
           <Work title="Choose a weekday and time">
+            <div className="availability-instruction">
+              <span>1</span>
+              <p>
+                Select one available cell. Gray times are outside the allowed
+                window or already published.
+              </p>
+            </div>
             <WeekdayAvailabilityCalendar
               weekStart={calendarWeek}
               setWeekStart={setCalendarWeek}
@@ -2412,11 +3215,11 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           </Work>
           <div className="availability-side">
             <Work title="Publish selected time">
-              <form className="knowledge-form" onSubmit={publish}>
+              <form className="knowledge-form publish-availability-form" onSubmit={publish}>
                 <div
                   className={`selected-slot-summary${selectionError ? " invalid" : ""}`}
                 >
-                  <span>Selected consultation</span>
+                  <span>2 · Confirm the selected consultation</span>
                   {selectedStart && selectedEnd ? (
                     <>
                       <b>
@@ -2440,12 +3243,12 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                       </p>
                     </>
                   ) : (
-                    <p>Choose an available cell in the calendar.</p>
+                    <p>No time selected yet. Choose a white calendar cell.</p>
                   )}
                   {selectionError && <small>{selectionError}</small>}
                 </div>
                 <label>
-                  Duration
+                  <span>3 · Duration</span>
                   <select
                     name="duration"
                     value={duration}
@@ -2457,14 +3260,14 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                   </select>
                 </label>
                 <label>
-                  Mode
+                  <span>4 · Consultation mode</span>
                   <select name="consultation_mode" defaultValue="in_person">
                     <option value="in_person">In person</option>
                     <option value="online">Online</option>
                   </select>
                 </label>
                 <label>
-                  Location or meeting platform
+                  <span>5 · Location or meeting platform</span>
                   <input
                     name="location"
                     required
@@ -2473,67 +3276,93 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                 </label>
                 <button
                   className="primary"
-                  disabled={!selectedStart || Boolean(selectionError)}
+                  type="submit"
+                  disabled={
+                    publishing || !selectedStart || Boolean(selectionError)
+                  }
                 >
-                  Publish availability
+                  {publishing ? "Publishing…" : "Publish availability"}
                 </button>
+                <small className="publish-help-text">
+                  Students will see this time immediately after it is published.
+                </small>
               </form>
-            </Work>
-            <Work title="Published schedule">
-              <div className="published-slots">
-                {upcomingSlots.map((slot) => (
-                  <article className="published-slot" key={slot.id}>
-                    <div className="published-slot-copy">
-                      <div className="published-slot-head">
-                        <span
-                          className={
-                            slot.is_open
-                              ? "slot-state open"
-                              : "slot-state requested"
-                          }
-                        >
-                          {slot.is_open ? "Open" : "Requested"}
-                        </span>
-                        <b>
-                          {formatManilaDateTime(new Date(slot.starts_at), {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </b>
-                      </div>
-                      <small>
-                        {slot.location || "Location provided after approval"}
-                      </small>
-                    </div>
-                    {slot.is_open ? (
-                      <button
-                        className="published-slot-remove"
-                        onClick={() => void removeSlot(slot.id)}
-                      >
-                        Remove
-                      </button>
-                    ) : (
-                      <span
-                        className="published-slot-lock"
-                        aria-label="This time has a consultation request"
-                      >
-                        Reserved
-                      </span>
-                    )}
-                  </article>
-                ))}
-                {!upcomingSlots.length && (
-                  <div className="empty-card">
-                    No upcoming availability has been published.
-                  </div>
-                )}
-              </div>
             </Work>
           </div>
         </div>
+        <Work title="Published schedule">
+          <div className="published-schedule-header">
+            <p>
+              Review every upcoming time in one place. Open slots may be removed;
+              reserved slots remain locked to protect the student request.
+            </p>
+            <span>{upcomingSlots.length} upcoming</span>
+          </div>
+          <div className="published-slots published-slots-grid">
+            {upcomingSlots.map((slot) => (
+              <article className="published-slot" key={slot.id}>
+                <div className="published-slot-date" aria-hidden="true">
+                  <span>
+                    {formatManilaDateTime(new Date(slot.starts_at), {
+                      month: "short",
+                    })}
+                  </span>
+                  <b>
+                    {formatManilaDateTime(new Date(slot.starts_at), {
+                      day: "numeric",
+                    })}
+                  </b>
+                </div>
+                <div className="published-slot-copy">
+                  <div className="published-slot-head">
+                    <span
+                      className={
+                        slot.is_open
+                          ? "slot-state open"
+                          : "slot-state requested"
+                      }
+                    >
+                      {slot.is_open ? "Open" : "Reserved"}
+                    </span>
+                    <b>
+                      {formatManilaDateTime(new Date(slot.starts_at), {
+                        weekday: "long",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </b>
+                  </div>
+                  <small>
+                    {slot.consultation_mode === "online" ? "Online" : "In person"}
+                    {" · "}
+                    {slot.location || "Location provided after approval"}
+                  </small>
+                </div>
+                {slot.is_open ? (
+                  <button
+                    type="button"
+                    className="published-slot-remove"
+                    onClick={() => void removeSlot(slot.id)}
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <span
+                    className="published-slot-lock"
+                    aria-label="This time has a consultation request"
+                  >
+                    Locked
+                  </span>
+                )}
+              </article>
+            ))}
+            {!upcomingSlots.length && (
+              <div className="empty-card">
+                No upcoming availability has been published.
+              </div>
+            )}
+          </div>
+        </Work>
       </>
     );
   }
@@ -2543,10 +3372,11 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       <Head
         label="FACULTY PORTAL"
         title="Faculty profile"
-        copy="Keep your verified expertise current so students can find the appropriate faculty member."
+        copy="Present your verified expertise clearly so students can choose the right consultation path."
       />
-      <section className="profile-layout">
-        <article className="profile-summary">
+      <section className="profile-layout faculty-profile-v2">
+        <article className="profile-summary faculty-profile-identity">
+          <div className="faculty-profile-pattern" aria-hidden="true" />
           <span className="avatar profile-avatar coral">
             {user.name
               .split(" ")
@@ -2554,15 +3384,24 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
               .join("")
               .slice(0, 2)}
           </span>
+          <span className="faculty-verified-badge">Verified faculty</span>
           <h2>{user.name}</h2>
-          <p>
-            {profile.active
-              ? "Active faculty profile"
-              : "Profile hidden from students"}
-          </p>
+          <p>{user.department || "CLSU faculty member"}</p>
           <small>{user.email}</small>
+          <div className="faculty-profile-state">
+            <i className={profile.active ? "active" : "inactive"} />
+            {profile.active
+              ? "Visible in student search"
+              : "Hidden from student search"}
+          </div>
         </article>
-        <article className="profile-details editable-profile">
+        <article className="profile-details editable-profile faculty-profile-editor">
+          <header className="profile-card-header">
+            <div>
+              <span>Public consultation profile</span>
+              <h2>Expertise and introduction</h2>
+            </div>
+          </header>
           <form className="knowledge-form" onSubmit={saveProfile}>
             <label>
               Expertise categories
@@ -2570,28 +3409,49 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                 name="expertise"
                 defaultValue={profile.expertise.join(", ")}
                 placeholder="Software Engineering, Web Development"
+                required
+                maxLength={960}
               />
+              <small>Separate categories with commas. Add only verified areas.</small>
             </label>
+            <div className="profile-expertise-preview" aria-label="Current expertise">
+              {profile.expertise.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+              {!profile.expertise.length && <small>No expertise added yet.</small>}
+            </div>
             <label>
-              Faculty bio
+              Faculty introduction
               <textarea
                 name="bio"
                 defaultValue={profile.bio}
-                placeholder="Brief background and consultation areas"
+                placeholder="Briefly describe your background and the consultation concerns you can support."
+                rows={6}
+                maxLength={2000}
               />
+              <small>Students see this before requesting a consultation.</small>
             </label>
-            <button className="primary">Save faculty profile</button>
+            <button className="primary" disabled={savingProfile}>
+              {savingProfile ? "Saving profile…" : "Save faculty profile"}
+            </button>
           </form>
-          <div>
-            <Info
-              l="Availability policy"
-              v="Only times you publish are shown to students."
-            />
-            <Info
-              l="Privacy"
-              v="Student concerns are visible only to participants and authorized administrators."
-            />
-          </div>
+          <aside className="faculty-profile-guidance">
+            <h3>Profile guidance</h3>
+            <p>
+              <b>Availability</b>
+              Only weekday times you publish are shown to students.
+            </p>
+            <p>
+              <b>Privacy</b>
+              Consultation concerns remain limited to participants and authorized
+              administrators.
+            </p>
+            <p>
+              <b>Accuracy</b>
+              Keep expertise labels concise and use the terminology approved by
+              your unit.
+            </p>
+          </aside>
         </article>
       </section>
     </>
@@ -2725,6 +3585,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     appointments: [],
     faqs: [],
     registrationEmails: [],
+    reviews: [],
   });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -2732,11 +3593,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [appointmentFilter, setAppointmentFilter] = useState<
     "all" | AppointmentStatus
   >("all");
-  const refresh = async () => {
-    setLoading(true);
+  const refresh = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       setData(await loadAdminPortal());
-      window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
     } catch (cause) {
       setMessage(
         cause instanceof Error
@@ -2744,11 +3604,18 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           : "Administration data could not be loaded.",
       );
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
   useEffect(() => {
-    void refresh();
+    const backgroundRefresh = () => void refresh(false);
+    void refresh(true);
+    const interval = window.setInterval(backgroundRefresh, 60_000);
+    window.addEventListener("focus", backgroundRefresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", backgroundRefresh);
+    };
   }, []);
   const changeRole = async (id: string, role: Role) => {
     try {
@@ -2770,7 +3637,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     try {
       await approveRegistrationEmail(email, user.id);
       form.reset();
-      setMessage("Participant email approved for one controlled student registration.");
+      setMessage("Email approved for one student registration.");
       await refresh();
     } catch (cause) {
       setMessage(
@@ -2846,10 +3713,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       <div className="empty-card">Loading the administration workspace…</div>
     );
   const feedback = message && (
-    <div className="notice">
+    <div className="notice" role="status" aria-live="polite">
       <b>✓</b>
       <span>{message}</span>
-      <button onClick={() => setMessage("")}>×</button>
+      <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
     </div>
   );
   const pending = data.appointments.filter(
@@ -2884,14 +3751,39 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     activeAppointments.length -
       new Set(activeAppointments.map((item) => item.availability_id)).size,
   );
+  const reviewAverage = data.reviews.length
+    ? data.reviews.reduce((sum, review) => sum + review.rating, 0) /
+      data.reviews.length
+    : 0;
+  const reviewGroups = (field: "college" | "program" | "year_level") => {
+    const groups = new Map<string, { count: number; total: number }>();
+    data.reviews.forEach((review) => {
+      const label = review[field]?.trim() || "Not provided";
+      const current = groups.get(label) || { count: 0, total: 0 };
+      groups.set(label, {
+        count: current.count + 1,
+        total: current.total + review.rating,
+      });
+    });
+    return [...groups.entries()]
+      .map(([label, values]) => ({
+        label,
+        count: values.count,
+        average: values.total / values.count,
+      }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  };
+  const appointmentById = new Map(
+    data.appointments.map((appointment) => [appointment.id, appointment]),
+  );
   if (view === "ahome")
     return (
       <>
         {feedback}
         <Head
           label="MISO ADMINISTRATION"
-          title="Pilot Overview"
-          copy="Monitor the CLIRDEC pilot before university-wide expansion."
+          title="Service overview"
+          copy="Monitor FacultyConnect activity, service quality, and access."
         />
         <Stats
           data={[
@@ -2920,8 +3812,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
               </div>
             )}
           </Work>
-          <Work title="Pilot totals">
-            <Line a="Now" b="Pilot data refreshed" c="Live Supabase records" />
+          <Work title="Service totals">
+            <Line a="Now" b="Service data refreshed" c="Live Supabase records" />
             <Line
               a={String(
                 data.faqs.filter((item) => item.status === "approved").length,
@@ -2932,7 +3824,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             <Line
               a={String(completed)}
               b="Completed consultations"
-              c="Pilot records"
+              c="Service records"
             />
           </Work>
         </div>
@@ -2945,7 +3837,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <Head
           label="MISO ADMINISTRATION"
           title="Manage users"
-          copy="Approve pilot student registrations, then assign faculty and administrator access through an audited role change."
+          copy="Approve student registrations, then assign faculty and administrator access through an audited role change."
           action="Approve email"
         />
         <div className="knowledge-layout">
@@ -3044,7 +3936,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <Head
           label="MISO ADMINISTRATION"
           title="Manage appointments"
-          copy="Monitor schedules and investigate pilot exceptions."
+          copy="Monitor schedules and investigate service exceptions."
         />
         <div className="filter-tabs" aria-label="Appointment status filters">
           <button
@@ -3141,6 +4033,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   name="question"
                   required
                   placeholder="Enter a frequently asked question"
+                  maxLength={500}
                 />
               </label>
               <label>
@@ -3149,6 +4042,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   name="source"
                   required
                   placeholder="Official page, advisory, procedure, or faculty schedule"
+                  maxLength={500}
                 />
               </label>
               <label>
@@ -3157,6 +4051,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   name="answer"
                   required
                   placeholder="Write the verified response"
+                  maxLength={5000}
                 />
               </label>
               <label>
@@ -3202,6 +4097,70 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         </div>
       </>
     );
+  if (view === "reviews")
+    return (
+      <>
+        {feedback}
+        <Head
+          label="SERVICE EXPERIENCE"
+          title="Reviews and insights"
+          copy="Monitor post-consultation ratings and comments alongside the students’ year level, college, and course."
+        />
+        <Stats
+          data={[
+            [reviewAverage ? reviewAverage.toFixed(1) : "—", "Average rating"],
+            [String(data.reviews.length), "Submitted reviews"],
+            [
+              String(data.reviews.filter((review) => review.comment).length),
+              "Written comments",
+            ],
+            [
+              String(data.reviews.filter((review) => review.rating >= 4).length),
+              "Positive ratings",
+            ],
+          ]}
+        />
+        <section className="review-breakdowns">
+          <ReviewBreakdown title="By year level" rows={reviewGroups("year_level")} />
+          <ReviewBreakdown title="By college or unit" rows={reviewGroups("college")} />
+          <ReviewBreakdown title="By course or program" rows={reviewGroups("program")} />
+        </section>
+        <Work title="Written consultation feedback">
+          <div className="admin-review-list">
+            {data.reviews.map((review) => {
+              const appointment = appointmentById.get(review.appointment_id);
+              return (
+                <article key={review.id}>
+                  <div className="admin-review-head">
+                    <span aria-label={`${review.rating} out of 5 stars`}>
+                      {"★".repeat(review.rating)}
+                      <i>{"★".repeat(5 - review.rating)}</i>
+                    </span>
+                    <time dateTime={review.created_at}>
+                      {formatManilaDateTime(new Date(review.created_at), {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </time>
+                  </div>
+                  <b>{appointment?.topic || "Completed consultation"}</b>
+                  <small>
+                    {appointment?.faculty_name || "Faculty member"} · {review.year_level || "Year not provided"} · {review.college || "College not provided"} · {review.program || "Course not provided"}
+                  </small>
+                  <p>{review.comment || "No written comment was provided."}</p>
+                </article>
+              );
+            })}
+            {!data.reviews.length && (
+              <div className="empty-card">
+                No completed-consultation reviews have been submitted yet.
+              </div>
+            )}
+          </div>
+        </Work>
+      </>
+    );
   return (
     <>
       {feedback}
@@ -3220,7 +4179,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         ]}
       />
       <div className="report-grid">
-        <Work title="Required pilot checks">
+        <Work title="Required service checks">
           <div className="qa-list">
             <p>
               <b>FAQ test set</b>
@@ -3273,6 +4232,33 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         </Work>
       </div>
     </>
+  );
+}
+function ReviewBreakdown({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; count: number; average: number }>;
+}) {
+  return (
+    <section className="review-breakdown-card">
+      <div className="card-title">
+        <h2>{title}</h2>
+      </div>
+      <div className="review-breakdown-list">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <span>
+              <b>{row.label}</b>
+              <small>{row.count} review{row.count === 1 ? "" : "s"}</small>
+            </span>
+            <strong>{row.average.toFixed(1)} ★</strong>
+          </div>
+        ))}
+        {!rows.length && <p>No review data yet.</p>}
+      </div>
+    </section>
   );
 }
 function Work({ title, children }: { title: string; children: ReactNode }) {

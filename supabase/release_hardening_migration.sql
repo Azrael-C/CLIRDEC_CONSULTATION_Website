@@ -58,6 +58,14 @@ drop policy if exists "read permitted profiles" on public.profiles;
 create policy "read permitted profiles" on public.profiles
 for select to authenticated using (public.can_read_profile(id));
 
+revoke update on public.profiles from authenticated;
+grant update (full_name,department,email_notifications,college,program,year_level) on public.profiles to authenticated;
+revoke select on public.profiles from anon,authenticated;
+grant select (id,full_name,role,department,email_notifications,student_number,college,program,year_level) on public.profiles to authenticated;
+revoke all on public.availability from anon;
+revoke update,delete on public.availability from authenticated;
+grant select,insert on public.availability to authenticated;
+
 drop policy if exists "admins manage registration allowlist" on public.registration_allowlist;
 create policy "admins manage registration allowlist" on public.registration_allowlist
 for all to authenticated
@@ -79,8 +87,23 @@ begin
   ) then
     raise exception 'This email address is not approved for the FacultyConnect pilot';
   end if;
-  insert into profiles(id,full_name,email,role)
-  values(new.id,coalesce(new.raw_user_meta_data->>'full_name','New user'),normalized_email,'student');
+  insert into profiles(
+    id,full_name,email,role,student_number,college,program,year_level,department
+  )
+  values(
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name','New user'),
+    normalized_email,
+    'student',
+    nullif(trim(new.raw_user_meta_data->>'student_number'),''),
+    nullif(trim(new.raw_user_meta_data->>'college'),''),
+    nullif(trim(new.raw_user_meta_data->>'program'),''),
+    nullif(trim(new.raw_user_meta_data->>'year_level'),''),
+    concat_ws(' · ',
+      nullif(trim(new.raw_user_meta_data->>'program'),''),
+      nullif(trim(new.raw_user_meta_data->>'year_level'),'')
+    )
+  );
   update registration_allowlist set active=false where email=normalized_email;
   return new;
 end $$;

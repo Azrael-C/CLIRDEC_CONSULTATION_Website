@@ -10,9 +10,21 @@ create table public.profiles (
   email text not null,
   role public.user_role not null default 'student',
   department text,
+  student_number text,
+  college text,
+  program text,
+  year_level text check (
+    year_level is null or year_level in (
+      '1st year','2nd year','3rd year','4th year',
+      '5th year or higher','Graduate student'
+    )
+  ),
   email_notifications boolean not null default true,
   created_at timestamptz not null default now()
 );
+create unique index profiles_student_number_unique
+on public.profiles (upper(student_number))
+where student_number is not null;
 create table public.faculty_profiles (
   user_id uuid primary key references public.profiles(id) on delete cascade,
   expertise text[] not null default '{}',
@@ -243,14 +255,30 @@ create trigger validate_availability_schedule_before_write
 before insert or update of starts_at,ends_at on public.availability
 for each row execute function public.validate_availability_schedule();
 
--- A user may edit safe profile preferences but cannot promote their own role.
-revoke update on public.profiles from authenticated;
-grant update (full_name,department,email_notifications) on public.profiles to authenticated;
-revoke select on public.profiles from anon,authenticated;
-grant select (id,full_name,role,department,email_notifications) on public.profiles to authenticated;
-revoke update on public.appointments from authenticated;
-revoke update,delete on public.availability from authenticated;
+-- Browser roles receive only the operations used by the portal. RLS remains
+-- the row-level ownership boundary for every granted operation.
+revoke all on table public.profiles from anon,authenticated;
+revoke all on table public.faculty_profiles from anon,authenticated;
+revoke all on table public.availability from anon,authenticated;
+revoke all on table public.appointments from anon,authenticated;
+revoke all on table public.email_notifications from anon,authenticated;
+revoke all on table public.faq_entries from anon,authenticated;
+revoke all on table public.audit_logs from anon,authenticated;
+revoke all on table public.registration_allowlist from anon,authenticated;
+
+grant update (full_name,department,email_notifications,college,program,year_level) on public.profiles to authenticated;
+grant select (id,full_name,role,department,email_notifications,student_number,college,program,year_level) on public.profiles to authenticated;
+grant select on public.faculty_profiles to authenticated;
+grant update (expertise,bio) on public.faculty_profiles to authenticated;
 grant select,insert on public.availability to authenticated;
+grant select on public.appointments to authenticated;
+grant select on public.email_notifications to authenticated;
+grant select,insert,update,delete on public.faq_entries to authenticated;
+grant select on public.audit_logs to authenticated;
+grant select,insert,update,delete on public.registration_allowlist to authenticated;
+
+revoke all on function public.current_role() from public,anon;
+grant execute on function public.current_role() to authenticated;
 
 -- Only trusted administrators can assign faculty or administrator roles. The
 -- browser cannot directly update the role column.
@@ -350,8 +378,23 @@ begin
   ) then
     raise exception 'This email address is not approved for the FacultyConnect pilot';
   end if;
-  insert into profiles(id,full_name,email,role)
-  values(new.id,coalesce(new.raw_user_meta_data->>'full_name','New user'),normalized_email,'student');
+  insert into profiles(
+    id,full_name,email,role,student_number,college,program,year_level,department
+  )
+  values(
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name','New user'),
+    normalized_email,
+    'student',
+    nullif(trim(new.raw_user_meta_data->>'student_number'),''),
+    nullif(trim(new.raw_user_meta_data->>'college'),''),
+    nullif(trim(new.raw_user_meta_data->>'program'),''),
+    nullif(trim(new.raw_user_meta_data->>'year_level'),''),
+    concat_ws(' · ',
+      nullif(trim(new.raw_user_meta_data->>'program'),''),
+      nullif(trim(new.raw_user_meta_data->>'year_level'),'')
+    )
+  );
   update registration_allowlist set active=false where email=normalized_email;
   return new;
 end $$;
@@ -383,6 +426,57 @@ begin
 end $$;
 create trigger queue_appointment_email_after_insert after insert on public.appointments for each row execute function public.queue_appointment_email();
 create trigger queue_appointment_email_after_status after update of status on public.appointments for each row execute function public.queue_appointment_email();
+
+revoke all on function public.set_appointment_updated_at() from public,anon,authenticated;
+revoke all on function public.validate_availability_schedule() from public,anon,authenticated;
+revoke all on function public.close_slot_after_booking() from public,anon,authenticated;
+revoke all on function public.create_profile() from public,anon,authenticated;
+revoke all on function public.queue_appointment_email() from public,anon,authenticated;
+revoke all on function public.audit_faq_change() from public,anon,authenticated;
+
+-- Post-consultation reviews are available only after a faculty member marks a
+-- consultation completed. Demographic snapshots support historical reports.
+create table if not exists public.consultation_reviews (
+  id uuid primary key default gen_random_uuid(),
+  appointment_id uuid not null unique references public.appointments(id) on delete cascade,
+  student_id uuid not null references public.profiles(id) on delete cascade,
+  faculty_id uuid not null references public.profiles(id) on delete cascade,
+  rating smallint not null check (rating between 1 and 5),
+  comment text check (comment is null or char_length(comment) <= 1000),
+  year_level text,
+  college text,
+  program text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists consultation_reviews_faculty_idx on public.consultation_reviews(faculty_id,created_at desc);
+create index if not exists consultation_reviews_demographics_idx on public.consultation_reviews(college,program,year_level);
+alter table public.consultation_reviews enable row level security;
+create policy "students read own consultation reviews" on public.consultation_reviews for select to authenticated
+using (student_id=auth.uid() or public.current_role()='admin');
+revoke all on public.consultation_reviews from anon,authenticated;
+grant select on public.consultation_reviews to authenticated;
+
+create or replace function public.submit_consultation_review(target_appointment uuid,review_rating integer,review_comment text default null)
+returns uuid language plpgsql security definer set search_path=public as $$
+declare review_id uuid; target_faculty uuid; student_year text; student_college text; student_program text;
+cleaned_comment text := nullif(trim(coalesce(review_comment,'')),'');
+begin
+  if public.current_role()<>'student' then raise exception 'Only students may submit consultation reviews'; end if;
+  if review_rating not between 1 and 5 then raise exception 'Choose a rating from 1 to 5 stars'; end if;
+  if char_length(coalesce(cleaned_comment,''))>1000 then raise exception 'Review comments may contain at most 1000 characters'; end if;
+  select av.faculty_id,p.year_level,p.college,p.program into target_faculty,student_year,student_college,student_program
+  from appointments ap join availability av on av.id=ap.availability_id join profiles p on p.id=ap.student_id
+  where ap.id=target_appointment and ap.student_id=auth.uid() and ap.status='completed';
+  if not found then raise exception 'Only your completed consultations may be reviewed'; end if;
+  insert into consultation_reviews(appointment_id,student_id,faculty_id,rating,comment,year_level,college,program)
+  values(target_appointment,auth.uid(),target_faculty,review_rating,cleaned_comment,student_year,student_college,student_program)
+  on conflict(appointment_id) do update set rating=excluded.rating,comment=excluded.comment,year_level=excluded.year_level,college=excluded.college,program=excluded.program,updated_at=now()
+  returning id into review_id;
+  return review_id;
+end $$;
+revoke all on function public.submit_consultation_review(uuid,integer,text) from public,anon;
+grant execute on function public.submit_consultation_review(uuid,integer,text) to authenticated;
 
 -- Call this from Supabase Cron every 15 minutes. It queues one reminder per
 -- participant when a confirmed consultation is 23-24 hours away.
@@ -585,6 +679,7 @@ end $$;
 create trigger reopen_slot_after_inactive_appointment
 after update of status on public.appointments
 for each row execute function public.reopen_slot_after_inactive_appointment();
+revoke all on function public.reopen_slot_after_inactive_appointment() from public,anon,authenticated;
 
 -- Queue status notifications for every affected participant. The email worker
 -- remains responsible for delivery and retry handling.

@@ -20,8 +20,9 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import spacy
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from spacy.matcher import PhraseMatcher
 
@@ -29,7 +30,10 @@ from spacy.matcher import PhraseMatcher
 def _origins() -> list[str]:
     configured = os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:5173,https://clsu-faculty-connect.vercel.app",
+        (
+            "http://localhost:5173,https://clsu-faculty-connect.vercel.app,"
+            "https://clsufacultyconnect.com,https://www.clsufacultyconnect.com"
+        ),
     )
     return [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
 
@@ -52,6 +56,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def protect_dynamic_responses(request: FastAPIRequest, call_next):
+    """Prevent browsers and intermediary caches from storing API responses."""
+    response = await call_next(request)
+    if request.url.path.startswith(("/api/", "/chat", "/health", "/knowledge-status")):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 nlp = spacy.blank("en")
 nlp.add_pipe("sentencizer")
@@ -373,3 +387,51 @@ async def knowledge_status(authorization: str | None = Header(default=None)) -> 
 async def chat(request: ChatRequest, authorization: str | None = Header(default=None)) -> ChatResponse:
     knowledge, _ = await _load_approved_knowledge(authorization)
     return build_response(request.message, knowledge)
+
+
+@app.get("/{unknown_path:path}", response_class=HTMLResponse, include_in_schema=False)
+def custom_not_found(unknown_path: str) -> HTMLResponse:
+    """Return the branded production 404 for routes outside the web application."""
+    return HTMLResponse(
+        status_code=404,
+        content="""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#166534" />
+  <title>Page not found | CLSU FacultyConnect</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #122019; background: #f5f8f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15% 15%, #e3f4e9 0, transparent 34%), #f7faf7; }
+    header { display: flex; align-items: center; gap: 12px; min-height: 78px; padding: 16px clamp(24px, 6vw, 92px); background: #fff; border-bottom: 1px solid #dce7df; }
+    header img { width: 46px; height: 46px; object-fit: contain; }
+    header strong { display: block; font-size: 1.08rem; }
+    header span { color: #64736b; font-size: .82rem; }
+    main { min-height: calc(100vh - 78px); display: grid; place-items: center; padding: 40px 24px; }
+    section { width: min(720px, 100%); padding: clamp(32px, 6vw, 64px); border: 1px solid #d8e4dc; border-radius: 28px; background: rgba(255,255,255,.94); box-shadow: 0 24px 60px rgba(19,65,41,.12); text-align: center; }
+    .code { margin: 0 0 10px; color: #08783f; font-size: clamp(4rem, 14vw, 7rem); font-weight: 900; line-height: .9; letter-spacing: -.08em; }
+    h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1.05; }
+    p { max-width: 520px; margin: 18px auto 28px; color: #5e6f65; font-size: 1.06rem; line-height: 1.65; }
+    a { display: inline-flex; min-height: 50px; align-items: center; justify-content: center; padding: 0 24px; border-radius: 14px; background: #08783f; color: #fff; font-weight: 800; text-decoration: none; box-shadow: 0 10px 24px rgba(8,120,63,.22); }
+    a:hover { background: #056334; transform: translateY(-1px); }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="/brand/Logo_Black.png" alt="CLSU seal" />
+    <div><strong>CLSU FacultyConnect</strong><span>Faculty consultation portal</span></div>
+  </header>
+  <main>
+    <section>
+      <p class="code">404</p>
+      <h1>This page is not available.</h1>
+      <p>The link may be outdated or the page may have moved. Return to the secure portal to continue.</p>
+      <a href="/">Return to FacultyConnect</a>
+    </section>
+  </main>
+</body>
+</html>""",
+    )

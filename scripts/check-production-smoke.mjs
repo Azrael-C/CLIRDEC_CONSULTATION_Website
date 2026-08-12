@@ -15,10 +15,54 @@ const html = await root.text();
 if (!html.includes("CLSU FacultyConnect")) throw new Error("Production shell is not FacultyConnect.");
 if (!root.headers.get("content-security-policy")) throw new Error("Production CSP header is missing.");
 
+const robots = await request("/robots.txt");
+const robotsBody = await robots.text();
+if (!robotsBody.includes("Sitemap: https://www.clsufacultyconnect.com/sitemap.xml")) {
+  throw new Error("Production robots.txt does not reference the sitemap.");
+}
+if (!robotsBody.includes("Disallow: /api/") || /User-agent:\s*(Googlebot|Bingbot)/i.test(robotsBody)) {
+  throw new Error("Production robots.txt must apply the API exclusion to every crawler.");
+}
+const sitemap = await request("/sitemap.xml");
+const sitemapBody = await sitemap.text();
+if (!sitemapBody.includes("/privacy-policy")) {
+  throw new Error("Production sitemap does not include the privacy policy.");
+}
+
+const privacy = await request("/privacy-policy");
+const privacyBody = await privacy.text();
+if (!privacyBody.includes("Privacy Policy | CLSU FacultyConnect")) {
+  throw new Error("Production privacy policy entry point is missing or incorrectly titled.");
+}
+
+const missing = await fetch(`${baseUrl}/production-smoke-missing-page`, {
+  redirect: "follow",
+  signal: AbortSignal.timeout(20_000),
+});
+const missingBody = await missing.text();
+if (missing.status !== 404 || !missingBody.includes("This page is not available.")) {
+  throw new Error(`Custom 404 failed with status ${missing.status}.`);
+}
+
 const health = await request("/api/health");
+if (health.headers.get("cache-control") !== "no-store") {
+  throw new Error("Dynamic API responses must not be cached.");
+}
 const healthBody = await health.json();
 if (healthBody.status !== "ok" || healthBody.nlp !== "spaCy") {
   throw new Error(`Unexpected chatbot health payload: ${JSON.stringify(healthBody)}`);
+}
+
+const preflight = await request("/api/chat", {
+  method: "OPTIONS",
+  headers: {
+    Origin: "https://www.clsufacultyconnect.com",
+    "Access-Control-Request-Method": "POST",
+    "Access-Control-Request-Headers": "authorization,content-type",
+  },
+});
+if (preflight.headers.get("access-control-allow-origin") !== "https://www.clsufacultyconnect.com") {
+  throw new Error("The production custom domain is missing from chatbot CORS.");
 }
 
 const chat = await request("/api/chat", {

@@ -42,6 +42,7 @@ export type PortalAppointment = {
   faculty_id: string;
   faculty_name: string;
   expertise: string[];
+  review?: ConsultationReview;
 };
 
 export type FacultyRequest = PortalAppointment;
@@ -57,6 +58,20 @@ export type AdminUser = {
   full_name: string;
   role: Role;
   department: string;
+};
+
+export type ConsultationReview = {
+  id: string;
+  appointment_id: string;
+  student_id: string;
+  faculty_id: string;
+  rating: number;
+  comment: string | null;
+  year_level: string | null;
+  college: string | null;
+  program: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type RegistrationEmail = {
@@ -84,6 +99,12 @@ export type AdminPortal = {
   appointments: PortalAppointment[];
   faqs: FaqEntry[];
   registrationEmails: RegistrationEmail[];
+  reviews: ConsultationReview[];
+};
+
+export type AdminNotificationSummary = {
+  appointments: PortalAppointment[];
+  faqs: FaqEntry[];
 };
 
 type DbError = { message?: string; code?: string; details?: string } | null;
@@ -133,6 +154,7 @@ export async function loadStudentPortal(studentId: string) {
   const [
     { data: open, error: slotError },
     { data: appointmentRows, error: appointmentError },
+    { data: reviewRows, error: reviewError },
   ] = await Promise.all([
     supabase
       .from("availability")
@@ -149,6 +171,10 @@ export async function loadStudentPortal(studentId: string) {
       )
       .eq("student_id", studentId)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("consultation_reviews")
+      .select("id,appointment_id,student_id,faculty_id,rating,comment,year_level,college,program,created_at,updated_at")
+      .eq("student_id", studentId),
   ]);
   if (slotError)
     throw new Error(
@@ -158,6 +184,17 @@ export async function loadStudentPortal(studentId: string) {
     throw new Error(
       friendlyError(appointmentError, "Your requests could not be loaded."),
     );
+  if (reviewError)
+    throw new Error(
+      friendlyError(reviewError, "Your consultation reviews could not be loaded."),
+    );
+
+  const reviews = new Map(
+    ((reviewRows || []) as ConsultationReview[]).map((review) => [
+      review.appointment_id,
+      review,
+    ]),
+  );
 
   const facultyIds = [
     ...new Set(
@@ -221,12 +258,34 @@ export async function loadStudentPortal(studentId: string) {
           faculty_id: slot.faculty_id,
           faculty_name: names.get(slot.faculty_id) || "Faculty member",
           expertise: expertise.get(slot.faculty_id) || [],
+          review: reviews.get(row.id),
         },
       ];
     },
   );
 
   return { slots, appointments };
+}
+
+export async function submitConsultationReview(input: {
+  appointmentId: string;
+  rating: number;
+  comment?: string;
+}) {
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5)
+    throw new Error("Choose a rating from 1 to 5 stars.");
+  if ((input.comment || "").trim().length > 1000)
+    throw new Error("Review comments may contain at most 1000 characters.");
+  const { data, error } = await supabase.rpc("submit_consultation_review", {
+    target_appointment: input.appointmentId,
+    review_rating: input.rating,
+    review_comment: input.comment?.trim() || null,
+  });
+  return requireData(
+    data as string | null,
+    error,
+    "Your consultation review could not be submitted.",
+  );
 }
 
 export async function bookAppointment(input: {
@@ -239,6 +298,10 @@ export async function bookAppointment(input: {
     throw new Error(
       "Describe your consultation concern in at least 5 characters.",
     );
+  if (topic.length > 240)
+    throw new Error("Keep the consultation topic within 240 characters.");
+  if ((input.notes || "").trim().length > 2000)
+    throw new Error("Keep additional consultation details within 2,000 characters.");
   const { data, error } = await supabase.rpc("book_consultation", {
     target_availability: input.slotId,
     consultation_topic: topic,
@@ -358,6 +421,16 @@ export async function loadFacultyPortal(facultyId: string) {
   return { requests, availability: slots };
 }
 
+export async function loadFacultyNotificationAppointments(facultyId: string) {
+  const portal = await loadFacultyPortal(facultyId);
+  const now = Date.now();
+  return portal.requests.filter(
+    (request) =>
+      (request.status === "pending" || request.status === "confirmed") &&
+      new Date(request.ends_at).getTime() > now,
+  );
+}
+
 export async function decideFacultyRequest(
   requestId: string,
   status: "confirmed" | "declined",
@@ -437,9 +510,19 @@ export async function updateFacultyProfile(input: {
   const expertise = input.expertise
     .map((item) => item.trim())
     .filter(Boolean)
+    .filter(
+      (item, index, values) =>
+        values.findIndex(
+          (candidate) => candidate.toLowerCase() === item.toLowerCase(),
+        ) === index,
+    )
     .slice(0, 12);
   if (!expertise.length)
     throw new Error("Add at least one faculty expertise category.");
+  if (expertise.some((item) => item.length > 80))
+    throw new Error("Keep each expertise category within 80 characters.");
+  if (input.bio.trim().length > 2000)
+    throw new Error("Keep the faculty biography within 2,000 characters.");
   const { error } = await supabase
     .from("faculty_profiles")
     .update({ expertise, bio: input.bio.trim() })
@@ -475,6 +558,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     { data: rows, error: appointmentError },
     { data: faqs, error: faqError },
     { data: registrationEmails, error: registrationError },
+    { data: reviews, error: reviewError },
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -496,11 +580,15 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       .from("registration_allowlist")
       .select("email,active,created_at")
       .order("created_at", { ascending: false }),
+    supabase
+      .from("consultation_reviews")
+      .select("id,appointment_id,student_id,faculty_id,rating,comment,year_level,college,program,created_at,updated_at")
+      .order("created_at", { ascending: false }),
   ]);
-  if (userError || appointmentError || faqError || registrationError) {
+  if (userError || appointmentError || faqError || registrationError || reviewError) {
     throw new Error(
       friendlyError(
-        userError || appointmentError || faqError || registrationError,
+        userError || appointmentError || faqError || registrationError || reviewError,
         "The administration workspace could not be loaded.",
       ),
     );
@@ -542,7 +630,89 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     appointments,
     faqs: (faqs || []) as FaqEntry[],
     registrationEmails: (registrationEmails || []) as RegistrationEmail[],
+    reviews: (reviews || []) as ConsultationReview[],
   };
+}
+
+export async function loadAdminNotificationSummary(): Promise<AdminNotificationSummary> {
+  const [
+    { data: rows, error: appointmentError },
+    { data: faqs, error: faqError },
+  ] = await Promise.all([
+    supabase
+      .from("appointments")
+      .select(
+        "id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)",
+      )
+      .eq("status", "pending")
+      .order("updated_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("faq_entries")
+      .select(
+        "id,question,answer,category,source_reference,status,created_by,approved_by,approved_at,updated_at",
+      )
+      .in("status", ["draft", "review"])
+      .order("updated_at", { ascending: false })
+      .limit(20),
+  ]);
+  if (appointmentError || faqError) {
+    throw new Error(
+      friendlyError(
+        appointmentError || faqError,
+        "Administrative notifications could not be loaded.",
+      ),
+    );
+  }
+
+  const activeRows = (rows || []).filter((row) => {
+    const slot = relation<any>(row.availability);
+    return slot && new Date(slot.ends_at).getTime() > Date.now();
+  });
+  const profileIds = [
+    ...new Set(
+      activeRows.flatMap((row) => {
+        const slot = relation<any>(row.availability);
+        return [row.student_id, slot?.faculty_id].filter(Boolean);
+      }),
+    ),
+  ] as string[];
+  const { data: profiles, error: profileError } = profileIds.length
+    ? await supabase
+        .from("profiles")
+        .select("id,full_name")
+        .in("id", profileIds)
+    : { data: [], error: null };
+  if (profileError) {
+    throw new Error(
+      friendlyError(profileError, "Notification participants could not be loaded."),
+    );
+  }
+  const names = new Map(
+    (profiles || []).map((profile) => [profile.id, profile.full_name]),
+  );
+  const appointments: PortalAppointment[] = activeRows.flatMap((row) => {
+    const slot = relation<any>(row.availability);
+    if (!slot) return [];
+    return [{
+      id: row.id,
+      availability_id: row.availability_id,
+      student_id: row.student_id,
+      student_name: names.get(row.student_id) || "Student",
+      topic: row.topic,
+      notes: row.notes || "",
+      status: row.status as AppointmentStatus,
+      updated_at: row.updated_at || row.created_at,
+      starts_at: slot.starts_at,
+      ends_at: slot.ends_at,
+      location: slot.location || "Location to be confirmed",
+      consultation_mode: slot.consultation_mode as ConsultationMode,
+      faculty_id: slot.faculty_id,
+      faculty_name: names.get(slot.faculty_id) || "Faculty member",
+      expertise: [],
+    }];
+  });
+  return { appointments, faqs: (faqs || []) as FaqEntry[] };
 }
 
 export async function approveRegistrationEmail(
@@ -600,6 +770,13 @@ export async function createFaqEntry(input: {
   }
   if (input.sourceReference.trim().length < 5)
     throw new Error("Identify the official source for this answer.");
+  if (
+    input.question.trim().length > 500 ||
+    input.answer.trim().length > 5000 ||
+    input.category.trim().length > 100 ||
+    input.sourceReference.trim().length > 500
+  )
+    throw new Error("The FAQ entry exceeds the supported field length.");
   const { error } = await supabase.from("faq_entries").insert({
     question: input.question.trim(),
     answer: input.answer.trim(),

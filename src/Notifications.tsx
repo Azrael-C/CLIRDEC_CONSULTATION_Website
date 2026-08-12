@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  loadAdminPortal,
-  loadFacultyPortal,
+  loadAdminNotificationSummary,
+  loadFacultyNotificationAppointments,
   type AppointmentStatus,
   type PortalAppointment,
 } from "./backend";
@@ -85,13 +85,11 @@ function facultyNotifications(appointments: PortalAppointment[]): NotificationIt
 async function roleNotifications(user: NotificationUser): Promise<NotificationItem[]> {
   if (!configured) return [];
   if (user.role === "faculty") {
-    const portal = await loadFacultyPortal(user.id);
-    return facultyNotifications(portal.requests);
+    return facultyNotifications(await loadFacultyNotificationAppointments(user.id));
   }
   if (user.role === "admin") {
-    const portal = await loadAdminPortal();
-    const appointmentItems: NotificationItem[] = portal.appointments
-      .filter((appointment) => appointment.status === "pending")
+    const summary = await loadAdminNotificationSummary();
+    const appointmentItems: NotificationItem[] = summary.appointments
       .map((appointment) => ({
         id: `admin:appointment:${appointment.id}:${appointment.status}`,
         title: "Pending consultation request",
@@ -100,8 +98,7 @@ async function roleNotifications(user: NotificationUser): Promise<NotificationIt
         target: "appointments",
         tone: "warning",
       }));
-    const faqItems: NotificationItem[] = portal.faqs
-      .filter((faq) => faq.status === "draft" || faq.status === "review")
+    const faqItems: NotificationItem[] = summary.faqs
       .map((faq) => ({
         id: `admin:faq:${faq.id}:${faq.status}`,
         title: "FAQ entry awaiting approval",
@@ -216,7 +213,11 @@ export function NotificationCenter({
   const saveReadIds = (next: string[]) => {
     const compact = [...new Set(next)].slice(-100);
     setReadIds(compact);
-    localStorage.setItem(storageKey, JSON.stringify(compact));
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(compact));
+    } catch {
+      // The inbox still works when storage is disabled; read state is session-only.
+    }
   };
 
   const openItem = (item: NotificationItem) => {
@@ -231,18 +232,19 @@ export function NotificationCenter({
       className="icon-button notification-button"
       aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
       aria-expanded={open}
+      aria-haspopup="dialog"
       aria-controls="portal-notifications"
       onClick={() => setOpen((value) => !value)}
     >
       <BellIcon/>
       {unreadCount > 0 && <span className="notification-badge">{unreadCount > 9 ? "9+" : unreadCount}</span>}
     </button>
-    {open && <section id="portal-notifications" className="notification-panel" aria-label="Notifications">
+    {open && <section id="portal-notifications" className="notification-panel" role="dialog" aria-label="Notifications">
       <header>
         <div><p>NOTIFICATIONS</p><h2>Recent updates</h2></div>
         {unreadCount > 0 && <button type="button" onClick={() => saveReadIds([...readIds, ...sortedItems.map((item) => item.id)])}>Mark all read</button>}
       </header>
-      <div className="notification-list">
+      <div className="notification-list" aria-live="polite">
         {loading && <p className="notification-empty">Loading updates…</p>}
         {!loading && error && <p className="notification-empty notification-error">{error}</p>}
         {!loading && !error && !sortedItems.length && <p className="notification-empty">You’re all caught up. New appointment updates will appear here.</p>}
