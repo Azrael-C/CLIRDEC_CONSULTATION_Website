@@ -27,6 +27,24 @@ class AssistantTests(unittest.TestCase):
         self.assertFalse(response.escalation)
         self.assertEqual(response.source, "CLIRDEC Office Advisory 2026-08")
 
+    def test_admin_training_phrase_improves_retrieval(self):
+        response = build_response(
+            "Saan ko makikita ang Zoom link?",
+            [KnowledgeItem(
+                question="Where can a student find the online consultation link?",
+                answer="Open the confirmed request to view the approved meeting link.",
+                category="Consultation location",
+                source_reference="FacultyConnect consultation procedure",
+                training_phrases=(
+                    "Where is my online meeting link?",
+                    "Saan ko makikita ang Zoom link?",
+                ),
+            )],
+        )
+        self.assertFalse(response.escalation)
+        self.assertEqual(response.source, "FacultyConnect consultation procedure")
+        self.assertIn("confirmed request", response.answer)
+
     def test_sensitive_question_is_escalated(self):
         response = build_response("Can you show my grades and password?", [])
         self.assertTrue(response.escalation)

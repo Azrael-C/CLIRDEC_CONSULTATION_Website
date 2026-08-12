@@ -82,6 +82,7 @@ export type FaqEntry = {
   answer: string;
   category: string;
   source_reference: string;
+  training_phrases: string[];
   status: FaqStatus;
   created_by: string;
   approved_by: string | null;
@@ -566,7 +567,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     supabase
       .from("faq_entries")
       .select(
-        "id,question,answer,category,source_reference,status,created_by,approved_by,approved_at,updated_at",
+        "id,question,answer,category,source_reference,training_phrases,status,created_by,approved_by,approved_at,updated_at",
       )
       .order("updated_at", { ascending: false }),
     supabase
@@ -638,7 +639,7 @@ export async function loadAdminNotificationSummary(): Promise<AdminNotificationS
     supabase
       .from("faq_entries")
       .select(
-        "id,question,answer,category,source_reference,status,created_by,approved_by,approved_at,updated_at",
+        "id,question,answer,category,source_reference,training_phrases,status,created_by,approved_by,approved_at,updated_at",
       )
       .in("status", ["draft", "review"])
       .order("updated_at", { ascending: false })
@@ -720,6 +721,7 @@ export async function createFaqEntry(input: {
   answer: string;
   category: string;
   sourceReference: string;
+  trainingPhrases: string[];
 }) {
   if (input.question.trim().length < 8 || input.answer.trim().length < 15) {
     throw new Error("Provide a complete question and a clear approved answer.");
@@ -733,16 +735,74 @@ export async function createFaqEntry(input: {
     input.sourceReference.trim().length > 500
   )
     throw new Error("The FAQ entry exceeds the supported field length.");
+  const trainingPhrases = normalizeTrainingPhrases(input.trainingPhrases);
   const { error } = await supabase.from("faq_entries").insert({
     question: input.question.trim(),
     answer: input.answer.trim(),
     category: input.category.trim(),
     source_reference: input.sourceReference.trim(),
+    training_phrases: trainingPhrases,
     status: "draft",
     created_by: input.userId,
   });
   if (error)
     throw new Error(friendlyError(error, "The FAQ draft could not be saved."));
+}
+
+function normalizeTrainingPhrases(phrases: string[]) {
+  const normalized = phrases
+    .map((phrase) => phrase.trim())
+    .filter(Boolean)
+    .filter(
+      (phrase, index, values) =>
+        values.findIndex(
+          (candidate) => candidate.toLowerCase() === phrase.toLowerCase(),
+        ) === index,
+    );
+  if (normalized.length < 2)
+    throw new Error("Add at least two example phrases students might type.");
+  if (normalized.length > 20)
+    throw new Error("Keep each training entry to 20 example phrases or fewer.");
+  if (normalized.some((phrase) => phrase.length < 3 || phrase.length > 200))
+    throw new Error("Keep each example phrase between 3 and 200 characters.");
+  return normalized;
+}
+
+export async function updateFaqEntry(input: {
+  faqId: string;
+  question: string;
+  answer: string;
+  category: string;
+  sourceReference: string;
+  trainingPhrases: string[];
+}) {
+  if (input.question.trim().length < 8 || input.answer.trim().length < 15)
+    throw new Error("Provide a complete question and a clear approved answer.");
+  if (input.sourceReference.trim().length < 5)
+    throw new Error("Identify the official source for this answer.");
+  if (
+    input.question.trim().length > 500 ||
+    input.answer.trim().length > 5000 ||
+    input.category.trim().length > 100 ||
+    input.sourceReference.trim().length > 500
+  )
+    throw new Error("The FAQ entry exceeds the supported field length.");
+  const { error } = await supabase
+    .from("faq_entries")
+    .update({
+      question: input.question.trim(),
+      answer: input.answer.trim(),
+      category: input.category.trim(),
+      source_reference: input.sourceReference.trim(),
+      training_phrases: normalizeTrainingPhrases(input.trainingPhrases),
+      status: "draft",
+      approved_by: null,
+      approved_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.faqId);
+  if (error)
+    throw new Error(friendlyError(error, "The training entry could not be updated."));
 }
 
 export async function approveFaqEntry(faqId: string, approverId: string) {

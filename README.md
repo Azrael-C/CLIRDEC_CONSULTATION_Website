@@ -21,7 +21,7 @@ npm run check
 - Supabase authentication and role-based database policies
 - Faculty availability and appointment tables
 - Database-enforced double-booking protection
-- FastAPI + spaCy FAQ/intent chatbot with safe escalation
+- FastAPI + spaCy FAQ/intent chatbot with safe escalation and an audited admin training workspace
 - Responsive phone and desktop interface
 - Backend email queue and protected Resend worker for Gmail or CLSU addresses
 - Secure password recovery and student email-notification preferences
@@ -47,12 +47,12 @@ python -m venv .venv
 .venv\Scripts\uvicorn app:app --reload --port 8000
 ```
 
-The NLP service uses spaCy phrase matching, controlled bilingual intent rules, approved Supabase FAQ retrieval, source attribution, and safe staff escalation. Product Owner-approved FAQ entries are managed from the administrator portal.
+The NLP service uses spaCy phrase matching, controlled bilingual intent rules, approved Supabase FAQ retrieval, source attribution, and safe staff escalation. Product Owner-approved answers and example student phrases are managed from **Administrator portal → Chatbot training**. Only approved entries become available to students.
 
 Run the assistant checks after installing its requirements:
 
 ```powershell
-python -m unittest discover -s chatbot -p "test_*.py"
+python -m unittest -v test_app.py
 ```
 
 ## Configure appointment email notifications
