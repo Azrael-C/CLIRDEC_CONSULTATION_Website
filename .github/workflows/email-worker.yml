@@ -1,0 +1,35 @@
+name: Email notification worker
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: facultyconnect-email-worker
+  cancel-in-progress: false
+
+jobs:
+  drain-queue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate worker configuration
+        env:
+          FUNCTION_URL: ${{ secrets.SUPABASE_EMAIL_FUNCTION_URL }}
+          CRON_SECRET: ${{ secrets.EMAIL_CRON_SECRET }}
+        run: |
+          test -n "$FUNCTION_URL" || { echo "SUPABASE_EMAIL_FUNCTION_URL is not configured"; exit 1; }
+          test -n "$CRON_SECRET" || { echo "EMAIL_CRON_SECRET is not configured"; exit 1; }
+
+      - name: Queue reminders and send notifications
+        env:
+          FUNCTION_URL: ${{ secrets.SUPABASE_EMAIL_FUNCTION_URL }}
+          CRON_SECRET: ${{ secrets.EMAIL_CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-all-errors --max-time 60 \
+            --request POST "$FUNCTION_URL" \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            --header "Content-Type: application/json" \
+            --data '{}'

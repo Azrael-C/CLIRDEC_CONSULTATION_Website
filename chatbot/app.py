@@ -34,6 +34,12 @@ def _origins() -> list[str]:
     return [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
 
 
+SUPPORT_CONTACT = os.getenv(
+    "OFFICIAL_SUPPORT_CONTACT",
+    "the official CLIRDEC or MISO contact channel",
+)
+
+
 app = FastAPI(
     title="CLSU FacultyConnect NLP Assistant",
     description="Source-backed consultation guidance using FastAPI and spaCy.",
@@ -57,8 +63,14 @@ INTENT_PHRASES: dict[str, list[str]] = {
         "reserve a slot", "mag book", "magpa schedule", "kumuha ng appointment",
     ],
     "availability": [
-        "available time", "faculty availability", "office hours", "open slot",
+        "available time", "faculty availability", "open slot",
         "anong oras", "kailan available", "available ba",
+    ],
+    "office_hours": [
+        "office hours", "office opening hours", "when is the office open",
+        "clirdec office hours", "clirdec hours", "what are your office hours",
+        "oras ng opisina", "anong oras bukas ang opisina",
+        "anong oras bukas ang clirdec", "kailan bukas ang office",
     ],
     "expertise": [
         "faculty expertise", "find faculty", "appropriate professor", "research adviser",
@@ -80,11 +92,6 @@ INTENT_PHRASES: dict[str, list[str]] = {
         "clirdec services", "portal services", "what can you do", "how can clirdec help",
         "anong serbisyo", "ano ang clirdec",
     ],
-    "office_hours": [
-        "clirdec office hours", "when is the office open", "clirdec hours",
-        "what are your office hours", "office hours",
-        "anong oras bukas ang clirdec", "kailan bukas ang office",
-    ],
 }
 
 for intent_name, phrases in INTENT_PHRASES.items():
@@ -98,7 +105,7 @@ INTENT_KEYWORDS: dict[str, set[str]] = {
     "cancel": {"cancel", "reschedule", "change", "move", "ilipat", "palitan"},
     "status": {"status", "confirmed", "approved", "pending", "declined"},
     "services": {"service", "services", "help", "clirdec", "portal", "offer", "serbisyo"},
-    "office_hours": {"clirdec", "office", "hours", "open", "closed", "bukas"},
+    "office_hours": {"clirdec", "office", "hours", "open", "closed", "bukas", "opisina"},
 }
 
 SENSITIVE_TERMS = {
@@ -120,11 +127,6 @@ SENSITIVE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
     r"\b(?:inaabuso|inabuso|binubully|pananakot|sinaktan)\b",
     r"\b(?:ayoko|ayaw\s+ko)\s+nang?\s+mabuhay\b",
 ))
-
-CLIRDEC_CONTACT = (
-    "Email [INSERT CLIRDEC EMAIL], call [INSERT PHONE], or visit the CLIRDEC office "
-    "at [INSERT LOCATION] (Office hours: [INSERT HOURS])."
-)
 
 DEFAULT_ANSWERS = {
     "booking": (
@@ -161,10 +163,6 @@ DEFAULT_ANSWERS = {
         "FacultyConnect provides verified FAQ guidance, faculty discovery, published availability, "
         "consultation requests, status tracking, and email notifications for important events.",
         "FacultyConnect MVP scope",
-    ),
-    "office_hours": (
-        "[INSERT CLIRDEC OFFICE HOURS, e.g. Monday-Friday, 8:00 AM - 5:00 PM]. " + CLIRDEC_CONTACT,
-        "CLIRDEC office hours",
     ),
 }
 
@@ -298,8 +296,8 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
     if is_sensitive(message):
         return ChatResponse(
             answer=(
-               "I can't handle confidential records, emergencies, complaints, academic decisions, "
-                "or account credentials. " + CLIRDEC_CONTACT
+                "I can't handle confidential records, emergencies, complaints, academic decisions, "
+                f"or account credentials. Please use {SUPPORT_CONTACT}."
             ),
             intent="sensitive_referral",
             confidence=0.99,
@@ -319,6 +317,19 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
             source=matched_item.source_reference,
         )
 
+    if intent == "office_hours":
+        return ChatResponse(
+            answer=(
+                "A current Product Owner-approved CLIRDEC office-hours entry is not configured. "
+                f"Please verify the schedule through {SUPPORT_CONTACT}."
+            ),
+            intent="office_hours",
+            confidence=intent_confidence,
+            escalation=True,
+            source="Official office-hours source required",
+            suggestions=["How do I request a consultation?", "View faculty availability"],
+        )
+
     if intent in DEFAULT_ANSWERS and intent_confidence >= 0.55:
         answer, source = DEFAULT_ANSWERS[intent]
         return ChatResponse(
@@ -331,9 +342,9 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
 
     return ChatResponse(
         answer=(
-           "I'm not confident that I have an approved answer for that question. Please rephrase it "
+            "I'm not confident that I have an approved answer for that question. Please rephrase it "
             "as a booking, availability, faculty expertise, location, cancellation, status, or service question. "
-            "For anything else: " + CLIRDEC_CONTACT
+            f"For anything else, use {SUPPORT_CONTACT}."
         ),
         intent="fallback",
         confidence=max(0.15, intent_confidence),

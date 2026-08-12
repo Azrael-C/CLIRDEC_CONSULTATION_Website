@@ -3,36 +3,28 @@ name: Chatbot checks
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "chatbot/**"
-      - ".github/workflows/chatbot-checks.yml"
   push:
     branches: [main]
-    paths:
-      - "chatbot/**"
-      - ".github/workflows/chatbot-checks.yml"
 
 permissions:
   contents: read
+
+concurrency:
+  group: chatbot-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install -r chatbot/requirements.txt
-
-      - name: Compile chatbot source
-        run: python -m compileall -q chatbot
-
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: chatbot/requirements.txt
+      - run: pip install -r chatbot/requirements.txt
+      - run: python -m compileall -q chatbot
       - name: Run chatbot tests
         working-directory: chatbot
         run: python -m unittest -v test_app.py
