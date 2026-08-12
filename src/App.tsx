@@ -18,6 +18,7 @@ import {
   removeFacultyAvailability,
   rescheduleAppointment,
   submitConsultationReview,
+  updateFaqEntry,
   updateFacultyProfile,
   type AdminPortal,
   type AppointmentStatus,
@@ -85,9 +86,40 @@ type ChatMessage = {
   escalation?: boolean;
 };
 
+type ChatbotReply = {
+  answer: string;
+  intent: string;
+  confidence: number;
+  escalation: boolean;
+  source?: string;
+  suggestions?: string[];
+};
+
 type AuthAction = "login" | "signup" | "reset";
 
 const STUDENT_EMAIL_DOMAINS = ["gmail.com", "clsu2.edu.ph"] as const;
+
+async function requestChatbotReply(message: string): Promise<ChatbotReply> {
+  const { data } = await supabase.auth.getSession();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (data.session?.access_token)
+    headers.Authorization = `Bearer ${data.session.access_token}`;
+  const configuredBase = String(import.meta.env.VITE_CHATBOT_URL || "").replace(
+    /\/$/,
+    "",
+  );
+  const chatbotBase =
+    configuredBase || (import.meta.env.PROD ? "/api" : "http://localhost:8000");
+  const response = await fetch(`${chatbotBase}/chat`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ message }),
+  });
+  if (!response.ok) throw new Error(`Assistant returned ${response.status}`);
+  return response.json() as Promise<ChatbotReply>;
+}
 
 function isAllowedStudentEmail(email: string) {
   const domain = email.trim().toLowerCase().split("@").at(-1);
@@ -671,25 +703,7 @@ function App() {
     setQuestion("");
     setChat((c) => [...c, { who: "you", text: q }]);
     try {
-      const { data } = await supabase.auth.getSession();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (data.session?.access_token)
-        headers.Authorization = `Bearer ${data.session.access_token}`;
-      const configuredBase = String(
-        import.meta.env.VITE_CHATBOT_URL || "",
-      ).replace(/\/$/, "");
-      const chatbotBase =
-        configuredBase ||
-        (import.meta.env.PROD ? "/api" : "http://localhost:8000");
-      const r = await fetch(`${chatbotBase}/chat`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ message: q }),
-      });
-      if (!r.ok) throw new Error(`Assistant returned ${r.status}`);
-      const d = await r.json();
+      const d = await requestChatbotReply(q);
       setChat((c) => [
         ...c,
         {
@@ -2610,7 +2624,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
     users: ["Users and roles | CLSU FacultyConnect", "Administer audited FacultyConnect roles and review student self-registration rules."],
     appointments: ["Consultation logs | CLSU FacultyConnect", "Review consultation status, participants, schedules, and service exceptions."],
     reviews: ["Reviews and insights | CLSU FacultyConnect", "Analyze consultation ratings and comments by year level, college, and course."],
-    knowledge: ["FAQ knowledge base | CLSU FacultyConnect", "Manage approved sources and answers used by the consultation assistant."],
+    knowledge: ["Chatbot training | CLSU FacultyConnect", "Train and test the consultation assistant with approved answers, example phrases, and official sources."],
     reports: ["Quality assurance | CLSU FacultyConnect", "Track service acceptance criteria, quality targets, and release evidence."],
   };
   usePageMetadata(portalMetadata[view][0], portalMetadata[view][1]);
@@ -2623,7 +2637,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
       ]
     : [
         ["ahome", "Service overview", "home"],
-        ["knowledge", "FAQ knowledge base", "assistant"],
+        ["knowledge", "Chatbot training", "assistant"],
         ["users", "Users and roles", "users"],
         ["appointments", "Consultation logs", "calendar"],
         ["reviews", "Reviews and insights", "report"],
@@ -2728,7 +2742,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
               ]
             : [
                 ["ahome", "Overview", "home"],
-                ["knowledge", "FAQ", "assistant"],
+                ["knowledge", "Train AI", "assistant"],
                 ["users", "Users", "users"],
                 ["appointments", "Logs", "calendar"],
                 ["reviews", "Reviews", "report"],
@@ -3641,6 +3655,17 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [appointmentFilter, setAppointmentFilter] = useState<
     "all" | AppointmentStatus
   >("all");
+  const [editingFaqId, setEditingFaqId] = useState<string | null>(null);
+  const [faqDraft, setFaqDraft] = useState({
+    question: "",
+    source: "",
+    answer: "",
+    category: "Consultation procedure",
+    trainingPhrases: "",
+  });
+  const [trainingQuestion, setTrainingQuestion] = useState("");
+  const [trainingReply, setTrainingReply] = useState<ChatbotReply | null>(null);
+  const [trainingTestLoading, setTrainingTestLoading] = useState(false);
   const refresh = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
@@ -3680,17 +3705,43 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   };
   const saveFaq = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    const trainingPhrases = faqDraft.trainingPhrases
+      .split("\n")
+      .map((phrase) => phrase.trim())
+      .filter(Boolean);
     try {
-      await createFaqEntry({
-        userId: user.id,
-        question: String(form.get("question") || ""),
-        answer: String(form.get("answer") || ""),
-        sourceReference: String(form.get("source") || ""),
-        category: String(form.get("category") || ""),
+      if (editingFaqId) {
+        await updateFaqEntry({
+          faqId: editingFaqId,
+          question: faqDraft.question,
+          answer: faqDraft.answer,
+          sourceReference: faqDraft.source,
+          category: faqDraft.category,
+          trainingPhrases,
+        });
+      } else {
+        await createFaqEntry({
+          userId: user.id,
+          question: faqDraft.question,
+          answer: faqDraft.answer,
+          sourceReference: faqDraft.source,
+          category: faqDraft.category,
+          trainingPhrases,
+        });
+      }
+      setFaqDraft({
+        question: "",
+        source: "",
+        answer: "",
+        category: "Consultation procedure",
+        trainingPhrases: "",
       });
-      e.currentTarget.reset();
-      setMessage("FAQ saved as a draft for approval.");
+      setEditingFaqId(null);
+      setMessage(
+        editingFaqId
+          ? "Training entry updated and returned to draft for approval."
+          : "Training entry saved as a draft for approval.",
+      );
       await refresh();
     } catch (cause) {
       setMessage(
@@ -3698,6 +3749,43 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           ? cause.message
           : "The FAQ draft could not be saved.",
       );
+    }
+  };
+  const editFaq = (faq: FaqEntry) => {
+    setEditingFaqId(faq.id);
+    setFaqDraft({
+      question: faq.question,
+      source: faq.source_reference,
+      answer: faq.answer,
+      category: faq.category,
+      trainingPhrases: (faq.training_phrases || []).join("\n"),
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const cancelFaqEdit = () => {
+    setEditingFaqId(null);
+    setFaqDraft({
+      question: "",
+      source: "",
+      answer: "",
+      category: "Consultation procedure",
+      trainingPhrases: "",
+    });
+  };
+  const testTraining = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const question = trainingQuestion.trim();
+    if (!question) return;
+    setTrainingTestLoading(true);
+    setTrainingReply(null);
+    try {
+      setTrainingReply(await requestChatbotReply(question));
+    } catch {
+      setMessage(
+        "The chatbot test service is unavailable. Confirm the FastAPI deployment and VITE_CHATBOT_URL.",
+      );
+    } finally {
+      setTrainingTestLoading(false);
     }
   };
   const approve = async (id: string) => {
@@ -4000,63 +4088,204 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       <>
         {feedback}
         <Head
-          label="MISO ADMINISTRATION"
-          title="FAQ knowledge base"
-          copy="Only approved CLIRDEC information may be published to the NLP assistant."
-          action="Add draft entry"
+          label="CONTROLLED NLP WORKSPACE"
+          title="Train the consultation chatbot"
+          copy="Improve how the spaCy assistant understands student questions while keeping every answer tied to an approved CLSU source."
         />
-        <div className="knowledge-layout">
-          <Work title="Draft an answer">
+        <Stats
+          data={[
+            [
+              String(data.faqs.filter((faq) => faq.status === "approved").length),
+              "Live answers",
+            ],
+            [
+              String(
+                data.faqs.filter(
+                  (faq) => faq.status === "draft" || faq.status === "review",
+                ).length,
+              ),
+              "Awaiting approval",
+            ],
+            [
+              String(
+                data.faqs.reduce(
+                  (total, faq) => total + (faq.training_phrases?.length || 0),
+                  0,
+                ),
+              ),
+              "Example phrases",
+            ],
+            [
+              String(new Set(data.faqs.map((faq) => faq.category)).size),
+              "Covered categories",
+            ],
+          ]}
+        />
+        <div className="training-workflow" aria-label="Chatbot training workflow">
+          <div><b>1</b><span><strong>Draft</strong><small>Add an answer and realistic student phrases.</small></span></div>
+          <div><b>2</b><span><strong>Verify</strong><small>Check the official source and wording.</small></span></div>
+          <div><b>3</b><span><strong>Approve</strong><small>Publish the entry to the chatbot.</small></span></div>
+          <div><b>4</b><span><strong>Test</strong><small>Confirm the live response and confidence.</small></span></div>
+        </div>
+        <div className="knowledge-layout chatbot-training-layout">
+          <Work title={editingFaqId ? "Edit training entry" : "Add training entry"}>
             <form className="knowledge-form" onSubmit={saveFaq}>
               <label>
-                Student question
+                Canonical student question
                 <input
                   name="question"
                   required
-                  placeholder="Enter a frequently asked question"
+                  value={faqDraft.question}
+                  onChange={(event) =>
+                    setFaqDraft((draft) => ({ ...draft, question: event.target.value }))
+                  }
+                  placeholder="How do I request a faculty consultation?"
                   maxLength={500}
                 />
+                <small>Write the clearest version of the question.</small>
               </label>
               <label>
-                Approved source
+                Official source reference
                 <input
                   name="source"
                   required
+                  value={faqDraft.source}
+                  onChange={(event) =>
+                    setFaqDraft((draft) => ({ ...draft, source: event.target.value }))
+                  }
                   placeholder="Official page, advisory, procedure, or faculty schedule"
                   maxLength={500}
                 />
+                <small>Answers without a verifiable source must not be approved.</small>
               </label>
               <label>
-                Proposed answer
+                Approved answer
                 <textarea
                   name="answer"
                   required
+                  value={faqDraft.answer}
+                  onChange={(event) =>
+                    setFaqDraft((draft) => ({ ...draft, answer: event.target.value }))
+                  }
                   placeholder="Write the verified response"
                   maxLength={5000}
                 />
               </label>
               <label>
+                Example student phrases
+                <textarea
+                  name="trainingPhrases"
+                  required
+                  value={faqDraft.trainingPhrases}
+                  onChange={(event) =>
+                    setFaqDraft((draft) => ({
+                      ...draft,
+                      trainingPhrases: event.target.value,
+                    }))
+                  }
+                  placeholder={"How can I book?\nPaano magpa-schedule?\nI need a consultation"}
+                  maxLength={4000}
+                />
+                <small>Enter 2–20 natural variations, one per line. English and Filipino are supported.</small>
+              </label>
+              <label>
                 Category
-                <select name="category">
+                <select
+                  name="category"
+                  value={faqDraft.category}
+                  onChange={(event) =>
+                    setFaqDraft((draft) => ({ ...draft, category: event.target.value }))
+                  }
+                >
                   <option>Office hours and contacts</option>
                   <option>Consultation procedure</option>
                   <option>Faculty availability</option>
+                  <option>Faculty expertise</option>
+                  <option>Consultation location</option>
+                  <option>Request status and changes</option>
                   <option>CLIRDEC services</option>
                 </select>
               </label>
-              <button className="primary">Save as draft entry</button>
+              <div className="training-form-actions">
+                <button className="primary">
+                  {editingFaqId ? "Save changes as draft" : "Save training draft"}
+                </button>
+                {editingFaqId && (
+                  <button type="button" className="outline" onClick={cancelFaqEdit}>
+                    Cancel edit
+                  </button>
+                )}
+              </div>
             </form>
           </Work>
-          <Work title="Knowledge review queue">
+          <Work title="Test the live chatbot">
+            <div className="training-test-panel" aria-live="polite">
+              <p>
+                Test the same endpoint students use. Only approved entries are included;
+                newly approved content can take up to five minutes to refresh.
+              </p>
+              <form onSubmit={testTraining}>
+                <label htmlFor="training-test-question">Student test question</label>
+                <div>
+                  <input
+                    id="training-test-question"
+                    value={trainingQuestion}
+                    onChange={(event) => setTrainingQuestion(event.target.value)}
+                    placeholder="Ask a realistic student question"
+                    maxLength={500}
+                  />
+                  <button className="primary" disabled={trainingTestLoading}>
+                    {trainingTestLoading ? "Testing…" : "Run test"}
+                  </button>
+                </div>
+              </form>
+              {trainingReply ? (
+                <article className={trainingReply.escalation ? "test-result needs-review" : "test-result"}>
+                  <header>
+                    <span>{trainingReply.escalation ? "Needs staff referral" : "Approved response"}</span>
+                    <strong>{Math.round(trainingReply.confidence * 100)}% confidence</strong>
+                  </header>
+                  <p>{trainingReply.answer}</p>
+                  <dl>
+                    <div><dt>Intent</dt><dd>{trainingReply.intent.replace(/_/g, " ")}</dd></div>
+                    <div><dt>Source</dt><dd>{trainingReply.source || "No source returned"}</dd></div>
+                  </dl>
+                </article>
+              ) : (
+                <div className="training-test-empty">
+                  <b>Test before pilot sessions</b>
+                  <span>Try common wording, abbreviations, and Filipino phrases.</span>
+                </div>
+              )}
+            </div>
+          </Work>
+        </div>
+        <Work title="Training library and approval queue">
+          <div className="training-library-note">
+            <span>Editing an approved entry returns it to draft so a second source check is required.</span>
+            <b>{data.faqs.length} total entries</b>
+          </div>
             <div className="faq-list">
               {data.faqs.map((faq: FaqEntry) => (
                 <article key={faq.id}>
-                  <span>{faq.status}</span>
-                  <div>
+                  <span className={`faq-status ${faq.status}`}>{faq.status}</span>
+                  <div className="faq-copy">
                     <b>{faq.question}</b>
-                    <small>{faq.source_reference}</small>
+                    <small>{faq.category} · {faq.source_reference}</small>
+                    <p>{faq.answer}</p>
+                    <div className="phrase-chips">
+                      {(faq.training_phrases || []).slice(0, 4).map((phrase) => (
+                        <em key={phrase}>{phrase}</em>
+                      ))}
+                      {(faq.training_phrases?.length || 0) > 4 && (
+                        <em>+{faq.training_phrases.length - 4} more</em>
+                      )}
+                    </div>
                   </div>
                   <div className="faq-actions">
+                    {faq.status !== "archived" && (
+                      <button onClick={() => editFaq(faq)}>Edit</button>
+                    )}
                     {faq.status !== "approved" && faq.status !== "archived" && (
                       <button onClick={() => void approve(faq.id)}>
                         Approve
@@ -4071,11 +4300,12 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 </article>
               ))}
               {!data.faqs.length && (
-                <div className="empty-card">No FAQ entries yet.</div>
+                <div className="empty-card">
+                  No training entries yet. Add a source-backed answer to begin.
+                </div>
               )}
             </div>
-          </Work>
-        </div>
+        </Work>
       </>
     );
   if (view === "reviews")

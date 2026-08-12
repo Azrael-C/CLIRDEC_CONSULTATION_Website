@@ -187,6 +187,7 @@ class KnowledgeItem:
     answer: str
     category: str
     source_reference: str
+    training_phrases: tuple[str, ...] = ()
 
 
 class ChatRequest(BaseModel):
@@ -250,10 +251,15 @@ def _rank_knowledge(message: str, items: list[KnowledgeItem]) -> tuple[Knowledge
     best_score = 0.0
     normalized = " ".join(message.lower().split())
     for item in items:
-        candidate = f"{item.question} {item.category}"
+        example_phrases = " ".join(item.training_phrases)
+        candidate = f"{item.question} {item.category} {example_phrases}"
         candidate_tokens = _tokens(candidate)
         overlap = len(query_tokens & candidate_tokens) / max(1, len(query_tokens | candidate_tokens))
-        sequence = SequenceMatcher(None, normalized, item.question.lower()).ratio()
+        phrase_candidates = (item.question, *item.training_phrases)
+        sequence = max(
+            SequenceMatcher(None, normalized, phrase.lower()).ratio()
+            for phrase in phrase_candidates
+        )
         score = overlap * 0.72 + sequence * 0.28
         if score > best_score:
             best, best_score = item, score
@@ -286,7 +292,7 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
 
     headers = {"apikey": api_key, "Authorization": f"Bearer {bearer}"}
     params = {
-        "select": "question,answer,category,source_reference",
+        "select": "question,answer,category,source_reference,training_phrases",
         "status": "eq.approved",
         "order": "updated_at.desc",
         "limit": "200",

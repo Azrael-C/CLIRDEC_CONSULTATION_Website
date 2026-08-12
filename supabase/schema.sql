@@ -213,12 +213,14 @@ create table public.faq_entries (
   answer text not null,
   category text not null,
   source_reference text not null,
+  training_phrases text[] not null default '{}',
   status text not null default 'draft' check (status in ('draft','review','approved','archived')),
   created_by uuid not null references public.profiles(id),
   approved_by uuid references public.profiles(id),
   approved_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  constraint faq_training_phrases_limit check (cardinality(training_phrases) <= 20),
   constraint approval_metadata check (
     (status='approved' and approved_by is not null and approved_at is not null)
     or status<>'approved'

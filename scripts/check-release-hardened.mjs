@@ -14,6 +14,8 @@ const auditMigration = read("supabase/production_audit_hardening_migration.sql")
 const realtimeMigration = read("supabase/realtime_portal_migration.sql");
 const registrationMigration = read("supabase/student_email_domain_registration_migration.sql");
 const completeEmailMigration = read("supabase/complete_email_notifications_migration.sql");
+const chatbotTrainingMigration = read("supabase/chatbot_training_migration.sql");
+const chatbot = read("chatbot/app.py");
 const app = read("src/App.tsx");
 const backend = read("src/backend.ts");
 const styles = read("src/figma.css");
@@ -63,6 +65,12 @@ assertIncludes(app, 'table: "availability"', "Student availability realtime subs
 assertIncludes(app, "slot.booking_open", "Student booking-window display state");
 assertIncludes(backend, '.gt("starts_at", now)', "Future availability visibility");
 assertIncludes(backend, "Date.now() + MINIMUM_NOTICE_MS", "Minimum-notice booking gate");
+assertIncludes(schema, "training_phrases text[]", "Chatbot training phrase storage");
+assertIncludes(chatbotTrainingMigration, "faq_training_phrases_limit", "Training phrase database limit");
+assertIncludes(app, "Train the consultation chatbot", "Administrator chatbot training page");
+assertIncludes(app, "Test the live chatbot", "Administrator chatbot test console");
+assertIncludes(backend, "normalizeTrainingPhrases", "Training phrase input validation");
+assertIncludes(chatbot, "training_phrases", "spaCy approved phrase retrieval");
 assertIncludes(styles, "padding-bottom: calc(6.25rem + env(safe-area-inset-bottom))", "Mobile drawer bottom clearance");
 assertIncludes(functionConfig, "verify_jwt = false", "Custom-secret worker configuration");
 for (const sql of [schema, reviewMigration]) {

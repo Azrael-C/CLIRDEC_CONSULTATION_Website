@@ -6,7 +6,7 @@ Use a dedicated Supabase development or pilot project. Do not seed test users in
 
 1. Create a Supabase project.
 2. Open SQL Editor.
-3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, apply the versioned SQL files that have not yet run, ending with `supabase/release_hardening_migration.sql`.
+3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, apply the versioned SQL files that have not yet run, including `supabase/chatbot_training_migration.sql` for administrator-managed example phrases.
 4. Confirm that Row-Level Security is enabled on every public table.
 5. Before a new student registers, approve the exact email in **MISO Administration → Manage users**. Approvals are single-use. Existing accounts are unaffected; faculty and administrator roles are assigned only by an administrator after registration.
 
@@ -33,6 +33,11 @@ For the Vercel Services deployment, leave `VITE_CHATBOT_URL` unset so the fronte
 4. Confirm `/api/chat` answers a booking question, safely escalates a sensitive question, and reports an approved FAQ source when authenticated.
 
 The service loads only FAQ rows whose status is `approved`. If Supabase is temporarily unavailable, it answers only the bundled consultation-workflow topics and safely escalates unsupported questions.
+
+Administrators manage those entries in **Chatbot training**. Each draft requires an
+official source, an approved answer, and at least two realistic student phrases.
+Editing a live answer returns it to draft for a new approval check. Approved changes
+can take up to five minutes to appear because the API caches the knowledge list.
 
 ## 4. Create guarded test data
 
