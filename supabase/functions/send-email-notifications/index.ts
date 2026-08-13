@@ -166,7 +166,17 @@ Deno.serve(async (request) => {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  let serviceRoleKey = "";
+  try {
+    const secretKeys = JSON.parse(
+      Deno.env.get("SUPABASE_SECRET_KEYS") || "{}",
+    ) as Record<string, unknown>;
+    if (typeof secretKeys["edge-functions"] === "string") {
+      serviceRoleKey = secretKeys["edge-functions"];
+    }
+  } catch {
+    return respond({ error: "Supabase secret-key configuration is invalid" }, 500);
+  }
   const resendKey = Deno.env.get("RESEND_API_KEY");
   const portalUrl = Deno.env.get("PORTAL_URL") || "https://www.clsufacultyconnect.com";
   const from = Deno.env.get("EMAIL_FROM") || "CLSU FacultyConnect <notifications@clsufacultyconnect.com>";
