@@ -113,6 +113,10 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(headers["apikey"], "server-secret")
         self.assertEqual(headers["Authorization"], "Bearer server-secret")
 
+    def test_knowledge_fetch_rejects_unapproved_hosts(self):
+        with self.assertRaises(ValueError):
+            app._fetch_json("https://attacker.example/faq", {}, {})
+
     def test_chat_requires_turnstile_token_when_secret_is_configured(self):
         request = type("Request", (), {"client": type("Client", (), {"host": "203.0.113.9"})()})()
         app._chat_requests.clear()
@@ -120,6 +124,14 @@ class AssistantTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as raised:
                 asyncio.run(app._protect_chat_request(request, None))
         self.assertEqual(raised.exception.status_code, 403)
+
+    def test_production_chat_fails_closed_without_turnstile_secret(self):
+        request = type("Request", (), {"client": type("Client", (), {"host": "203.0.113.10"})()})()
+        app._chat_requests.clear()
+        with patch.dict(os.environ, {"VERCEL_ENV": "production"}, clear=True):
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(app._protect_chat_request(request, None))
+        self.assertEqual(raised.exception.status_code, 503)
 
 
 if __name__ == "__main__":

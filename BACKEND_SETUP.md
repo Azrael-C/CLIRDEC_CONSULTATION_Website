@@ -16,7 +16,7 @@ Add these public values to Vercel Preview and Production:
 
 ```text
 VITE_SUPABASE_URL
-VITE_SUPABASE_ANON_KEY
+VITE_SUPABASE_PUBLISHABLE_KEY
 ```
 
 Redeploy after changing Vite variables because they are included at build time.
@@ -114,4 +114,16 @@ Apply `supabase/resend_delivery_webhooks_migration.sql`, deploy `resend-webhook`
 
 Create one Cloudflare Turnstile widget for `clsufacultyconnect.com` and `www.clsufacultyconnect.com`. Add its public site key to Vercel as `VITE_TURNSTILE_SITE_KEY` and its secret to the Vercel chatbot service as `TURNSTILE_SECRET_KEY`. In Supabase Authentication captcha protection, select Cloudflare Turnstile and add the same secret so login, registration, and password recovery reject unverified requests server-side. The chatbot additionally applies an instance-level request limit configured by `CHAT_RATE_LIMIT_PER_MINUTE`; add a Cloudflare rate-limit rule for `/api/chat` for cross-instance enforcement.
 
+Production authentication and chatbot requests fail closed when these Turnstile values are absent. Keep `REQUIRE_TURNSTILE=true` in production. API documentation is disabled by default; use `ENABLE_API_DOCS=true` only in an isolated development environment.
+
 After enabling captcha, verify all three authentication actions and one chatbot question on both desktop and mobile. Do not enable the Supabase captcha switch before the matching Vercel site key is deployed, or authentication will be blocked.
+
+## 10. Branded password-recovery email
+
+The version-controlled reset template is `supabase/templates/recovery.html`. Local Supabase reads it through `[auth.email.template.recovery]` in `supabase/config.toml`.
+
+For the hosted project, open **Authentication -> Email Templates -> Reset password**, set the subject to `Reset your CLSU FacultyConnect password`, and paste the complete HTML template. Keep `{{ .ConfirmationURL }}` unchanged because Supabase replaces it with the signed, single-use recovery link. Confirm the production Site URL is `https://www.clsufacultyconnect.com` and that the same origin is in the redirect allow list. Disable link tracking in the SMTP provider because rewritten authentication links can fail verification.
+
+Send a reset to a dedicated test account and verify the email design, link destination, password update, and subsequent login before publishing the template to pilot users.
+
+Enable the **Password changed** security notification and apply `supabase/templates/password-changed.html` with the subject `Your CLSU FacultyConnect password was changed`. This gives users an immediate warning after an unexpected credential change.

@@ -31,7 +31,17 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
   const webhookSecret = Deno.env.get("RESEND_WEBHOOK_SECRET");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  let serviceRoleKey = "";
+  try {
+    const secretKeys = JSON.parse(
+      Deno.env.get("SUPABASE_SECRET_KEYS") || "{}",
+    ) as Record<string, unknown>;
+    if (typeof secretKeys.edge_functions === "string") {
+      serviceRoleKey = secretKeys.edge_functions;
+    }
+  } catch {
+    return json({ error: "Supabase secret-key configuration is invalid" }, 500);
+  }
   if (!webhookSecret || !supabaseUrl || !serviceRoleKey) {
     return json({ error: "Required server configuration is missing" }, 500);
   }
