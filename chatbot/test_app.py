@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import app
 from fastapi import HTTPException
-from app import KnowledgeItem, build_response, classify_intent, is_sensitive
+from app import FacultyDirectoryItem, KnowledgeItem, build_response, classify_intent, is_sensitive
 
 
 class AssistantTests(unittest.TestCase):
@@ -49,6 +49,63 @@ class AssistantTests(unittest.TestCase):
         self.assertFalse(response.escalation)
         self.assertEqual(response.source, "FacultyConnect consultation procedure")
         self.assertIn("confirmed request", response.answer)
+
+    def test_live_faculty_subject_match_uses_verified_database_fields(self):
+        response = build_response(
+            "Who can help me with database management?",
+            [],
+            [FacultyDirectoryItem(
+                user_id="faculty-1",
+                full_name="Dr. Maria Santos",
+                department="College of Engineering",
+                expertise=("Information Systems",),
+                subjects=("Database Management", "Web Systems"),
+                consultation_topics=("Database design",),
+                research_interests=("Educational technology",),
+                office_location="MISO Building",
+            )],
+        )
+        self.assertEqual(response.intent, "expertise")
+        self.assertIn("Dr. Maria Santos", response.answer)
+        self.assertIn("Database Management", response.answer)
+        self.assertEqual(response.source, "Live CLSU faculty profiles and published availability")
+
+    def test_live_availability_never_invents_an_open_time(self):
+        response = build_response(
+            "When is Dr. Maria Santos available?",
+            [],
+            [FacultyDirectoryItem(
+                user_id="faculty-1",
+                full_name="Dr. Maria Santos",
+                department="College of Engineering",
+                expertise=("Information Systems",),
+                subjects=("Database Management",),
+                consultation_topics=("Database design",),
+                research_interests=(),
+                office_location="MISO Building",
+                next_slots=(),
+            )],
+        )
+        self.assertEqual(response.intent, "availability")
+        self.assertIn("could not find", response.answer)
+
+    def test_subject_only_question_can_trigger_faculty_discovery(self):
+        response = build_response(
+            "Database Management",
+            [],
+            [FacultyDirectoryItem(
+                user_id="faculty-1",
+                full_name="Dr. Maria Santos",
+                department="College of Engineering",
+                expertise=("Information Systems",),
+                subjects=("Database Management",),
+                consultation_topics=("Database design",),
+                research_interests=(),
+                office_location="MISO Building",
+            )],
+        )
+        self.assertEqual(response.intent, "expertise")
+        self.assertIn("Dr. Maria Santos", response.answer)
 
     def test_sensitive_question_is_escalated(self):
         response = build_response("Can you show my grades and password?", [])

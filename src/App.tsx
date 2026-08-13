@@ -17,6 +17,7 @@ import {
   loadFacultyPortal,
   loadStudentPortal,
   removeFacultyAvailability,
+  resolveChatbotGap,
   rescheduleAppointment,
   submitConsultationReview,
   updateFaqEntry,
@@ -25,9 +26,11 @@ import {
   type AppointmentStatus,
   type ConsultationReview,
   type FaqEntry,
+  type FaqStatus,
   type FacultyAvailability,
   type FacultyProfile,
   type FacultyRequest,
+  type ChatbotGap,
 } from "./backend";
 import {
   addCalendarDays,
@@ -68,6 +71,8 @@ type Slot = {
   faculty_name: string;
   initials: string;
   expertise: string;
+  subjects: string[];
+  consultationTopics: string[];
   starts_at: string;
   ends_at: string;
   location: string;
@@ -85,6 +90,7 @@ type ChatMessage = {
   text: string;
   source?: string;
   escalation?: boolean;
+  suggestions?: string[];
 };
 
 type ChatbotReply = {
@@ -414,6 +420,8 @@ function App() {
             .join("")
             .slice(0, 2),
           expertise: slot.expertise.join(", ") || "General consultation",
+          subjects: slot.subjects,
+          consultationTopics: slot.consultation_topics,
           starts_at: slot.starts_at,
           ends_at: slot.ends_at,
           location: slot.location,
@@ -432,6 +440,8 @@ function App() {
             .join("")
             .slice(0, 2),
           expertise: item.expertise.join(", ") || "Consultation",
+          subjects: [],
+          consultationTopics: [],
           starts_at: item.starts_at,
           ends_at: item.ends_at,
           location: item.location,
@@ -455,7 +465,15 @@ function App() {
   const filtered = useMemo(
     () =>
       slots.filter((s) =>
-        (s.faculty_name + " " + s.expertise)
+        (
+          s.faculty_name +
+          " " +
+          s.expertise +
+          " " +
+          s.subjects.join(" ") +
+          " " +
+          s.consultationTopics.join(" ")
+        )
           .toLowerCase()
           .includes(query.toLowerCase()),
       ),
@@ -783,6 +801,7 @@ function App() {
           text: d.answer,
           source: d.source,
           escalation: Boolean(d.escalation),
+          suggestions: d.suggestions || [],
         },
       ]);
       return "ok";
@@ -2111,6 +2130,13 @@ function FindFaculty({
                 </span>
                 <h3>{s.faculty_name}</h3>
                 <p>{s.expertise}</p>
+                {s.subjects.length > 0 && (
+                  <div className="faculty-subject-chips" aria-label="Subjects handled">
+                    {s.subjects.slice(0, 3).map((subject) => (
+                      <span key={subject}>{subject}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="slot-line">
@@ -2668,6 +2694,19 @@ function Chat({
                   Staff follow-up recommended
                 </small>
               )}
+              {m.who === "bot" && Boolean(m.suggestions?.length) && (
+                <div className="chat-suggestions" aria-label="Suggested follow-up questions">
+                  {m.suggestions?.map((suggestion) => (
+                    <button
+                      type="button"
+                      key={suggestion}
+                      onClick={() => setQuestion(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -3157,14 +3196,59 @@ function WeekdayAvailabilityCalendar({
     </div>
   );
 }
+
+function FacultyDiscoveryFields({ profile }: { profile: FacultyProfile }) {
+  return (
+    <>
+      <label>
+        Expertise categories
+        <input name="expertise" defaultValue={profile.expertise.join(", ")} placeholder="Software Engineering, Data Analytics" required maxLength={1200} />
+        <small>Broad, verified areas of professional or academic expertise.</small>
+      </label>
+      <label>
+        Subjects or courses handled
+        <input name="subjects" defaultValue={profile.subjects.join(", ")} placeholder="Web Systems, Database Management, Capstone Project" required maxLength={2000} />
+        <small>Use the course names students are likely to search for.</small>
+      </label>
+      <label>
+        Accepted consultation topics
+        <input name="consultation_topics" defaultValue={profile.consultation_topics.join(", ")} placeholder="Thesis methods, system architecture, research proposal" required maxLength={2000} />
+        <small>Describe the specific concerns you are prepared to discuss.</small>
+      </label>
+      <label>
+        Research interests <span className="optional-label">Optional</span>
+        <input name="research_interests" defaultValue={profile.research_interests.join(", ")} placeholder="Natural language processing, educational technology" maxLength={1200} />
+      </label>
+      <label>
+        Office or consultation location <span className="optional-label">Optional</span>
+        <input name="office_location" defaultValue={profile.office_location} placeholder="MISO Building, Room 201" maxLength={200} />
+        <small>Do not include a private home address or personal contact details.</small>
+      </label>
+      <label>
+        Faculty introduction <span className="optional-label">Optional</span>
+        <textarea name="bio" defaultValue={profile.bio} placeholder="Briefly describe your background and the consultation concerns you can support." rows={5} maxLength={2000} />
+        <small>Students see this before requesting a consultation.</small>
+      </label>
+    </>
+  );
+}
+
 function FacultyPages({ view, user }: { view: FView; user: User }) {
   const [requests, setRequests] = useState<FacultyRequest[]>([]);
   const [facultySlots, setFacultySlots] = useState<FacultyAvailability[]>([]);
   const [profile, setProfile] = useState<FacultyProfile>({
     expertise: [],
+    subjects: [],
+    consultation_topics: [],
+    research_interests: [],
     bio: "",
+    office_location: "",
+    profile_completed: false,
     active: true,
   });
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() =>
+    window.sessionStorage.getItem(`facultyconnect:profile-skip:${user.id}`) === "1",
+  );
   const [loading, setLoading] = useState(configured);
   const [message, setMessage] = useState("");
   const [requestFilter, setRequestFilter] = useState<
@@ -3348,9 +3432,14 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       await updateFacultyProfile({
         userId: user.id,
         expertise: String(form.get("expertise") || "").split(","),
+        subjects: String(form.get("subjects") || "").split(","),
+        consultationTopics: String(form.get("consultation_topics") || "").split(","),
+        researchInterests: String(form.get("research_interests") || "").split(","),
         bio: String(form.get("bio") || ""),
+        officeLocation: String(form.get("office_location") || ""),
       });
       setMessage("Faculty profile updated for student search.");
+      setOnboardingDismissed(true);
       await refresh();
     } catch (cause) {
       setMessage(
@@ -3364,12 +3453,50 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   };
   if (loading)
     return <div className="empty-card">Loading your faculty workspace…</div>;
-  const feedback = message && (
-    <div className="notice" role="status" aria-live="polite">
-      <b>✓</b>
-      <span>{message}</span>
-      <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
+  const onboarding = !profile.profile_completed && !onboardingDismissed ? (
+    <div className="profile-onboarding-backdrop">
+      <section className="profile-onboarding" role="dialog" aria-modal="true" aria-labelledby="faculty-onboarding-title">
+        <div className="profile-onboarding-intro">
+          <p className="eyebrow">COMPLETE YOUR FACULTY DIRECTORY PROFILE</p>
+          <h2 id="faculty-onboarding-title">Help students find the right professor.</h2>
+          <p>Consult AI and Faculty availability use only the verified subjects, expertise, and consultation topics faculty members provide here.</p>
+          <div className="onboarding-benefits">
+            <span>1 <b>Better subject matching</b></span>
+            <span>2 <b>Accurate chatbot recommendations</b></span>
+            <span>3 <b>Clearer consultation requests</b></span>
+          </div>
+        </div>
+        <form className="knowledge-form profile-onboarding-form" onSubmit={saveProfile}>
+          <FacultyDiscoveryFields profile={profile} />
+          <div className="profile-onboarding-actions">
+            <button className="primary" disabled={savingProfile}>{savingProfile ? "Saving profile…" : "Save and continue"}</button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                window.sessionStorage.setItem(`facultyconnect:profile-skip:${user.id}`, "1");
+                setOnboardingDismissed(true);
+              }}
+            >
+              Skip for now
+            </button>
+          </div>
+          <small>You can complete or update these details later from Profile.</small>
+        </form>
+      </section>
     </div>
+  ) : null;
+  const feedback = (
+    <>
+      {onboarding}
+      {message && (
+        <div className="notice" role="status" aria-live="polite">
+          <b>✓</b>
+          <span>{message}</span>
+          <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
+        </div>
+      )}
+    </>
   );
   if (view === "fhome")
     return (
@@ -3711,35 +3838,14 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
               <h2>Expertise and introduction</h2>
             </div>
           </header>
-          <form className="knowledge-form" onSubmit={saveProfile}>
-            <label>
-              Expertise categories
-              <input
-                name="expertise"
-                defaultValue={profile.expertise.join(", ")}
-                placeholder="Software Engineering, Web Development"
-                required
-                maxLength={960}
-              />
-              <small>Separate categories with commas. Add only verified areas.</small>
-            </label>
+          <form className="knowledge-form faculty-discovery-form" onSubmit={saveProfile}>
+            <FacultyDiscoveryFields profile={profile} />
             <div className="profile-expertise-preview" aria-label="Current expertise">
               {profile.expertise.map((item) => (
                 <span key={item}>{item}</span>
               ))}
               {!profile.expertise.length && <small>No expertise added yet.</small>}
             </div>
-            <label>
-              Faculty introduction
-              <textarea
-                name="bio"
-                defaultValue={profile.bio}
-                placeholder="Briefly describe your background and the consultation concerns you can support."
-                rows={6}
-                maxLength={2000}
-              />
-              <small>Students see this before requesting a consultation.</small>
-            </label>
             <button className="primary" disabled={savingProfile}>
               {savingProfile ? "Saving profile…" : "Save faculty profile"}
             </button>
@@ -3894,6 +4000,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     appointments: [],
     faqs: [],
     reviews: [],
+    chatbotGaps: [],
   });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -3912,6 +4019,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [trainingQuestion, setTrainingQuestion] = useState("");
   const [trainingReply, setTrainingReply] = useState<ChatbotReply | null>(null);
   const [trainingTestLoading, setTrainingTestLoading] = useState(false);
+  const [trainingLibraryQuery, setTrainingLibraryQuery] = useState("");
+  const [trainingLibraryStatus, setTrainingLibraryStatus] = useState<
+    "all" | FaqStatus
+  >("all");
   const refresh = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
@@ -4018,6 +4129,37 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       trainingPhrases: "",
     });
   };
+  const draftFromGap = (gap: ChatbotGap) => {
+    const categoryByIntent: Record<string, string> = {
+      availability: "Faculty availability",
+      expertise: "Faculty expertise",
+      booking: "Consultation procedure",
+      location: "Consultation location",
+      status: "Request status and changes",
+      cancel: "Request status and changes",
+      services: "CLIRDEC services",
+      office_hours: "Office hours and contacts",
+    };
+    setEditingFaqId(null);
+    setFaqDraft({
+      question: gap.sample_question,
+      source: "",
+      answer: "",
+      category: categoryByIntent[gap.detected_intent] || "Consultation procedure",
+      trainingPhrases: `${gap.sample_question}\nPlease help me with: ${gap.sample_question}`,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setMessage("A training draft was started from the unanswered student question. Verify the official source before saving.");
+  };
+  const resolveGap = async (gap: ChatbotGap) => {
+    try {
+      await resolveChatbotGap(gap.id, user.id);
+      setMessage("The unanswered question was marked reviewed.");
+      await refresh();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "The question could not be resolved.");
+    }
+  };
   const testTraining = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const question = trainingQuestion.trim();
@@ -4089,6 +4231,50 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     appointmentFilter === "all"
       ? data.appointments
       : data.appointments.filter((item) => item.status === appointmentFilter);
+  const normalizedTrainingQuery = trainingLibraryQuery.trim().toLowerCase();
+  const filteredTrainingEntries = data.faqs.filter((faq) => {
+    const statusMatches =
+      trainingLibraryStatus === "all" || faq.status === trainingLibraryStatus;
+    const queryMatches =
+      !normalizedTrainingQuery ||
+      [
+        faq.question,
+        faq.answer,
+        faq.category,
+        faq.source_reference,
+        ...(faq.training_phrases || []),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedTrainingQuery);
+    return statusMatches && queryMatches;
+  });
+  const activeFaqs = data.faqs.filter((faq) => faq.status !== "archived");
+  const approvedFaqs = data.faqs.filter((faq) => faq.status === "approved");
+  const approvalQueue = data.faqs.filter(
+    (faq) => faq.status === "draft" || faq.status === "review",
+  );
+  const trainingPhraseCount = activeFaqs.reduce(
+    (total, faq) => total + (faq.training_phrases?.length || 0),
+    0,
+  );
+  const coveredCategories = new Set(activeFaqs.map((faq) => faq.category)).size;
+  const facultyDirectoryCount = data.users.filter(
+    (portalUser) => portalUser.role === "faculty",
+  ).length;
+  const sourceReadyCount = approvedFaqs.filter(
+    (faq) => faq.source_reference.trim().length > 0,
+  ).length;
+  const phraseReadyCount = approvedFaqs.filter(
+    (faq) => (faq.training_phrases?.length || 0) >= 2,
+  ).length;
+  const readinessChecks = [
+    approvedFaqs.length > 0,
+    approvedFaqs.length > 0 && sourceReadyCount === approvedFaqs.length,
+    approvedFaqs.length > 0 && phraseReadyCount === approvedFaqs.length,
+    data.chatbotGaps.length === 0,
+  ];
+  const readinessPassed = readinessChecks.filter(Boolean).length;
   const todayKey = manilaDateKey(new Date());
   const todaysAppointments = data.appointments.filter(
     (item) =>
@@ -4334,50 +4520,66 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       <>
         {feedback}
         <Head
-          label="CONTROLLED NLP WORKSPACE"
-          title="Train the consultation chatbot"
-          copy="Improve how the spaCy assistant understands student questions while keeping every answer tied to an approved CLSU source."
+          label="CHATBOT OPERATIONS"
+          title="Build, verify, and improve Consult AI"
+          copy="Manage approved answers, faculty discovery data, unanswered questions, and live response testing from one controlled workspace."
         />
-        <Stats
-          data={[
-            [
-              String(data.faqs.filter((faq) => faq.status === "approved").length),
-              "Live answers",
-            ],
-            [
-              String(
-                data.faqs.filter(
-                  (faq) => faq.status === "draft" || faq.status === "review",
-                ).length,
-              ),
-              "Awaiting approval",
-            ],
-            [
-              String(
-                data.faqs.reduce(
-                  (total, faq) => total + (faq.training_phrases?.length || 0),
-                  0,
-                ),
-              ),
-              "Example phrases",
-            ],
-            [
-              String(new Set(data.faqs.map((faq) => faq.category)).size),
-              "Covered categories",
-            ],
-          ]}
-        />
-        <div className="training-workflow" aria-label="Chatbot training workflow">
-          <div><b>1</b><span><strong>Draft</strong><small>Add an answer and realistic student phrases.</small></span></div>
-          <div><b>2</b><span><strong>Verify</strong><small>Check the official source and wording.</small></span></div>
-          <div><b>3</b><span><strong>Approve</strong><small>Publish the entry to the chatbot.</small></span></div>
-          <div><b>4</b><span><strong>Test</strong><small>Confirm the live response and confidence.</small></span></div>
-        </div>
-        <div className="knowledge-layout chatbot-training-layout">
-          <Work title={editingFaqId ? "Edit training entry" : "Add training entry"}>
-            <form className="knowledge-form" onSubmit={saveFaq}>
+        <section className="training-control-center" aria-label="Chatbot training overview">
+          <article className="training-health-card">
+            <div className="training-health-heading">
+              <span className="training-live-indicator"><i /> Knowledge readiness</span>
+              <b>{readinessPassed}/4 checks passed</b>
+            </div>
+            <h2>{data.chatbotGaps.length ? "Improve the unanswered-question queue" : "Knowledge base is ready for testing"}</h2>
+            <p>
+              Consult AI combines source-backed answers with live faculty profiles and
+              published schedules. Only approved entries are used as official answers.
+            </p>
+            <div className="training-readiness-track" aria-hidden="true">
+              <i style={{ width: `${readinessPassed * 25}%` }} />
+            </div>
+            <ul className="training-readiness-list">
+              <li className={readinessChecks[0] ? "complete" : ""}>Approved answer available</li>
+              <li className={readinessChecks[1] ? "complete" : ""}>Every live answer cites a source</li>
+              <li className={readinessChecks[2] ? "complete" : ""}>At least two phrases per live answer</li>
+              <li className={readinessChecks[3] ? "complete" : ""}>Unanswered queue reviewed</li>
+            </ul>
+          </article>
+          <div className="training-metric-grid">
+            <article><span>Live answers</span><b>{approvedFaqs.length}</b><small>Available to students now</small></article>
+            <article><span>Approval queue</span><b>{approvalQueue.length}</b><small>Drafts and review items</small></article>
+            <article><span>Example phrases</span><b>{trainingPhraseCount}</b><small>English and Filipino wording</small></article>
+            <article className={data.chatbotGaps.length ? "attention" : ""}><span>Knowledge gaps</span><b>{data.chatbotGaps.length}</b><small>Low-confidence questions</small></article>
+          </div>
+        </section>
+        <section className="training-source-map" aria-labelledby="training-source-title">
+          <header>
+            <div><span className="section-kicker">CONNECTED KNOWLEDGE</span><h2 id="training-source-title">What Consult AI can use</h2></div>
+            <p>Operational data stays live in its source table; approved answers stay in the controlled training library.</p>
+          </header>
+          <div>
+            <article><i aria-hidden="true">01</i><span><b>Approved answer library</b><small>{approvedFaqs.length} live answers across {coveredCategories} categories</small></span><em>Admin controlled</em></article>
+            <article><i aria-hidden="true">02</i><span><b>Faculty expertise directory</b><small>{facultyDirectoryCount} faculty accounts; expertise comes from completed profiles</small></span><em>Live database</em></article>
+            <article><i aria-hidden="true">03</i><span><b>Availability and booking rules</b><small>Published schedules, consultation modes, and request workflow</small></span><em>Live database</em></article>
+            <article><i aria-hidden="true">04</i><span><b>Unanswered-question signals</b><small>Repeated low-confidence wording is prioritized for review</small></span><em>Privacy filtered</em></article>
+          </div>
+        </section>
+        <nav className="training-jump-nav" aria-label="Chatbot training sections">
+          <a href="#training-editor">Create answer</a>
+          <a href="#training-tester">Test response</a>
+          <a href="#training-gaps">Review gaps <b>{data.chatbotGaps.length}</b></a>
+          <a href="#training-library">Training library <b>{data.faqs.length}</b></a>
+        </nav>
+        <div className="knowledge-layout chatbot-training-layout training-studio">
+          <div id="training-editor" className="training-editor-card">
+          <Work title={editingFaqId ? "Edit source-backed answer" : "Create a source-backed answer"}>
+            <div className="training-editor-guidance">
+              <b>Publication requirements</b>
+              <span>Clear question</span><span>Verified source</span><span>Approved wording</span><span>2–20 examples</span>
+            </div>
+            <form className="knowledge-form training-entry-form" onSubmit={saveFaq}>
               <label>
-                Canonical student question
+                <span className="training-field-title"><i>1</i> Canonical student question</span>
                 <input
                   name="question"
                   required
@@ -4388,10 +4590,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   placeholder="How do I request a faculty consultation?"
                   maxLength={500}
                 />
-                <small>Write the clearest version of the question.</small>
+                <small>Use the clearest version of the student’s intent, not every possible variation.</small>
               </label>
               <label>
-                Official source reference
+                <span className="training-field-title"><i>2</i> Official source or evidence</span>
                 <input
                   name="source"
                   required
@@ -4402,10 +4604,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   placeholder="Official page, advisory, procedure, or faculty schedule"
                   maxLength={500}
                 />
-                <small>Answers without a verifiable source must not be approved.</small>
+                <small>Name the policy, advisory, office page, or accountable faculty source. Unsourced entries cannot be approved.</small>
               </label>
               <label>
-                Approved answer
+                <span className="training-field-title"><i>3</i> Student-facing answer</span>
                 <textarea
                   name="answer"
                   required
@@ -4416,9 +4618,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   placeholder="Write the verified response"
                   maxLength={5000}
                 />
+                <small>Give the direct answer first, followed by the next step, office, or booking action.</small>
               </label>
               <label>
-                Example student phrases
+                <span className="training-field-title"><i>4</i> Example questions and phrases</span>
                 <textarea
                   name="trainingPhrases"
                   required
@@ -4435,7 +4638,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 <small>Enter 2–20 natural variations, one per line. English and Filipino are supported.</small>
               </label>
               <label>
-                Category
+                <span className="training-field-title"><i>5</i> Intent category</span>
                 <select
                   name="category"
                   value={faqDraft.category}
@@ -4451,6 +4654,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   <option>Request status and changes</option>
                   <option>CLIRDEC services</option>
                 </select>
+                <small>The category organizes the library and shows which student needs are covered.</small>
               </label>
               <div className="training-form-actions">
                 <button className="primary">
@@ -4464,12 +4668,19 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
               </div>
             </form>
           </Work>
+          </div>
+          <div id="training-tester" className="training-tester-card">
           <Work title="Test the live chatbot">
             <div className="training-test-panel" aria-live="polite">
               <p>
-                Test the same endpoint students use. Only approved entries are included;
-                newly approved content can take up to five minutes to refresh.
+                Use the same endpoint students use. Test exact wording, paraphrases,
+                abbreviations, and Filipino questions before a pilot session.
               </p>
+              <div className="training-test-prompts" aria-label="Suggested test questions">
+                {["Find a faculty adviser", "How do I book?", "Saan ang consultation?"].map((prompt) => (
+                  <button type="button" key={prompt} onClick={() => setTrainingQuestion(prompt)}>{prompt}</button>
+                ))}
+              </div>
               <form onSubmit={testTraining}>
                 <label htmlFor="training-test-question">Student test question</label>
                 <div>
@@ -4499,22 +4710,94 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 </article>
               ) : (
                 <div className="training-test-empty">
-                  <b>Test before pilot sessions</b>
-                  <span>Try common wording, abbreviations, and Filipino phrases.</span>
+                  <span className="training-empty-symbol" aria-hidden="true">AI</span>
+                  <b>No test has been run yet</b>
+                  <span>Results show the matched intent, source, confidence, and escalation behavior.</span>
                 </div>
               )}
+              <aside className="training-test-checklist">
+                <b>What a safe response needs</b>
+                <span>Correct intent and current source</span>
+                <span>Useful next step for the student</span>
+                <span>Staff referral when confidence is low</span>
+              </aside>
             </div>
           </Work>
+          </div>
         </div>
+        <div id="training-gaps" className="training-gap-workspace">
+        <Work title="Unanswered student questions">
+          <div className="chatbot-gap-intro">
+            <p>
+              Low-confidence questions are collected without email addresses or long
+              identification numbers. Repeated wording rises to the top so MISO can
+              address the largest knowledge gaps first.
+            </p>
+            <b className={data.chatbotGaps.length ? "attention" : ""}>{data.chatbotGaps.length} need review</b>
+          </div>
+          <div className="chatbot-gap-list">
+            {data.chatbotGaps.map((gap) => (
+              <article key={gap.id}>
+                <div>
+                  <span>{gap.detected_intent.replace(/_/g, " ")}</span>
+                  <b>{gap.sample_question}</b>
+                  <small>
+                    Asked {gap.occurrence_count} {gap.occurrence_count === 1 ? "time" : "times"}
+                    {" · "}last seen {formatManilaDateTime(new Date(gap.last_seen_at), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </small>
+                </div>
+                <div className="chatbot-gap-actions">
+                  <button type="button" className="primary" onClick={() => draftFromGap(gap)}>Create training draft</button>
+                  <button type="button" className="outline" onClick={() => void resolveGap(gap)}>Mark reviewed</button>
+                </div>
+              </article>
+            ))}
+            {!data.chatbotGaps.length && (
+              <div className="empty-card">No unresolved chatbot questions have been recorded.</div>
+            )}
+          </div>
+        </Work>
+        </div>
+        <div id="training-library" className="training-library-workspace">
         <Work title="Training library and approval queue">
           <div className="training-library-note">
             <span>Editing an approved entry returns it to draft so a second source check is required.</span>
-            <b>{data.faqs.length} total entries</b>
+            <b>{filteredTrainingEntries.length} of {data.faqs.length} entries</b>
+          </div>
+          <div className="training-library-toolbar">
+            <label>
+              <span className="sr-only">Search training entries</span>
+              <input
+                type="search"
+                value={trainingLibraryQuery}
+                onChange={(event) => setTrainingLibraryQuery(event.target.value)}
+                placeholder="Search questions, answers, sources, or phrases"
+              />
+            </label>
+            <div role="group" aria-label="Filter training entries by status">
+              {([
+                ["all", "All"],
+                ["approved", "Live"],
+                ["draft", "Drafts"],
+                ["review", "In review"],
+                ["archived", "Archived"],
+              ] as const).map(([status, label]) => (
+                <button
+                  type="button"
+                  key={status}
+                  className={trainingLibraryStatus === status ? "active" : ""}
+                  aria-pressed={trainingLibraryStatus === status}
+                  onClick={() => setTrainingLibraryStatus(status)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
             <div className="faq-list">
-              {data.faqs.map((faq: FaqEntry) => (
+              {filteredTrainingEntries.map((faq: FaqEntry) => (
                 <article key={faq.id}>
-                  <span className={`faq-status ${faq.status}`}>{faq.status}</span>
+                  <span className={`faq-status ${faq.status}`}>{faq.status === "approved" ? "live" : faq.status}</span>
                   <div className="faq-copy">
                     <b>{faq.question}</b>
                     <small>{faq.category} · {faq.source_reference}</small>
@@ -4545,13 +4828,16 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   </div>
                 </article>
               ))}
-              {!data.faqs.length && (
+              {!filteredTrainingEntries.length && (
                 <div className="empty-card">
-                  No training entries yet. Add a source-backed answer to begin.
+                  {data.faqs.length
+                    ? "No training entries match this search or status filter."
+                    : "No training entries yet. Add a source-backed answer to begin."}
                 </div>
               )}
             </div>
         </Work>
+        </div>
       </>
     );
   if (view === "reviews")

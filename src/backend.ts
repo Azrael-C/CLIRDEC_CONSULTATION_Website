@@ -23,6 +23,8 @@ export type FacultyAvailability = {
 export type PortalSlot = FacultyAvailability & {
   faculty_name: string;
   expertise: string[];
+  subjects: string[];
+  consultation_topics: string[];
   booking_open: boolean;
 };
 
@@ -50,8 +52,25 @@ export type FacultyRequest = PortalAppointment;
 
 export type FacultyProfile = {
   expertise: string[];
+  subjects: string[];
+  consultation_topics: string[];
+  research_interests: string[];
   bio: string;
+  office_location: string;
+  profile_completed: boolean;
   active: boolean;
+};
+
+export type ChatbotGap = {
+  id: string;
+  normalized_question: string;
+  sample_question: string;
+  detected_intent: string;
+  confidence: number;
+  occurrence_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
 };
 
 export type AdminUser = {
@@ -95,6 +114,7 @@ export type AdminPortal = {
   appointments: PortalAppointment[];
   faqs: FaqEntry[];
   reviews: ConsultationReview[];
+  chatbotGaps: ChatbotGap[];
 };
 
 export type AdminNotificationSummary = {
@@ -212,12 +232,20 @@ export async function loadStudentPortal(studentId: string) {
     id: string;
     full_name: string;
     expertise: string[];
+    subjects: string[];
+    consultation_topics: string[];
   }>;
   const names = new Map(
     directoryRows.map((profile) => [profile.id, profile.full_name]),
   );
   const expertise = new Map(
     directoryRows.map((profile) => [profile.id, profile.expertise || []]),
+  );
+  const subjects = new Map(
+    directoryRows.map((profile) => [profile.id, profile.subjects || []]),
+  );
+  const consultationTopics = new Map(
+    directoryRows.map((profile) => [profile.id, profile.consultation_topics || []]),
   );
   const activeFaculty = new Set(directoryRows.map((profile) => profile.id));
 
@@ -230,6 +258,8 @@ export async function loadStudentPortal(studentId: string) {
       location: slot.location || "Location provided after approval",
       faculty_name: names.get(slot.faculty_id) || "Faculty member",
       expertise: expertise.get(slot.faculty_id) || [],
+      subjects: subjects.get(slot.faculty_id) || [],
+      consultation_topics: consultationTopics.get(slot.faculty_id) || [],
     }));
 
   const appointments: PortalAppointment[] = (appointmentRows || []).flatMap(
@@ -500,9 +530,13 @@ export async function removeFacultyAvailability(slotId: string) {
 export async function updateFacultyProfile(input: {
   userId: string;
   expertise: string[];
+  subjects: string[];
+  consultationTopics: string[];
+  researchInterests: string[];
   bio: string;
+  officeLocation: string;
 }) {
-  const expertise = input.expertise
+  const normalizeList = (items: string[], limit: number) => items
     .map((item) => item.trim())
     .filter(Boolean)
     .filter(
@@ -511,16 +545,34 @@ export async function updateFacultyProfile(input: {
           (candidate) => candidate.toLowerCase() === item.toLowerCase(),
         ) === index,
     )
-    .slice(0, 12);
+    .slice(0, limit);
+  const expertise = normalizeList(input.expertise, 12);
+  const subjects = normalizeList(input.subjects, 20);
+  const consultationTopics = normalizeList(input.consultationTopics, 20);
+  const researchInterests = normalizeList(input.researchInterests, 12);
   if (!expertise.length)
     throw new Error("Add at least one faculty expertise category.");
-  if (expertise.some((item) => item.length > 80))
-    throw new Error("Keep each expertise category within 80 characters.");
+  if (!subjects.length)
+    throw new Error("Add at least one subject or course you handle.");
+  if (!consultationTopics.length)
+    throw new Error("Add at least one consultation topic you accept.");
+  if ([...expertise, ...subjects, ...consultationTopics, ...researchInterests].some((item) => item.length > 100))
+    throw new Error("Keep each faculty profile label within 100 characters.");
   if (input.bio.trim().length > 2000)
     throw new Error("Keep the faculty biography within 2,000 characters.");
+  if (input.officeLocation.trim().length > 200)
+    throw new Error("Keep the office location within 200 characters.");
   const { error } = await supabase
     .from("faculty_profiles")
-    .update({ expertise, bio: input.bio.trim() })
+    .update({
+      expertise,
+      subjects,
+      consultation_topics: consultationTopics,
+      research_interests: researchInterests,
+      bio: input.bio.trim(),
+      office_location: input.officeLocation.trim(),
+      profile_completed_at: new Date().toISOString(),
+    })
     .eq("user_id", input.userId);
   if (error)
     throw new Error(
@@ -533,13 +585,18 @@ export async function loadFacultyProfile(
 ): Promise<FacultyProfile> {
   const { data, error } = await supabase
     .from("faculty_profiles")
-    .select("expertise,bio,active")
+    .select("expertise,subjects,consultation_topics,research_interests,bio,office_location,profile_completed_at,active")
     .eq("user_id", userId)
     .single();
   return requireData(
     {
       expertise: data?.expertise || [],
+      subjects: data?.subjects || [],
+      consultation_topics: data?.consultation_topics || [],
+      research_interests: data?.research_interests || [],
       bio: data?.bio || "",
+      office_location: data?.office_location || "",
+      profile_completed: Boolean(data?.profile_completed_at),
       active: data?.active ?? true,
     },
     error,
@@ -553,6 +610,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     { data: rows, error: appointmentError },
     { data: faqs, error: faqError },
     { data: reviews, error: reviewError },
+    { data: chatbotGaps, error: chatbotGapError },
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -574,11 +632,18 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       .from("consultation_reviews")
       .select("id,appointment_id,student_id,faculty_id,rating,comment,year_level,college,program,created_at,updated_at")
       .order("created_at", { ascending: false }),
+    supabase
+      .from("chatbot_unanswered_questions")
+      .select("id,normalized_question,sample_question,detected_intent,confidence,occurrence_count,first_seen_at,last_seen_at,resolved_at")
+      .is("resolved_at", null)
+      .order("occurrence_count", { ascending: false })
+      .order("last_seen_at", { ascending: false })
+      .limit(50),
   ]);
-  if (userError || appointmentError || faqError || reviewError) {
+  if (userError || appointmentError || faqError || reviewError || chatbotGapError) {
     throw new Error(
       friendlyError(
-        userError || appointmentError || faqError || reviewError,
+        userError || appointmentError || faqError || reviewError || chatbotGapError,
         "The administration workspace could not be loaded.",
       ),
     );
@@ -620,7 +685,27 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     appointments,
     faqs: (faqs || []) as FaqEntry[],
     reviews: (reviews || []) as ConsultationReview[],
+    chatbotGaps: (chatbotGaps || []) as ChatbotGap[],
   };
+}
+
+export async function resolveChatbotGap(
+  gapId: string,
+  userId: string,
+  note = "Reviewed by an administrator.",
+) {
+  const { error } = await supabase
+    .from("chatbot_unanswered_questions")
+    .update({
+      resolved_at: new Date().toISOString(),
+      resolved_by: userId,
+      resolution_note: note.slice(0, 500),
+    })
+    .eq("id", gapId);
+  if (error)
+    throw new Error(
+      friendlyError(error, "The unanswered question could not be resolved."),
+    );
 }
 
 export async function loadAdminNotificationSummary(): Promise<AdminNotificationSummary> {
