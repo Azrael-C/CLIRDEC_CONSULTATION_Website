@@ -77,14 +77,17 @@ if (preflight.headers.get("access-control-allow-origin") !== "https://www.clsufa
   throw new Error("The production custom domain is missing from chatbot CORS.");
 }
 
-const chat = await request("/api/chat", {
+const chat = await fetch(`${baseUrl}/api/chat`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ message: "How do I request a consultation?" }),
+  signal: AbortSignal.timeout(20_000),
 });
-const answer = await chat.json();
-if (!answer.answer || !answer.source || answer.escalation) {
-  throw new Error(`Unexpected approved chatbot response: ${JSON.stringify(answer)}`);
+const chatBody = await chat.json();
+if (chat.status !== 403 || !String(chatBody.detail || "").includes("security check")) {
+  throw new Error(
+    `Chatbot must reject requests without Turnstile: ${chat.status} ${JSON.stringify(chatBody)}`,
+  );
 }
 
 console.log(`Production smoke checks passed for ${baseUrl}.`);
