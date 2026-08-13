@@ -171,8 +171,8 @@ Deno.serve(async (request) => {
     const secretKeys = JSON.parse(
       Deno.env.get("SUPABASE_SECRET_KEYS") || "{}",
     ) as Record<string, unknown>;
-    if (typeof secretKeys["edge-functions"] === "string") {
-      serviceRoleKey = secretKeys["edge-functions"];
+    if (typeof secretKeys.edge_functions === "string") {
+      serviceRoleKey = secretKeys.edge_functions;
     }
   } catch {
     return respond({ error: "Supabase secret-key configuration is invalid" }, 500);
