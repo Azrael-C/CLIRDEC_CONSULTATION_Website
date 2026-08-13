@@ -16,7 +16,7 @@ Add these public values to Vercel Preview and Production:
 
 ```text
 VITE_SUPABASE_URL
-VITE_SUPABASE_ANON_KEY
+VITE_SUPABASE_PUBLISHABLE_KEY
 ```
 
 Redeploy after changing Vite variables because they are included at build time.
