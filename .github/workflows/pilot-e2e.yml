@@ -1,0 +1,48 @@
+name: Pilot end-to-end lifecycle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pilot-e2e
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pilot-e2e
+    env:
+      E2E_BASE_URL: https://www.clsufacultyconnect.com
+      ALLOW_TEST_SEED: "true"
+      SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.E2E_SUPABASE_SECRET_KEY }}
+      TEST_STUDENT_EMAIL: ${{ secrets.E2E_STUDENT_EMAIL }}
+      TEST_FACULTY_EMAIL: ${{ secrets.E2E_FACULTY_EMAIL }}
+      TEST_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+      TEST_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+      SUPABASE_EMAIL_FUNCTION_URL: ${{ secrets.SUPABASE_EMAIL_FUNCTION_URL }}
+      EMAIL_CRON_SECRET: ${{ secrets.EMAIL_CRON_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Reset and seed dedicated test identities
+        run: npm run seed:test
+      - name: Verify the complete consultation lifecycle
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pilot-e2e-evidence
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { Turnstile } from "@marsidev/react-turnstile";
 import { supabase, configured } from "./supabase";
 import {
   adminSetRole,
@@ -98,14 +99,16 @@ type ChatbotReply = {
 type AuthAction = "login" | "signup" | "reset";
 
 const STUDENT_EMAIL_DOMAINS = ["gmail.com", "clsu2.edu.ph"] as const;
+const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
 
-async function requestChatbotReply(message: string): Promise<ChatbotReply> {
+async function requestChatbotReply(message: string, captchaToken?: string): Promise<ChatbotReply> {
   const { data } = await supabase.auth.getSession();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
   if (data.session?.access_token)
     headers.Authorization = `Bearer ${data.session.access_token}`;
+  if (captchaToken) headers["X-Turnstile-Token"] = captchaToken;
   const configuredBase = String(import.meta.env.VITE_CHATBOT_URL || "").replace(
     /\/$/,
     "",
@@ -419,9 +422,11 @@ function App() {
     const f = new FormData(e.currentTarget);
     const email = String(f.get("email"));
     const password = String(f.get("password"));
+    const captchaToken = String(f.get("captcha_token") || "");
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
+      options: captchaToken ? { captchaToken } : undefined,
     });
     if (error) setNotice(friendlyAuthError(error.message, "login"));
   }
@@ -444,6 +449,7 @@ function App() {
     const password = String(f.get("password"));
     const confirmation = String(f.get("confirmation"));
     const privacyAcknowledged = f.get("privacy_acknowledged") === "on";
+    const captchaToken = String(f.get("captcha_token") || "");
     if (full_name.length < 3) {
       setNotice("Enter your complete name as it appears in your student record.");
       return;
@@ -482,6 +488,7 @@ function App() {
       email,
       password,
       options: {
+        captchaToken: captchaToken || undefined,
         data: {
           full_name,
           student_number,
@@ -501,7 +508,7 @@ function App() {
         : "Account created. Check your email and select the confirmation link before signing in.",
     );
   }
-  async function requestPasswordReset(email: string) {
+  async function requestPasswordReset(email: string, captchaToken?: string) {
     setNotice("");
     if (!configured) {
       setNotice(
@@ -515,6 +522,7 @@ function App() {
     }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin,
+      captchaToken,
     });
     setNotice(
       error
@@ -696,14 +704,14 @@ function App() {
       "Choose a different published time. Your current request remains active until the replacement succeeds.",
     );
   }
-  async function ask(e: FormEvent) {
+  async function ask(e: FormEvent, captchaToken?: string) {
     e.preventDefault();
     const q = question.trim();
     if (!q) return;
     setQuestion("");
     setChat((c) => [...c, { who: "you", text: q }]);
     try {
-      const d = await requestChatbotReply(q);
+      const d = await requestChatbotReply(q, captchaToken);
       setChat((c) => [
         ...c,
         {
@@ -990,7 +998,7 @@ function ProductionAuth({
 }: {
   login: (e: FormEvent<HTMLFormElement>) => Promise<void>;
   signup: (e: FormEvent<HTMLFormElement>) => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
+  resetPassword: (email: string, captchaToken?: string) => Promise<void>;
   clearNotice: () => void;
   notice: string;
 }) {
@@ -999,6 +1007,8 @@ function ProductionAuth({
   const [confirmation, setConfirmation] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [submittingAuth, setSubmittingAuth] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaGeneration, setCaptchaGeneration] = useState(0);
   usePageMetadata(
     creating
       ? "Create student account | CLSU FacultyConnect"
@@ -1020,6 +1030,8 @@ function ProductionAuth({
     setPassword("");
     setConfirmation("");
     setPasswordVisible(false);
+    setCaptchaToken("");
+    setCaptchaGeneration((value) => value + 1);
     clearNotice();
   };
   const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
@@ -1028,6 +1040,8 @@ function ProductionAuth({
       await (creating ? signup(event) : login(event));
     } finally {
       setSubmittingAuth(false);
+      setCaptchaToken("");
+      setCaptchaGeneration((value) => value + 1);
     }
   };
   return (
@@ -1067,7 +1081,7 @@ function ProductionAuth({
           <p className="eyebrow">SECURE PORTAL</p>
           {creating ? (
             <>
-              <h2>Create a student account</h2>
+              <h1>Create a student account</h1>
               <p className="muted">
                 Students may register with Gmail or their CLSU student email.
                 Faculty and administrator accounts are issued separately by MISO.
@@ -1075,7 +1089,7 @@ function ProductionAuth({
             </>
           ) : (
             <>
-              <h2>Log in to your portal</h2>
+              <h1>Log in to your portal</h1>
               <p className="muted">
                 Students, faculty, and administrators use the same secure
                 sign-in.
@@ -1304,10 +1318,24 @@ function ProductionAuth({
               </label>
             </>
           )}
+          {TURNSTILE_SITE_KEY && (
+            <div className="turnstile-field">
+              <Turnstile
+                key={captchaGeneration}
+                siteKey={TURNSTILE_SITE_KEY}
+                options={{ theme: "light", size: "flexible", action: creating ? "student_signup" : "portal_login" }}
+                onSuccess={setCaptchaToken}
+                onExpire={() => setCaptchaToken("")}
+                onError={() => setCaptchaToken("")}
+              />
+              <input type="hidden" name="captcha_token" value={captchaToken} />
+            </div>
+          )}
           <button
             className="primary"
             disabled={
               submittingAuth ||
+              (Boolean(TURNSTILE_SITE_KEY) && !captchaToken) ||
               (creating && (!passwordValid || !passwordsMatch))
             }
           >
@@ -1329,7 +1357,11 @@ function ProductionAuth({
                   if (form)
                     void resetPassword(
                       String(new FormData(form).get("email") || ""),
-                    );
+                      captchaToken || undefined,
+                    ).finally(() => {
+                      setCaptchaToken("");
+                      setCaptchaGeneration((value) => value + 1);
+                    });
                 }}
               >
                 <b>Forgot your password?</b>
@@ -2417,8 +2449,19 @@ function Chat({
   chat: ChatMessage[];
   question: string;
   setQuestion: (s: string) => void;
-  ask: (e: FormEvent) => void;
+  ask: (e: FormEvent, captchaToken?: string) => Promise<void>;
 }) {
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaGeneration, setCaptchaGeneration] = useState(0);
+  const submit = async (event: FormEvent) => {
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      event.preventDefault();
+      return;
+    }
+    await ask(event, captchaToken || undefined);
+    setCaptchaToken("");
+    setCaptchaGeneration((value) => value + 1);
+  };
   return (
     <>
       <section className="page-head compact">
@@ -2483,7 +2526,7 @@ function Chat({
             Mobile access
           </button>
         </div>
-        <form onSubmit={ask}>
+        <form onSubmit={submit}>
           <input
             aria-label="Chat question"
             value={question}
@@ -2493,6 +2536,16 @@ function Chat({
             maxLength={500}
             required
           />
+          {TURNSTILE_SITE_KEY && (
+            <Turnstile
+              key={captchaGeneration}
+              siteKey={TURNSTILE_SITE_KEY}
+              options={{ theme: "light", size: "flexible", action: "chatbot_question" }}
+              onSuccess={setCaptchaToken}
+              onExpire={() => setCaptchaToken("")}
+              onError={() => setCaptchaToken("")}
+            />
+          )}
           <button className="primary">Send →</button>
         </form>
         <footer className="chat-source">

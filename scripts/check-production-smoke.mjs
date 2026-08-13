@@ -1,4 +1,4 @@
-const baseUrl = (process.env.PRODUCTION_URL || "https://clsu-faculty-connect.vercel.app").replace(/\/$/, "");
+const baseUrl = (process.env.PRODUCTION_URL || "https://www.clsufacultyconnect.com").replace(/\/$/, "");
 
 const request = async (path, options) => {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -51,6 +51,18 @@ if (health.headers.get("cache-control") !== "no-store") {
 const healthBody = await health.json();
 if (healthBody.status !== "ok" || healthBody.nlp !== "spaCy") {
   throw new Error(`Unexpected chatbot health payload: ${JSON.stringify(healthBody)}`);
+}
+
+const knowledgeStatus = await request("/api/knowledge-status");
+const knowledgeBody = await knowledgeStatus.json();
+if (
+  knowledgeBody.source !== "Supabase approved FAQ entries" ||
+  !Number.isInteger(knowledgeBody.approved_entries) ||
+  knowledgeBody.approved_entries < 1
+) {
+  throw new Error(
+    `Production chatbot has no approved database knowledge: ${JSON.stringify(knowledgeBody)}`,
+  );
 }
 
 const preflight = await request("/api/chat", {

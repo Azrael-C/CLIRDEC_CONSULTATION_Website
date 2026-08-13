@@ -27,7 +27,7 @@ For the Vercel Services deployment, leave `VITE_CHATBOT_URL` unset so the fronte
 
 `vercel.json` deploys the Vite frontend and `chatbot/app.py` as two Vercel Services in one project.
 
-1. Configure `SUPABASE_URL` and `SUPABASE_ANON_KEY` for the API service. Add `SUPABASE_SERVICE_ROLE_KEY` only if the approved server-side access pattern has been security-reviewed.
+1. Configure `SUPABASE_URL` and `SUPABASE_SECRET_KEY` for the API service. The secret must be scoped to the server-side chatbot service and must never use a `VITE_` prefix. `SUPABASE_SERVICE_ROLE_KEY` remains a temporary legacy fallback only while the exposed legacy credential is being rotated.
 2. Keep `ALLOWED_ORIGINS` set to the production portal URL and approved local origins.
 3. Confirm `/api/health` and `/api/knowledge-status` return successfully.
 4. Confirm `/api/chat` answers a booking question, safely escalates a sensitive question, and reports an approved FAQ source when authenticated.
@@ -48,7 +48,7 @@ PowerShell example:
 ```powershell
 $env:ALLOW_TEST_SEED="true"
 $env:SUPABASE_URL="https://your-project.supabase.co"
-$env:SUPABASE_SERVICE_ROLE_KEY="your-server-only-key"
+$env:SUPABASE_SECRET_KEY="your-server-only-secret-key"
 $env:TEST_STUDENT_EMAIL="your-test-student-address"
 $env:TEST_FACULTY_EMAIL="your-test-faculty-address"
 $env:TEST_ADMIN_EMAIL="your-test-admin-address"
@@ -96,13 +96,22 @@ Check `email_notifications` after the request. Successful rows must be `sent`; f
 
 ## 6. Schedule processing
 
-After manual testing succeeds, add these GitHub repository secrets:
+The production scheduler is `cloudflare/email-scheduler`. Its Cloudflare Cron Trigger calls the protected function every five minutes. Availability publication and request lifecycle events enter the outbox immediately. Confirmed consultations receive emails approximately one hour and 30 minutes before their start; the five-minute worker cadence is the delivery tolerance. Each invocation also drains and retries the outbox, so a second production reminder schedule is not required.
 
-```text
-SUPABASE_EMAIL_FUNCTION_URL
-EMAIL_CRON_SECRET
-```
+Configure the Worker secrets `SUPABASE_EMAIL_FUNCTION_URL` and `EMAIL_CRON_SECRET`, deploy it, and confirm `*/5 * * * *` appears under Cron Triggers. The GitHub `Email notification worker` is manual-only and is retained strictly as an emergency backup during a Cloudflare incident.
 
-The `Email notification worker` workflow calls the protected function every five minutes. Availability publication and request lifecycle events enter the outbox immediately. Confirmed consultations receive emails approximately one hour and 30 minutes before their start; the five-minute worker cadence is the delivery tolerance. Each invocation also drains/retries the outbox, so a second reminder schedule is not required. Run the workflow manually once and confirm queued rows become `sent` before enabling pilot email expectations.
+Before pilot testing, inspect Cloudflare Cron Events and confirm successful invocations five minutes apart, then verify that due rows in `email_notifications` transition to `sent`.
 
-GitHub schedules can be delayed during high load. If the Product Owner requires exact-time delivery, move the same authenticated request to Supabase Cron while keeping the function and secret unchanged.
+## 7. Dedicated lifecycle test
+
+The manual `Pilot end-to-end lifecycle` GitHub workflow resets three dedicated test identities, books through the student UI, approves and completes through the faculty UI, submits a review, verifies the administrator report, invokes the protected email worker, and confirms the related outbox rows were sent. Configure the `pilot-e2e` GitHub environment with the secrets named in `.github/workflows/pilot-e2e.yml`. Every test email must contain `facultyconnect-e2e` so the guarded seeder cannot be pointed at genuine pilot users.
+
+## 8. Resend delivery monitoring
+
+Apply `supabase/resend_delivery_webhooks_migration.sql`, deploy `resend-webhook`, and add its `RESEND_WEBHOOK_SECRET` Supabase Function secret. In Resend, create a webhook pointing to `https://YOUR_PROJECT_REF.supabase.co/functions/v1/resend-webhook` for `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, and `email.failed`. The function verifies the raw request signature, ignores webhook replays by `svix-id`, and stores provider delivery evidence without exposing the signing secret to the browser.
+
+## 9. Abuse protection
+
+Create one Cloudflare Turnstile widget for `clsufacultyconnect.com` and `www.clsufacultyconnect.com`. Add its public site key to Vercel as `VITE_TURNSTILE_SITE_KEY` and its secret to the Vercel chatbot service as `TURNSTILE_SECRET_KEY`. In Supabase Authentication captcha protection, select Cloudflare Turnstile and add the same secret so login, registration, and password recovery reject unverified requests server-side. The chatbot additionally applies an instance-level request limit configured by `CHAT_RATE_LIMIT_PER_MINUTE`; add a Cloudflare rate-limit rule for `/api/chat` for cross-instance enforcement.
+
+After enabling captcha, verify all three authentication actions and one chatbot question on both desktop and mobile. Do not enable the Supabase captcha switch before the matching Vercel site key is deployed, or authentication will be blocked.

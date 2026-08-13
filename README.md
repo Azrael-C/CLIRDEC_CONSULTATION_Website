@@ -61,8 +61,8 @@ Email is sent from the backend, never from React. The database trigger places me
 
 1. Create a free Resend account and verify the sender domain/address.
 2. Deploy `supabase/functions/send-email-notifications`.
-3. Add these function secrets in Supabase: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_CRON_SECRET`, and `PORTAL_URL`. Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the function.
-4. Add `SUPABASE_EMAIL_FUNCTION_URL` and `EMAIL_CRON_SECRET` as GitHub repository secrets. The scheduled worker sends `Authorization: Bearer <EMAIL_CRON_SECRET>` every five minutes and also queues due reminders.
+3. Add these function secrets in Supabase: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_CRON_SECRET`, and `PORTAL_URL`. Supabase supplies its server-side database credentials to the Edge Function.
+4. Configure and deploy `cloudflare/email-scheduler` with `SUPABASE_EMAIL_FUNCTION_URL` and `EMAIL_CRON_SECRET`. Cloudflare is the production five-minute scheduler; GitHub is a manual emergency backup only.
 5. Test request submission, approval, decline, cancellation, and reminder emails with a Gmail address before the pilot.
 
 The initial events are request receipt, faculty decision, schedule change/cancellation, and appointment reminder. Students can disable optional email notifications in their profile; legally or operationally required notices should be defined with the Product Owner before implementation.

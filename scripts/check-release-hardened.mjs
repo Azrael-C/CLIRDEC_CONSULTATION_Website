@@ -16,6 +16,8 @@ const registrationMigration = read("supabase/student_email_domain_registration_m
 const completeEmailMigration = read("supabase/complete_email_notifications_migration.sql");
 const chatbotTrainingMigration = read("supabase/chatbot_training_migration.sql");
 const chatbot = read("chatbot/app.py");
+const resendWebhook = read("supabase/functions/resend-webhook/index.ts");
+const deliveryMigration = read("supabase/resend_delivery_webhooks_migration.sql");
 const app = read("src/App.tsx");
 const backend = read("src/backend.ts");
 const styles = read("src/figma.css");
@@ -71,6 +73,17 @@ assertIncludes(app, "Train the consultation chatbot", "Administrator chatbot tra
 assertIncludes(app, "Test the live chatbot", "Administrator chatbot test console");
 assertIncludes(backend, "normalizeTrainingPhrases", "Training phrase input validation");
 assertIncludes(chatbot, "training_phrases", "spaCy approved phrase retrieval");
+assertIncludes(chatbot, 'os.getenv("SUPABASE_SECRET_KEY")', "Server-only chatbot database credential");
+assertIncludes(chatbot, "if not items:", "Empty chatbot result fallback");
+if (chatbot.includes('_cache = (time.monotonic() + 60, [], "bundled workflow answers")')) {
+  throw new Error("Failed chatbot retrieval still poisons the global knowledge cache.");
+}
+assertIncludes(chatbot, "TURNSTILE_SECRET_KEY", "Chatbot Turnstile validation");
+assertIncludes(chatbot, "CHAT_RATE_LIMIT", "Chatbot request rate limit");
+assertIncludes(resendWebhook, "new Webhook(webhookSecret).verify", "Resend webhook signature verification");
+assertIncludes(resendWebhook, 'eventError?.code === "23505"', "Resend webhook replay protection");
+assertIncludes(deliveryMigration, "provider_email_id", "Email provider identifier storage");
+assertIncludes(deliveryMigration, "email_delivery_events", "Email delivery event evidence");
 assertIncludes(styles, "padding-bottom: calc(6.25rem + env(safe-area-inset-bottom))", "Mobile drawer bottom clearance");
 assertIncludes(functionConfig, "verify_jwt = false", "Custom-secret worker configuration");
 for (const sql of [schema, reviewMigration]) {
