@@ -73,7 +73,7 @@ assertIncludes(backend, '.gt("starts_at", now)', "Future availability visibility
 assertIncludes(backend, "Date.now() + MINIMUM_NOTICE_MS", "Minimum-notice booking gate");
 assertIncludes(schema, "training_phrases text[]", "Chatbot training phrase storage");
 assertIncludes(chatbotTrainingMigration, "faq_training_phrases_limit", "Training phrase database limit");
-assertIncludes(app, "Train the consultation chatbot", "Administrator chatbot training page");
+assertIncludes(app, "Build, verify, and improve Consult AI", "Administrator chatbot training page");
 assertIncludes(app, "Test the live chatbot", "Administrator chatbot test console");
 assertIncludes(backend, "normalizeTrainingPhrases", "Training phrase input validation");
 assertIncludes(chatbot, "training_phrases", "spaCy approved phrase retrieval");
