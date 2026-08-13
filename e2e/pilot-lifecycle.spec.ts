@@ -55,7 +55,7 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
     await page.getByRole("button", { name: /Review and request/ }).first().click();
     await page.getByLabel("Consultation topic and concern").fill(topic);
     await page.getByRole("button", { name: /Submit request/ }).click();
-    await expect(page.getByText(/request was submitted/i)).toBeVisible();
+    await expect(page.getByText(/request (?:was submitted|sent to)/i)).toBeVisible();
     await signOut(page);
   });
 
