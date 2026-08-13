@@ -55,6 +55,16 @@ function escapeTextBlock(value: unknown) {
   return escapeHtml(value).replaceAll("\n", "<br>");
 }
 
+function errorMessage(cause: unknown) {
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === "string") return cause;
+  try {
+    return JSON.stringify(cause);
+  } catch {
+    return String(cause);
+  }
+}
+
 function respond(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers });
 }
@@ -324,7 +334,7 @@ Deno.serve(async (request) => {
           status: terminal ? "failed" : "queued",
           processing_started_at: null,
           scheduled_for: retryAt.toISOString(),
-          last_error: String(cause).slice(0, 1000),
+          last_error: errorMessage(cause).slice(0, 1000),
         })
         .eq("id", item.id);
       failed += 1;
