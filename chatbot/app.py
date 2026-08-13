@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import spacy
@@ -45,10 +45,15 @@ SUPPORT_CONTACT = os.getenv(
 )
 
 
+API_DOCS_ENABLED = os.getenv("ENABLE_API_DOCS", "").strip().lower() in {"1", "true", "yes"}
+
 app = FastAPI(
     title="CLSU FacultyConnect NLP Assistant",
     description="Source-backed consultation guidance using FastAPI and spaCy.",
     version="1.0.0",
+    docs_url="/docs" if API_DOCS_ENABLED else None,
+    redoc_url="/redoc" if API_DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if API_DOCS_ENABLED else None,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -218,9 +223,27 @@ _chat_rate_lock = asyncio.Lock()
 CHAT_RATE_LIMIT = max(1, int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20")))
 
 
+def _turnstile_required() -> bool:
+    configured = os.getenv("REQUIRE_TURNSTILE")
+    if configured is not None:
+        return configured.strip().lower() in {"1", "true", "yes"}
+    return os.getenv("VERCEL_ENV", "").strip().lower() == "production"
+
+
 def _fetch_json(url: str, headers: dict[str, str], params: dict[str, str]) -> list[dict[str, Any]]:
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    is_supabase = parsed.scheme == "https" and hostname.endswith(".supabase.co")
+    is_local_development = (
+        parsed.scheme == "http"
+        and hostname in {"localhost", "127.0.0.1"}
+        and os.getenv("VERCEL_ENV", "").strip().lower() != "production"
+    )
+    if not (is_supabase or is_local_development):
+        raise ValueError("SUPABASE_URL must use an approved Supabase HTTPS host")
     request = Request(f"{url}?{urlencode(params)}", headers=headers, method="GET")
-    with urlopen(request, timeout=5) as response:
+    # The URL is restricted to Supabase HTTPS or non-production localhost above.
+    with urlopen(request, timeout=5) as response:  # nosec B310
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, list):
         raise ValueError("FAQ response was not a list")
@@ -237,7 +260,8 @@ def _verify_turnstile_response(secret: str, token: str, remote_ip: str | None) -
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
-    with urlopen(request, timeout=5) as response:
+    # This request always targets Cloudflare's fixed HTTPS verification URL.
+    with urlopen(request, timeout=5) as response:  # nosec B310
         payload = json.loads(response.read().decode("utf-8"))
     return bool(payload.get("success"))
 
@@ -255,6 +279,11 @@ async def _protect_chat_request(request: FastAPIRequest, token: str | None) -> N
 
     secret = os.getenv("TURNSTILE_SECRET_KEY", "")
     if not secret:
+        if _turnstile_required():
+            raise HTTPException(
+                status_code=503,
+                detail="Chat security verification is not configured.",
+            )
         return
     if not token:
         raise HTTPException(status_code=403, detail="Complete the security check before asking a question.")

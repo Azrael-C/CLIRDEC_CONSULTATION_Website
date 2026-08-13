@@ -3,3 +3,14 @@ verify_jwt = false
 
 [functions.resend-webhook]
 verify_jwt = false
+
+# Used by the local Supabase stack. Hosted projects must copy this template into
+# Authentication -> Email Templates -> Reset password in the Supabase dashboard.
+[auth.email.template.recovery]
+subject = "Reset your CLSU FacultyConnect password"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.notification.password_changed]
+enabled = true
+subject = "Your CLSU FacultyConnect password was changed"
+content_path = "./supabase/templates/password-changed.html"

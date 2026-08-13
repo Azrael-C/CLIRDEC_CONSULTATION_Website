@@ -100,6 +100,7 @@ type AuthAction = "login" | "signup" | "reset";
 
 const STUDENT_EMAIL_DOMAINS = ["gmail.com", "clsu2.edu.ph"] as const;
 const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
+const PRODUCTION_SECURITY_READY = !import.meta.env.PROD || Boolean(TURNSTILE_SITE_KEY);
 
 async function requestChatbotReply(message: string, captchaToken?: string): Promise<ChatbotReply> {
   const { data } = await supabase.auth.getSession();
@@ -419,6 +420,10 @@ function App() {
       );
       return;
     }
+    if (!PRODUCTION_SECURITY_READY) {
+      setNotice("Security verification is temporarily unavailable. Please contact MISO.");
+      return;
+    }
     const f = new FormData(e.currentTarget);
     const email = String(f.get("email"));
     const password = String(f.get("password"));
@@ -437,6 +442,10 @@ function App() {
       setNotice(
         "The production database is not configured yet. Add the Supabase environment variables in Vercel.",
       );
+      return;
+    }
+    if (!PRODUCTION_SECURITY_READY) {
+      setNotice("Security verification is temporarily unavailable. Please contact MISO.");
       return;
     }
     const f = new FormData(e.currentTarget);
@@ -514,6 +523,10 @@ function App() {
       setNotice(
         "Password recovery requires the production Supabase configuration.",
       );
+      return;
+    }
+    if (!PRODUCTION_SECURITY_READY) {
+      setNotice("Security verification is temporarily unavailable. Please contact MISO.");
       return;
     }
     if (!email || !email.includes("@")) {
@@ -1109,6 +1122,12 @@ function ProductionAuth({
               <span>{notice}</span>
             </div>
           )}
+          {!PRODUCTION_SECURITY_READY && (
+            <div className="form-notice error" role="alert">
+              <b>Security verification unavailable</b>
+              <span>Authentication is paused until MISO restores the security check.</span>
+            </div>
+          )}
           {creating ? (
             <div className="signup-fields">
               <label>
@@ -1335,6 +1354,7 @@ function ProductionAuth({
             className="primary"
             disabled={
               submittingAuth ||
+              !PRODUCTION_SECURITY_READY ||
               (Boolean(TURNSTILE_SITE_KEY) && !captchaToken) ||
               (creating && (!passwordValid || !passwordsMatch))
             }
@@ -1352,6 +1372,7 @@ function ProductionAuth({
               <button
                 type="button"
                 className="auth-option"
+                disabled={!PRODUCTION_SECURITY_READY}
                 onClick={(event) => {
                   const form = event.currentTarget.form;
                   if (form)
@@ -2454,6 +2475,10 @@ function Chat({
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaGeneration, setCaptchaGeneration] = useState(0);
   const submit = async (event: FormEvent) => {
+    if (!PRODUCTION_SECURITY_READY) {
+      event.preventDefault();
+      return;
+    }
     if (TURNSTILE_SITE_KEY && !captchaToken) {
       event.preventDefault();
       return;
@@ -2480,6 +2505,12 @@ function Chat({
         <span>✓ Safe fallback and staff referral</span>
       </div>
       <section className="chatbot">
+        {!PRODUCTION_SECURITY_READY && (
+          <div className="form-notice error" role="alert">
+            <b>Security verification unavailable</b>
+            <span>The chatbot is paused until MISO restores the security check.</span>
+          </div>
+        )}
         <div className="chat-head">
           <span className="ai-mark">✦</span>
           <div>
@@ -2535,6 +2566,7 @@ function Chat({
             minLength={2}
             maxLength={500}
             required
+            disabled={!PRODUCTION_SECURITY_READY}
           />
           {TURNSTILE_SITE_KEY && (
             <Turnstile
@@ -2546,7 +2578,7 @@ function Chat({
               onError={() => setCaptchaToken("")}
             />
           )}
-          <button className="primary">Send →</button>
+          <button className="primary" disabled={!PRODUCTION_SECURITY_READY}>Send →</button>
         </form>
         <footer className="chat-source">
           Answers must be traceable to an approved FAQ, office advisory, service

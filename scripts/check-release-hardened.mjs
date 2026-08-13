@@ -18,9 +18,13 @@ const chatbotTrainingMigration = read("supabase/chatbot_training_migration.sql")
 const chatbot = read("chatbot/app.py");
 const resendWebhook = read("supabase/functions/resend-webhook/index.ts");
 const deliveryMigration = read("supabase/resend_delivery_webhooks_migration.sql");
+const recoveryEmail = read("supabase/templates/recovery.html");
+const passwordChangedEmail = read("supabase/templates/password-changed.html");
+const securityContact = read("public/.well-known/security.txt");
 const app = read("src/App.tsx");
 const backend = read("src/backend.ts");
 const styles = read("src/figma.css");
+const vercel = read("vercel.json");
 
 for (const sql of [schema, migration]) {
   assertIncludes(sql, "gmail\\.com|clsu2\\.edu\\.ph", "Student email-domain registration SQL");
@@ -80,12 +84,23 @@ if (chatbot.includes('_cache = (time.monotonic() + 60, [], "bundled workflow ans
 }
 assertIncludes(chatbot, "TURNSTILE_SECRET_KEY", "Chatbot Turnstile validation");
 assertIncludes(chatbot, "CHAT_RATE_LIMIT", "Chatbot request rate limit");
+assertIncludes(chatbot, "_turnstile_required", "Production chatbot fail-closed protection");
+assertIncludes(chatbot, 'docs_url="/docs" if API_DOCS_ENABLED else None', "Production API documentation control");
+assertIncludes(app, "PRODUCTION_SECURITY_READY", "Production authentication fail-closed protection");
+assertIncludes(vercel, "Cross-Origin-Opener-Policy", "Cross-origin opener isolation header");
 assertIncludes(resendWebhook, "new Webhook(webhookSecret).verify", "Resend webhook signature verification");
 assertIncludes(resendWebhook, 'eventError?.code === "23505"', "Resend webhook replay protection");
 assertIncludes(deliveryMigration, "provider_email_id", "Email provider identifier storage");
 assertIncludes(deliveryMigration, "email_delivery_events", "Email delivery event evidence");
 assertIncludes(styles, "padding-bottom: calc(6.25rem + env(safe-area-inset-bottom))", "Mobile drawer bottom clearance");
 assertIncludes(functionConfig, "verify_jwt = false", "Custom-secret worker configuration");
+assertIncludes(functionConfig, "[auth.email.template.recovery]", "Local recovery email configuration");
+assertIncludes(recoveryEmail, "{{ .ConfirmationURL }}", "Secure recovery link");
+assertIncludes(recoveryEmail, "{{ .Email }}", "Recovery email recipient context");
+assertIncludes(recoveryEmail, "If you did not request this change", "Recovery email safety guidance");
+assertIncludes(functionConfig, "[auth.email.notification.password_changed]", "Password-change notification configuration");
+assertIncludes(passwordChangedEmail, "If you did not", "Password-change security guidance");
+assertIncludes(securityContact, "security/advisories/new", "Private vulnerability reporting contact");
 for (const sql of [schema, reviewMigration]) {
   assertIncludes(sql, "consultation_reviews", "Consultation review storage");
   assertIncludes(sql, "submit_consultation_review", "Secure review submission");
