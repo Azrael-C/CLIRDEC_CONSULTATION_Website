@@ -27,7 +27,7 @@ For the Vercel Services deployment, leave `VITE_CHATBOT_URL` unset so the fronte
 
 `vercel.json` deploys the Vite frontend and `chatbot/app.py` as two Vercel Services in one project.
 
-1. Configure `SUPABASE_URL` and `SUPABASE_SECRET_KEY` for the API service. The secret must be scoped to the server-side chatbot service and must never use a `VITE_` prefix. `SUPABASE_SERVICE_ROLE_KEY` remains a temporary legacy fallback only while the exposed legacy credential is being rotated.
+1. Configure `SUPABASE_URL` and a scoped `SUPABASE_SECRET_KEY` for the API service. The secret must remain server-side and must never use a `VITE_` prefix.
 2. Keep `ALLOWED_ORIGINS` set to the production portal URL and approved local origins.
 3. Confirm `/api/health` and `/api/knowledge-status` return successfully.
 4. Confirm `/api/chat` answers a booking question, safely escalates a sensitive question, and reports an approved FAQ source when authenticated.
@@ -71,7 +71,7 @@ EMAIL_CRON_SECRET
 PORTAL_URL
 ```
 
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are supplied by the Supabase Edge Function environment.
+`SUPABASE_URL` is supplied by the Supabase Edge Function environment. Store the scoped Edge Function key in the `edge_functions` member of the `SUPABASE_SECRET_KEYS` JSON secret.
 
 Deploy the worker:
 

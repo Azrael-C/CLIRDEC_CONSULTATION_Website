@@ -364,7 +364,7 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
         return cached, source
 
     supabase_url = (os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL", "")).rstrip("/")
-    server_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    server_key = os.getenv("SUPABASE_SECRET_KEY") or ""
     if not supabase_url or not server_key:
         return [], "bundled workflow answers"
 

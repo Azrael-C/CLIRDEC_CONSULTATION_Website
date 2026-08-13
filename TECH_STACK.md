@@ -126,11 +126,13 @@ VITE_CHATBOT_URL
 Server-only secrets:
 
 ```text
-SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_SECRET_KEY
+SUPABASE_SECRET_KEYS
 RESEND_API_KEY
 EMAIL_FROM
 EMAIL_CRON_SECRET
 PORTAL_URL
+TURNSTILE_SECRET_KEY
 ```
 
 Never prefix server secrets with `VITE_`, commit them to GitHub, or place them in browser code.
