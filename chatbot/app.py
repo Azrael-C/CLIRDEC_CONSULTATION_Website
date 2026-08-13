@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict, deque
+import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -21,7 +24,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import spacy
-from fastapi import FastAPI, Header, HTTPException, Request as FastAPIRequest
+from fastapi import FastAPI, Header, HTTPException, Request as FastAPIRequest, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -59,7 +62,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins(),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Turnstile-Token"],
 )
 
@@ -215,12 +218,22 @@ class KnowledgeStatus(BaseModel):
     cache_seconds_remaining: int
 
 
+class ChatSessionStatus(BaseModel):
+    trusted: bool
+    expires_in_seconds: int = 0
+
+
 _cache: tuple[float, list[KnowledgeItem], str] = (0.0, [], "bundled")
 _cache_lock = asyncio.Lock()
 CACHE_TTL_SECONDS = max(30, int(os.getenv("FAQ_CACHE_SECONDS", "300")))
 _chat_requests: dict[str, deque[float]] = defaultdict(deque)
 _chat_rate_lock = asyncio.Lock()
 CHAT_RATE_LIMIT = max(1, int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20")))
+CHAT_TRUST_COOKIE = "fc_chat_trust"
+CHAT_TRUST_TTL_SECONDS = min(
+    3600,
+    max(300, int(os.getenv("CHAT_TRUST_TTL_SECONDS", "1800"))),
+)
 
 
 def _turnstile_required() -> bool:
@@ -228,6 +241,77 @@ def _turnstile_required() -> bool:
     if configured is not None:
         return configured.strip().lower() in {"1", "true", "yes"}
     return os.getenv("VERCEL_ENV", "").strip().lower() == "production"
+
+
+def _chat_trust_secret() -> str:
+    """Use a dedicated signer when configured, otherwise derive from Turnstile."""
+    return os.getenv("CHAT_TRUST_SECRET", "") or os.getenv("TURNSTILE_SECRET_KEY", "")
+
+
+def _chat_cookie_secure() -> bool:
+    return os.getenv("VERCEL_ENV", "").strip().lower() == "production"
+
+
+def _sign_chat_trust(expiry: int, nonce: str, secret: str) -> str:
+    message = f"v1.{expiry}.{nonce}".encode("utf-8")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        b"facultyconnect-chat-trust:" + message,
+        hashlib.sha256,
+    ).hexdigest()
+    return f"v1.{expiry}.{nonce}.{signature}"
+
+
+def _new_chat_trust_cookie(secret: str) -> tuple[str, int]:
+    expiry = int(time.time()) + CHAT_TRUST_TTL_SECONDS
+    return _sign_chat_trust(expiry, secrets.token_urlsafe(18), secret), expiry
+
+
+def _chat_trust_expiry(value: str | None, secret: str) -> int:
+    if not value or not secret:
+        return 0
+    try:
+        version, expiry_text, nonce, signature = value.split(".", 3)
+        expiry = int(expiry_text)
+    except (TypeError, ValueError):
+        return 0
+    if version != "v1" or not nonce or expiry <= int(time.time()):
+        return 0
+    expected = _sign_chat_trust(expiry, nonce, secret).rsplit(".", 1)[-1]
+    return expiry if hmac.compare_digest(signature, expected) else 0
+
+
+def _chat_trust_is_valid(value: str | None, secret: str) -> bool:
+    return _chat_trust_expiry(value, secret) > 0
+
+
+def _set_chat_trust_cookie(response: Response, value: str) -> None:
+    response.set_cookie(
+        key=CHAT_TRUST_COOKIE,
+        value=value,
+        max_age=CHAT_TRUST_TTL_SECONDS,
+        httponly=True,
+        secure=_chat_cookie_secure(),
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_chat_trust_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=CHAT_TRUST_COOKIE,
+        httponly=True,
+        secure=_chat_cookie_secure(),
+        samesite="lax",
+        path="/",
+    )
+
+
+def _expired_chat_cookie_header() -> str:
+    secure = "; Secure" if _chat_cookie_secure() else ""
+    return (
+        f"{CHAT_TRUST_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=lax{secure}"
+    )
 
 
 def _fetch_json(url: str, headers: dict[str, str], params: dict[str, str]) -> list[dict[str, Any]]:
@@ -266,7 +350,8 @@ def _verify_turnstile_response(secret: str, token: str, remote_ip: str | None) -
     return bool(payload.get("success"))
 
 
-async def _protect_chat_request(request: FastAPIRequest, token: str | None) -> None:
+async def _protect_chat_request(request: FastAPIRequest, token: str | None) -> bool:
+    """Rate-limit every request and return True only after a new CAPTCHA pass."""
     client_key = request.client.host if request.client else "unknown"
     now = time.monotonic()
     async with _chat_rate_lock:
@@ -274,25 +359,42 @@ async def _protect_chat_request(request: FastAPIRequest, token: str | None) -> N
         while attempts and attempts[0] <= now - 60:
             attempts.popleft()
         if len(attempts) >= CHAT_RATE_LIMIT:
-            raise HTTPException(status_code=429, detail="Too many chatbot requests. Try again shortly.")
+            raise HTTPException(
+                status_code=429,
+                detail="Too many chatbot requests. Complete a new security check after the cooldown.",
+                headers={"Set-Cookie": _expired_chat_cookie_header()},
+            )
         attempts.append(now)
 
     secret = os.getenv("TURNSTILE_SECRET_KEY", "")
+    trust_secret = _chat_trust_secret()
+    cookies = getattr(request, "cookies", {})
+    if _chat_trust_is_valid(cookies.get(CHAT_TRUST_COOKIE), trust_secret):
+        return False
     if not secret:
         if _turnstile_required():
             raise HTTPException(
                 status_code=503,
                 detail="Chat security verification is not configured.",
             )
-        return
+        return False
     if not token:
-        raise HTTPException(status_code=403, detail="Complete the security check before asking a question.")
+        raise HTTPException(
+            status_code=403,
+            detail="Complete the security check before asking a question.",
+            headers={"Set-Cookie": _expired_chat_cookie_header()},
+        )
     try:
         valid = await asyncio.to_thread(_verify_turnstile_response, secret, token, client_key)
     except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
         raise HTTPException(status_code=503, detail="The security check is temporarily unavailable.")
     if not valid:
-        raise HTTPException(status_code=403, detail="The security check was not accepted.")
+        raise HTTPException(
+            status_code=403,
+            detail="The security check was not accepted.",
+            headers={"Set-Cookie": _expired_chat_cookie_header()},
+        )
+    return True
 
 
 def _tokens(text: str) -> set[str]:
@@ -472,15 +574,47 @@ async def knowledge_status(authorization: str | None = Header(default=None)) -> 
     return KnowledgeStatus(source=source, approved_entries=len(items), cache_seconds_remaining=remaining)
 
 
+@app.get("/api/chat/session", response_model=ChatSessionStatus)
+@app.get("/chat/session", response_model=ChatSessionStatus)
+def chat_session_status(http_request: FastAPIRequest, response: Response) -> ChatSessionStatus:
+    value = http_request.cookies.get(CHAT_TRUST_COOKIE)
+    expiry = _chat_trust_expiry(value, _chat_trust_secret())
+    if value and not expiry:
+        _clear_chat_trust_cookie(response)
+    return ChatSessionStatus(
+        trusted=expiry > 0,
+        expires_in_seconds=max(0, expiry - int(time.time())),
+    )
+
+
+@app.delete("/api/chat/session", status_code=204)
+@app.delete("/chat/session", status_code=204)
+def clear_chat_session() -> Response:
+    response = Response(status_code=204)
+    _clear_chat_trust_cookie(response)
+    return response
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
     http_request: FastAPIRequest,
+    response: Response,
     authorization: str | None = Header(default=None),
     x_turnstile_token: str | None = Header(default=None),
 ) -> ChatResponse:
-    await _protect_chat_request(http_request, x_turnstile_token)
+    newly_verified = await _protect_chat_request(http_request, x_turnstile_token)
+    if newly_verified:
+        trust_secret = _chat_trust_secret()
+        if not trust_secret:
+            raise HTTPException(
+                status_code=503,
+                detail="Chat session signing is not configured.",
+            )
+        trust_cookie, expiry = _new_chat_trust_cookie(trust_secret)
+        _set_chat_trust_cookie(response, trust_cookie)
+        response.headers["X-Chat-Trusted-Until"] = str(expiry)
     knowledge, _ = await _load_approved_knowledge(authorization)
     return build_response(request.message, knowledge)
 

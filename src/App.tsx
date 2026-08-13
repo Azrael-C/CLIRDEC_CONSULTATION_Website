@@ -96,11 +96,65 @@ type ChatbotReply = {
   suggestions?: string[];
 };
 
+type ChatAskResult = "ok" | "challenge" | "error";
+
 type AuthAction = "login" | "signup" | "reset";
 
 const STUDENT_EMAIL_DOMAINS = ["gmail.com", "clsu2.edu.ph"] as const;
 const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
 const PRODUCTION_SECURITY_READY = !import.meta.env.PROD || Boolean(TURNSTILE_SITE_KEY);
+
+function chatbotBaseUrl() {
+  const configuredBase = String(import.meta.env.VITE_CHATBOT_URL || "").replace(
+    /\/$/,
+    "",
+  );
+  return configuredBase || (import.meta.env.PROD ? "/api" : "http://localhost:8000");
+}
+
+class ChatbotRequestError extends Error {
+  status: number;
+
+  constructor(status: number) {
+    super(`Assistant returned ${status}`);
+    this.name = "ChatbotRequestError";
+    this.status = status;
+  }
+}
+
+type ChatTrustState = { trusted: boolean; expiresInSeconds: number };
+
+async function getChatTrustStatus(): Promise<ChatTrustState> {
+  try {
+    const response = await fetch(`${chatbotBaseUrl()}/chat/session`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!response.ok) return { trusted: false, expiresInSeconds: 0 };
+    const payload = (await response.json()) as {
+      trusted?: boolean;
+      expires_in_seconds?: number;
+    };
+    return {
+      trusted: Boolean(payload.trusted),
+      expiresInSeconds: Math.max(0, Number(payload.expires_in_seconds) || 0),
+    };
+  } catch {
+    return { trusted: false, expiresInSeconds: 0 };
+  }
+}
+
+async function clearChatTrustSession() {
+  try {
+    await fetch(`${chatbotBaseUrl()}/chat/session`, {
+      method: "DELETE",
+      credentials: "include",
+      cache: "no-store",
+    });
+  } catch {
+    // Supabase sign-out must still complete if the chatbot API is unavailable.
+  }
+}
 
 async function requestChatbotReply(message: string, captchaToken?: string): Promise<ChatbotReply> {
   const { data } = await supabase.auth.getSession();
@@ -110,18 +164,13 @@ async function requestChatbotReply(message: string, captchaToken?: string): Prom
   if (data.session?.access_token)
     headers.Authorization = `Bearer ${data.session.access_token}`;
   if (captchaToken) headers["X-Turnstile-Token"] = captchaToken;
-  const configuredBase = String(import.meta.env.VITE_CHATBOT_URL || "").replace(
-    /\/$/,
-    "",
-  );
-  const chatbotBase =
-    configuredBase || (import.meta.env.PROD ? "/api" : "http://localhost:8000");
-  const response = await fetch(`${chatbotBase}/chat`, {
+  const response = await fetch(`${chatbotBaseUrl()}/chat`, {
     method: "POST",
     headers,
+    credentials: "include",
     body: JSON.stringify({ message }),
   });
-  if (!response.ok) throw new Error(`Assistant returned ${response.status}`);
+  if (!response.ok) throw new ChatbotRequestError(response.status);
   return response.json() as Promise<ChatbotReply>;
 }
 
@@ -304,6 +353,7 @@ function App() {
           setUser(null);
           setRecoveringPassword(false);
           setAuthLoading(false);
+          void clearChatTrustSession();
         } else if (event === "PASSWORD_RECOVERY") {
           setRecoveringPassword(true);
           setAuthLoading(false);
@@ -562,6 +612,7 @@ function App() {
     setUser(null);
     setView("home");
     setNotice("");
+    await clearChatTrustSession();
     if (configured) await supabase.auth.signOut({ scope: "local" });
   }
   async function saveStudentProfile(values: {
@@ -717,10 +768,10 @@ function App() {
       "Choose a different published time. Your current request remains active until the replacement succeeds.",
     );
   }
-  async function ask(e: FormEvent, captchaToken?: string) {
+  async function ask(e: FormEvent, captchaToken?: string): Promise<ChatAskResult> {
     e.preventDefault();
     const q = question.trim();
-    if (!q) return;
+    if (!q) return "error";
     setQuestion("");
     setChat((c) => [...c, { who: "you", text: q }]);
     try {
@@ -734,7 +785,11 @@ function App() {
           escalation: Boolean(d.escalation),
         },
       ]);
-    } catch {
+      return "ok";
+    } catch (cause) {
+      const challengeRequired =
+        cause instanceof ChatbotRequestError &&
+        (cause.status === 403 || cause.status === 429);
       setChat((c) => [
         ...c,
         {
@@ -743,6 +798,7 @@ function App() {
           escalation: true,
         },
       ]);
+      return challengeRequired ? "challenge" : "error";
     }
   }
   if (
@@ -2506,22 +2562,70 @@ function Chat({
   chat: ChatMessage[];
   question: string;
   setQuestion: (s: string) => void;
-  ask: (e: FormEvent, captchaToken?: string) => Promise<void>;
+  ask: (e: FormEvent, captchaToken?: string) => Promise<ChatAskResult>;
 }) {
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaGeneration, setCaptchaGeneration] = useState(0);
+  const [chatTrusted, setChatTrusted] = useState(false);
+  const [trustExpiresAt, setTrustExpiresAt] = useState(0);
+  const [trustLoading, setTrustLoading] = useState(Boolean(TURNSTILE_SITE_KEY));
+
+  useEffect(() => {
+    let active = true;
+    void getChatTrustStatus().then((status) => {
+      if (!active) return;
+      setChatTrusted(status.trusted);
+      setTrustExpiresAt(
+        status.trusted ? Date.now() + status.expiresInSeconds * 1000 : 0,
+      );
+      setTrustLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!chatTrusted || !trustExpiresAt) return;
+    const remaining = trustExpiresAt - Date.now();
+    if (remaining <= 0) {
+      setChatTrusted(false);
+      setTrustExpiresAt(0);
+      setCaptchaGeneration((value) => value + 1);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setChatTrusted(false);
+      setTrustExpiresAt(0);
+      setCaptchaGeneration((value) => value + 1);
+    }, remaining);
+    return () => window.clearTimeout(timer);
+  }, [chatTrusted, trustExpiresAt]);
+
   const submit = async (event: FormEvent) => {
     if (!PRODUCTION_SECURITY_READY) {
       event.preventDefault();
       return;
     }
-    if (TURNSTILE_SITE_KEY && !captchaToken) {
+    if (trustLoading || (TURNSTILE_SITE_KEY && !chatTrusted && !captchaToken)) {
       event.preventDefault();
       return;
     }
-    await ask(event, captchaToken || undefined);
-    setCaptchaToken("");
-    setCaptchaGeneration((value) => value + 1);
+    const result = await ask(event, captchaToken || undefined);
+    if (result === "ok" && captchaToken) {
+      const status = await getChatTrustStatus();
+      setChatTrusted(status.trusted);
+      setTrustExpiresAt(
+        status.trusted ? Date.now() + status.expiresInSeconds * 1000 : 0,
+      );
+    } else if (result === "challenge") {
+      setChatTrusted(false);
+      setTrustExpiresAt(0);
+    }
+    if (captchaToken || result === "challenge") {
+      setCaptchaToken("");
+      setCaptchaGeneration((value) => value + 1);
+    }
   };
   return (
     <>
@@ -2604,7 +2708,7 @@ function Chat({
             required
             disabled={!PRODUCTION_SECURITY_READY}
           />
-          {TURNSTILE_SITE_KEY && (
+          {TURNSTILE_SITE_KEY && !trustLoading && !chatTrusted && (
             <div className={`turnstile-field chat-turnstile${captchaToken ? " is-complete" : ""}`}>
               <div className="turnstile-widget-shell" aria-hidden={Boolean(captchaToken)}>
                 <Turnstile
@@ -2624,7 +2728,18 @@ function Chat({
               )}
             </div>
           )}
-          <button className="primary" disabled={!PRODUCTION_SECURITY_READY}>Send →</button>
+          {chatTrusted && (
+            <p className="chat-trust-active" role="status">
+              <span aria-hidden="true">✓</span>
+              Protected chat session active
+            </p>
+          )}
+          <button
+            className="primary"
+            disabled={!PRODUCTION_SECURITY_READY || trustLoading}
+          >
+            Send →
+          </button>
         </form>
         <footer className="chat-source">
           Answers must be traceable to an approved FAQ, office advisory, service

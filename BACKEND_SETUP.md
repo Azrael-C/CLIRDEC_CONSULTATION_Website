@@ -112,7 +112,9 @@ Apply `supabase/resend_delivery_webhooks_migration.sql`, deploy `resend-webhook`
 
 ## 9. Abuse protection
 
-Create one Cloudflare Turnstile widget for `clsufacultyconnect.com` and `www.clsufacultyconnect.com`. Add its public site key to Vercel as `VITE_TURNSTILE_SITE_KEY` and its secret to the Vercel chatbot service as `TURNSTILE_SECRET_KEY`. In Supabase Authentication captcha protection, select Cloudflare Turnstile and add the same secret so login, registration, and password recovery reject unverified requests server-side. The chatbot additionally applies an instance-level request limit configured by `CHAT_RATE_LIMIT_PER_MINUTE`; add a Cloudflare rate-limit rule for `/api/chat` for cross-instance enforcement.
+Create one Cloudflare Turnstile widget for `clsufacultyconnect.com` and `www.clsufacultyconnect.com`. Add its public site key to Vercel as `VITE_TURNSTILE_SITE_KEY` and its secret to the Vercel chatbot service as `TURNSTILE_SECRET_KEY`. In Supabase Authentication captcha protection, select Cloudflare Turnstile and add the same secret so login, registration, and password recovery reject unverified requests server-side. The chatbot requires Turnstile only for the first message, then issues a signed, HTTP-only trusted-chat cookie for `CHAT_TRUST_TTL_SECONDS` (30 minutes by default). Every message remains subject to `CHAT_RATE_LIMIT_PER_MINUTE`; exceeding the limit revokes the trusted window and requires a new challenge after the cooldown. Add a Cloudflare rate-limit rule for `/api/chat` for cross-instance enforcement.
+
+`CHAT_TRUST_SECRET` is optional. When it is omitted, the API derives the chat-cookie signature from the server-only Turnstile secret with domain separation. Configure a separate long random value if MISO wants independent key rotation. Signing out calls `DELETE /api/chat/session` to clear the trusted-chat cookie immediately.
 
 Production authentication and chatbot requests fail closed when these Turnstile values are absent. Keep `REQUIRE_TURNSTILE=true` in production. API documentation is disabled by default; use `ENABLE_API_DOCS=true` only in an isolated development environment.
 

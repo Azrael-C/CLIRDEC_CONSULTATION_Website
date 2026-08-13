@@ -294,6 +294,8 @@ a:focus-visible {
 .chatbot form input { border-radius: 7px; }
 .chatbot form .chat-turnstile { flex: 0 1 320px; min-width: 250px; margin: 0; }
 .chatbot form .chat-turnstile.is-complete { flex-basis: 230px; min-width: 210px; }
+.chat-trust-active { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .45rem; align-self: center; margin: 0; padding: .55rem .7rem; border: 1px solid #c5dfce; border-radius: 999px; background: #eff8f2; color: var(--figma-green-dark); font-size: .66rem; font-weight: 800; white-space: nowrap; }
+.chat-trust-active > span { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--figma-green); color: #fff; font-size: .68rem; }
 
 /* Dialogs */
 .modal-backdrop { background: rgba(14, 28, 21, .38); backdrop-filter: blur(2px); }
@@ -1186,4 +1188,5 @@ body {
 @media (max-width: 560px) {
   .chatbot form .chat-turnstile,
   .chatbot form .chat-turnstile.is-complete { flex: 0 0 auto; min-width: 0; }
+  .chat-trust-active { align-self: flex-start; }
 }

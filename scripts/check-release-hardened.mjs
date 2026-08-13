@@ -84,6 +84,9 @@ if (chatbot.includes('_cache = (time.monotonic() + 60, [], "bundled workflow ans
 }
 assertIncludes(chatbot, "TURNSTILE_SECRET_KEY", "Chatbot Turnstile validation");
 assertIncludes(chatbot, "CHAT_RATE_LIMIT", "Chatbot request rate limit");
+assertIncludes(chatbot, "CHAT_TRUST_COOKIE", "Signed chatbot trust window");
+assertIncludes(chatbot, "httponly=True", "HTTP-only chatbot trust cookie");
+assertIncludes(chatbot, "_expired_chat_cookie_header", "Chat trust revocation on security rejection");
 assertIncludes(chatbot, "_turnstile_required", "Production chatbot fail-closed protection");
 assertIncludes(chatbot, 'docs_url="/docs" if API_DOCS_ENABLED else None', "Production API documentation control");
 assertIncludes(app, "PRODUCTION_SECURITY_READY", "Production authentication fail-closed protection");

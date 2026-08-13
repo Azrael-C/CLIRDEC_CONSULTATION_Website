@@ -133,6 +133,69 @@ class AssistantTests(unittest.TestCase):
                 asyncio.run(app._protect_chat_request(request, None))
         self.assertEqual(raised.exception.status_code, 503)
 
+    def test_first_turnstile_pass_creates_trusted_chat_window(self):
+        request = type(
+            "Request",
+            (),
+            {
+                "client": type("Client", (), {"host": "203.0.113.11"})(),
+                "cookies": {},
+            },
+        )()
+        app._chat_requests.clear()
+        with patch.dict(os.environ, {"TURNSTILE_SECRET_KEY": "server-secret"}, clear=True), patch.object(
+            app,
+            "_verify_turnstile_response",
+            return_value=True,
+        ):
+            newly_verified = asyncio.run(app._protect_chat_request(request, "valid-token"))
+            cookie, expiry = app._new_chat_trust_cookie("server-secret")
+        self.assertTrue(newly_verified)
+        self.assertGreater(expiry, int(app.time.time()))
+        self.assertTrue(app._chat_trust_is_valid(cookie, "server-secret"))
+
+    def test_trusted_chat_window_skips_repeat_turnstile_but_keeps_rate_limit(self):
+        cookie, _ = app._new_chat_trust_cookie("server-secret")
+        request = type(
+            "Request",
+            (),
+            {
+                "client": type("Client", (), {"host": "203.0.113.12"})(),
+                "cookies": {app.CHAT_TRUST_COOKIE: cookie},
+            },
+        )()
+        app._chat_requests.clear()
+        with patch.dict(os.environ, {"TURNSTILE_SECRET_KEY": "server-secret"}, clear=True), patch.object(
+            app,
+            "_verify_turnstile_response",
+        ) as verify:
+            newly_verified = asyncio.run(app._protect_chat_request(request, None))
+        self.assertFalse(newly_verified)
+        verify.assert_not_called()
+        self.assertEqual(len(app._chat_requests["203.0.113.12"]), 1)
+
+    def test_rate_limit_revokes_trusted_chat_window(self):
+        cookie, _ = app._new_chat_trust_cookie("server-secret")
+        request = type(
+            "Request",
+            (),
+            {
+                "client": type("Client", (), {"host": "203.0.113.13"})(),
+                "cookies": {app.CHAT_TRUST_COOKIE: cookie},
+            },
+        )()
+        app._chat_requests.clear()
+        with patch.dict(os.environ, {"TURNSTILE_SECRET_KEY": "server-secret"}, clear=True), patch.object(
+            app,
+            "CHAT_RATE_LIMIT",
+            1,
+        ):
+            self.assertFalse(asyncio.run(app._protect_chat_request(request, None)))
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(app._protect_chat_request(request, None))
+        self.assertEqual(raised.exception.status_code, 429)
+        self.assertIn("Max-Age=0", raised.exception.headers["Set-Cookie"])
+
 
 if __name__ == "__main__":
     unittest.main()
