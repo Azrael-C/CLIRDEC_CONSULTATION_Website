@@ -51,7 +51,7 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
 
   await test.step("student books a faculty-published time", async () => {
     await signIn(page, admin, env.TEST_STUDENT_EMAIL);
-    await page.getByRole("button", { name: "Faculty availability" }).click();
+    await page.getByRole("button", { name: "Faculty availability", exact: true }).click();
     await page.getByRole("button", { name: /Review and request/ }).first().click();
     await page.getByLabel("Consultation topic and concern").fill(topic);
     await page.getByRole("button", { name: /Submit request/ }).click();
