@@ -129,3 +129,11 @@ For the hosted project, open **Authentication -> Email Templates -> Reset passwo
 Send a reset to a dedicated test account and verify the email design, link destination, password update, and subsequent login before publishing the template to pilot users.
 
 Enable the **Password changed** security notification and apply `supabase/templates/password-changed.html` with the subject `Your CLSU FacultyConnect password was changed`. This gives users an immediate warning after an unexpected credential change.
+
+## 11. Faculty discovery and chatbot improvement loop
+
+Apply `supabase/faculty_discovery_chatbot_migration.sql`. When an administrator assigns the faculty role, the next faculty login prompts the user to complete verified expertise, subjects handled, accepted consultation topics, optional research interests, office location, and an introduction. **Skip for now** dismisses the prompt only for the current browser session; the profile remains incomplete and will not be used by the chatbot until saved.
+
+The chatbot validates the Supabase login session before returning live directory information. It combines completed, active faculty profiles with future open availability, caches successful directory reads for `FACULTY_CACHE_SECONDS` (60 seconds by default), and identifies the source as `Live CLSU faculty profiles and published availability`. Empty or failed database reads are never presented as invented faculty matches or schedules.
+
+Safe low-confidence questions are recorded through the server-only `record_chatbot_gap` function. Questions containing email addresses, long identification numbers, or sensitive-topic indicators are excluded. Administrators can review repeated gaps, start a source-backed FAQ draft, approve the final answer, or mark a gap reviewed from **Chatbot training**.

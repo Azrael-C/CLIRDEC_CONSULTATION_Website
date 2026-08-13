@@ -17,6 +17,7 @@ import {
   loadFacultyPortal,
   loadStudentPortal,
   removeFacultyAvailability,
+  resolveChatbotGap,
   rescheduleAppointment,
   submitConsultationReview,
   updateFaqEntry,
@@ -28,6 +29,7 @@ import {
   type FacultyAvailability,
   type FacultyProfile,
   type FacultyRequest,
+  type ChatbotGap,
 } from "./backend";
 import {
   addCalendarDays,
@@ -68,6 +70,8 @@ type Slot = {
   faculty_name: string;
   initials: string;
   expertise: string;
+  subjects: string[];
+  consultationTopics: string[];
   starts_at: string;
   ends_at: string;
   location: string;
@@ -85,6 +89,7 @@ type ChatMessage = {
   text: string;
   source?: string;
   escalation?: boolean;
+  suggestions?: string[];
 };
 
 type ChatbotReply = {
@@ -414,6 +419,8 @@ function App() {
             .join("")
             .slice(0, 2),
           expertise: slot.expertise.join(", ") || "General consultation",
+          subjects: slot.subjects,
+          consultationTopics: slot.consultation_topics,
           starts_at: slot.starts_at,
           ends_at: slot.ends_at,
           location: slot.location,
@@ -432,6 +439,8 @@ function App() {
             .join("")
             .slice(0, 2),
           expertise: item.expertise.join(", ") || "Consultation",
+          subjects: [],
+          consultationTopics: [],
           starts_at: item.starts_at,
           ends_at: item.ends_at,
           location: item.location,
@@ -455,7 +464,15 @@ function App() {
   const filtered = useMemo(
     () =>
       slots.filter((s) =>
-        (s.faculty_name + " " + s.expertise)
+        (
+          s.faculty_name +
+          " " +
+          s.expertise +
+          " " +
+          s.subjects.join(" ") +
+          " " +
+          s.consultationTopics.join(" ")
+        )
           .toLowerCase()
           .includes(query.toLowerCase()),
       ),
@@ -783,6 +800,7 @@ function App() {
           text: d.answer,
           source: d.source,
           escalation: Boolean(d.escalation),
+          suggestions: d.suggestions || [],
         },
       ]);
       return "ok";
@@ -2111,6 +2129,13 @@ function FindFaculty({
                 </span>
                 <h3>{s.faculty_name}</h3>
                 <p>{s.expertise}</p>
+                {s.subjects.length > 0 && (
+                  <div className="faculty-subject-chips" aria-label="Subjects handled">
+                    {s.subjects.slice(0, 3).map((subject) => (
+                      <span key={subject}>{subject}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="slot-line">
@@ -2668,6 +2693,19 @@ function Chat({
                   Staff follow-up recommended
                 </small>
               )}
+              {m.who === "bot" && Boolean(m.suggestions?.length) && (
+                <div className="chat-suggestions" aria-label="Suggested follow-up questions">
+                  {m.suggestions?.map((suggestion) => (
+                    <button
+                      type="button"
+                      key={suggestion}
+                      onClick={() => setQuestion(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -3157,14 +3195,59 @@ function WeekdayAvailabilityCalendar({
     </div>
   );
 }
+
+function FacultyDiscoveryFields({ profile }: { profile: FacultyProfile }) {
+  return (
+    <>
+      <label>
+        Expertise categories
+        <input name="expertise" defaultValue={profile.expertise.join(", ")} placeholder="Software Engineering, Data Analytics" required maxLength={1200} />
+        <small>Broad, verified areas of professional or academic expertise.</small>
+      </label>
+      <label>
+        Subjects or courses handled
+        <input name="subjects" defaultValue={profile.subjects.join(", ")} placeholder="Web Systems, Database Management, Capstone Project" required maxLength={2000} />
+        <small>Use the course names students are likely to search for.</small>
+      </label>
+      <label>
+        Accepted consultation topics
+        <input name="consultation_topics" defaultValue={profile.consultation_topics.join(", ")} placeholder="Thesis methods, system architecture, research proposal" required maxLength={2000} />
+        <small>Describe the specific concerns you are prepared to discuss.</small>
+      </label>
+      <label>
+        Research interests <span className="optional-label">Optional</span>
+        <input name="research_interests" defaultValue={profile.research_interests.join(", ")} placeholder="Natural language processing, educational technology" maxLength={1200} />
+      </label>
+      <label>
+        Office or consultation location <span className="optional-label">Optional</span>
+        <input name="office_location" defaultValue={profile.office_location} placeholder="MISO Building, Room 201" maxLength={200} />
+        <small>Do not include a private home address or personal contact details.</small>
+      </label>
+      <label>
+        Faculty introduction <span className="optional-label">Optional</span>
+        <textarea name="bio" defaultValue={profile.bio} placeholder="Briefly describe your background and the consultation concerns you can support." rows={5} maxLength={2000} />
+        <small>Students see this before requesting a consultation.</small>
+      </label>
+    </>
+  );
+}
+
 function FacultyPages({ view, user }: { view: FView; user: User }) {
   const [requests, setRequests] = useState<FacultyRequest[]>([]);
   const [facultySlots, setFacultySlots] = useState<FacultyAvailability[]>([]);
   const [profile, setProfile] = useState<FacultyProfile>({
     expertise: [],
+    subjects: [],
+    consultation_topics: [],
+    research_interests: [],
     bio: "",
+    office_location: "",
+    profile_completed: false,
     active: true,
   });
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() =>
+    window.sessionStorage.getItem(`facultyconnect:profile-skip:${user.id}`) === "1",
+  );
   const [loading, setLoading] = useState(configured);
   const [message, setMessage] = useState("");
   const [requestFilter, setRequestFilter] = useState<
@@ -3348,9 +3431,14 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       await updateFacultyProfile({
         userId: user.id,
         expertise: String(form.get("expertise") || "").split(","),
+        subjects: String(form.get("subjects") || "").split(","),
+        consultationTopics: String(form.get("consultation_topics") || "").split(","),
+        researchInterests: String(form.get("research_interests") || "").split(","),
         bio: String(form.get("bio") || ""),
+        officeLocation: String(form.get("office_location") || ""),
       });
       setMessage("Faculty profile updated for student search.");
+      setOnboardingDismissed(true);
       await refresh();
     } catch (cause) {
       setMessage(
@@ -3364,12 +3452,50 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   };
   if (loading)
     return <div className="empty-card">Loading your faculty workspace…</div>;
-  const feedback = message && (
-    <div className="notice" role="status" aria-live="polite">
-      <b>✓</b>
-      <span>{message}</span>
-      <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
+  const onboarding = !profile.profile_completed && !onboardingDismissed ? (
+    <div className="profile-onboarding-backdrop">
+      <section className="profile-onboarding" role="dialog" aria-modal="true" aria-labelledby="faculty-onboarding-title">
+        <div className="profile-onboarding-intro">
+          <p className="eyebrow">COMPLETE YOUR FACULTY DIRECTORY PROFILE</p>
+          <h2 id="faculty-onboarding-title">Help students find the right professor.</h2>
+          <p>Consult AI and Faculty availability use only the verified subjects, expertise, and consultation topics faculty members provide here.</p>
+          <div className="onboarding-benefits">
+            <span>1 <b>Better subject matching</b></span>
+            <span>2 <b>Accurate chatbot recommendations</b></span>
+            <span>3 <b>Clearer consultation requests</b></span>
+          </div>
+        </div>
+        <form className="knowledge-form profile-onboarding-form" onSubmit={saveProfile}>
+          <FacultyDiscoveryFields profile={profile} />
+          <div className="profile-onboarding-actions">
+            <button className="primary" disabled={savingProfile}>{savingProfile ? "Saving profile…" : "Save and continue"}</button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                window.sessionStorage.setItem(`facultyconnect:profile-skip:${user.id}`, "1");
+                setOnboardingDismissed(true);
+              }}
+            >
+              Skip for now
+            </button>
+          </div>
+          <small>You can complete or update these details later from Profile.</small>
+        </form>
+      </section>
     </div>
+  ) : null;
+  const feedback = (
+    <>
+      {onboarding}
+      {message && (
+        <div className="notice" role="status" aria-live="polite">
+          <b>✓</b>
+          <span>{message}</span>
+          <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
+        </div>
+      )}
+    </>
   );
   if (view === "fhome")
     return (
@@ -3711,35 +3837,14 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
               <h2>Expertise and introduction</h2>
             </div>
           </header>
-          <form className="knowledge-form" onSubmit={saveProfile}>
-            <label>
-              Expertise categories
-              <input
-                name="expertise"
-                defaultValue={profile.expertise.join(", ")}
-                placeholder="Software Engineering, Web Development"
-                required
-                maxLength={960}
-              />
-              <small>Separate categories with commas. Add only verified areas.</small>
-            </label>
+          <form className="knowledge-form faculty-discovery-form" onSubmit={saveProfile}>
+            <FacultyDiscoveryFields profile={profile} />
             <div className="profile-expertise-preview" aria-label="Current expertise">
               {profile.expertise.map((item) => (
                 <span key={item}>{item}</span>
               ))}
               {!profile.expertise.length && <small>No expertise added yet.</small>}
             </div>
-            <label>
-              Faculty introduction
-              <textarea
-                name="bio"
-                defaultValue={profile.bio}
-                placeholder="Briefly describe your background and the consultation concerns you can support."
-                rows={6}
-                maxLength={2000}
-              />
-              <small>Students see this before requesting a consultation.</small>
-            </label>
             <button className="primary" disabled={savingProfile}>
               {savingProfile ? "Saving profile…" : "Save faculty profile"}
             </button>
@@ -3894,6 +3999,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     appointments: [],
     faqs: [],
     reviews: [],
+    chatbotGaps: [],
   });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -4017,6 +4123,37 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       category: "Consultation procedure",
       trainingPhrases: "",
     });
+  };
+  const draftFromGap = (gap: ChatbotGap) => {
+    const categoryByIntent: Record<string, string> = {
+      availability: "Faculty availability",
+      expertise: "Faculty expertise",
+      booking: "Consultation procedure",
+      location: "Consultation location",
+      status: "Request status and changes",
+      cancel: "Request status and changes",
+      services: "CLIRDEC services",
+      office_hours: "Office hours and contacts",
+    };
+    setEditingFaqId(null);
+    setFaqDraft({
+      question: gap.sample_question,
+      source: "",
+      answer: "",
+      category: categoryByIntent[gap.detected_intent] || "Consultation procedure",
+      trainingPhrases: `${gap.sample_question}\nPlease help me with: ${gap.sample_question}`,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setMessage("A training draft was started from the unanswered student question. Verify the official source before saving.");
+  };
+  const resolveGap = async (gap: ChatbotGap) => {
+    try {
+      await resolveChatbotGap(gap.id, user.id);
+      setMessage("The unanswered question was marked reviewed.");
+      await refresh();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "The question could not be resolved.");
+    }
   };
   const testTraining = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -4362,8 +4499,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
               "Example phrases",
             ],
             [
-              String(new Set(data.faqs.map((faq) => faq.category)).size),
-              "Covered categories",
+              String(data.chatbotGaps.length),
+              "Unanswered questions",
             ],
           ]}
         />
@@ -4506,6 +4643,37 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             </div>
           </Work>
         </div>
+        <Work title="Unanswered student questions">
+          <div className="chatbot-gap-intro">
+            <p>
+              Low-confidence questions are collected without email addresses or long
+              identification numbers. Repeated wording rises to the top so MISO can
+              address the largest knowledge gaps first.
+            </p>
+            <b>{data.chatbotGaps.length} need review</b>
+          </div>
+          <div className="chatbot-gap-list">
+            {data.chatbotGaps.map((gap) => (
+              <article key={gap.id}>
+                <div>
+                  <span>{gap.detected_intent.replace(/_/g, " ")}</span>
+                  <b>{gap.sample_question}</b>
+                  <small>
+                    Asked {gap.occurrence_count} {gap.occurrence_count === 1 ? "time" : "times"}
+                    {" · "}last seen {formatManilaDateTime(new Date(gap.last_seen_at), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </small>
+                </div>
+                <div className="chatbot-gap-actions">
+                  <button type="button" className="primary" onClick={() => draftFromGap(gap)}>Create training draft</button>
+                  <button type="button" className="outline" onClick={() => void resolveGap(gap)}>Mark reviewed</button>
+                </div>
+              </article>
+            ))}
+            {!data.chatbotGaps.length && (
+              <div className="empty-card">No unresolved chatbot questions have been recorded.</div>
+            )}
+          </div>
+        </Work>
         <Work title="Training library and approval queue">
           <div className="training-library-note">
             <span>Editing an approved entry returns it to draft so a second source check is required.</span>

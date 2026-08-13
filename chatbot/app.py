@@ -17,11 +17,13 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import spacy
 from fastapi import FastAPI, Header, HTTPException, Request as FastAPIRequest, Response
@@ -97,7 +99,8 @@ INTENT_PHRASES: dict[str, list[str]] = {
     ],
     "expertise": [
         "faculty expertise", "find faculty", "appropriate professor", "research adviser",
-        "sinong faculty", "sino ang expert", "anong faculty",
+        "who can help with", "who can help me with", "who teaches", "subject specialist",
+        "sinong faculty", "sino ang expert", "anong faculty", "sinong nagtuturo",
     ],
     "location": [
         "consultation location", "where is the meeting", "online meeting", "consultation room",
@@ -123,7 +126,10 @@ for intent_name, phrases in INTENT_PHRASES.items():
 INTENT_KEYWORDS: dict[str, set[str]] = {
     "booking": {"book", "booking", "schedule", "appointment", "consultation", "reserve"},
     "availability": {"available", "availability", "faculty", "slot", "oras", "kailan"},
-    "expertise": {"expert", "expertise", "faculty", "professor", "adviser", "topic", "sinong", "sino"},
+    "expertise": {
+        "expert", "expertise", "faculty", "professor", "adviser", "topic",
+        "subject", "course", "specialist", "teach", "teaches", "sinong", "sino",
+    },
     "location": {"where", "location", "room", "online", "link", "platform", "saan"},
     "cancel": {"cancel", "reschedule", "change", "move", "ilipat", "palitan"},
     "status": {"status", "confirmed", "approved", "pending", "declined"},
@@ -199,6 +205,19 @@ class KnowledgeItem:
     training_phrases: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class FacultyDirectoryItem:
+    user_id: str
+    full_name: str
+    department: str
+    expertise: tuple[str, ...]
+    subjects: tuple[str, ...]
+    consultation_topics: tuple[str, ...]
+    research_interests: tuple[str, ...]
+    office_location: str
+    next_slots: tuple[tuple[str, str, str], ...] = ()
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=2, max_length=500)
 
@@ -225,7 +244,10 @@ class ChatSessionStatus(BaseModel):
 
 _cache: tuple[float, list[KnowledgeItem], str] = (0.0, [], "bundled")
 _cache_lock = asyncio.Lock()
+_faculty_cache: tuple[float, list[FacultyDirectoryItem]] = (0.0, [])
+_faculty_cache_lock = asyncio.Lock()
 CACHE_TTL_SECONDS = max(30, int(os.getenv("FAQ_CACHE_SECONDS", "300")))
+FACULTY_CACHE_TTL_SECONDS = max(30, int(os.getenv("FACULTY_CACHE_SECONDS", "60")))
 _chat_requests: dict[str, deque[float]] = defaultdict(deque)
 _chat_rate_lock = asyncio.Lock()
 CHAT_RATE_LIMIT = max(1, int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20")))
@@ -332,6 +354,39 @@ def _fetch_json(url: str, headers: dict[str, str], params: dict[str, str]) -> li
     if not isinstance(payload, list):
         raise ValueError("FAQ response was not a list")
     return payload
+
+
+def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any]) -> Any:
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not hostname.endswith(".supabase.co"):
+        raise ValueError("Database writes must use an approved Supabase HTTPS host")
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={**headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=5) as response:  # nosec B310
+        raw = response.read().decode("utf-8")
+    return json.loads(raw) if raw else None
+
+
+def _validate_supabase_session(
+    supabase_url: str,
+    server_key: str,
+    authorization: str | None,
+) -> bool:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return False
+    request = Request(
+        f"{supabase_url}/auth/v1/user",
+        headers={"apikey": server_key, "Authorization": authorization},
+        method="GET",
+    )
+    with urlopen(request, timeout=5) as response:  # nosec B310
+        payload = json.loads(response.read().decode("utf-8"))
+    return bool(isinstance(payload, dict) and payload.get("id"))
 
 
 def _verify_turnstile_response(secret: str, token: str, remote_ip: str | None) -> bool:
@@ -498,7 +553,253 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
             return [], "bundled workflow answers"
 
 
-def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse:
+async def _load_live_faculty(
+    authorization: str | None,
+) -> list[FacultyDirectoryItem]:
+    """Return verified faculty discovery fields and future published slots.
+
+    Live directory results are available only to a valid signed-in Supabase
+    user. A short cache reduces database load without making schedules stale
+    for more than a minute.
+    """
+    global _faculty_cache
+    supabase_url = (os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL", "")).rstrip("/")
+    server_key = os.getenv("SUPABASE_SECRET_KEY") or ""
+    if not supabase_url or not server_key:
+        return []
+    try:
+        valid_session = await asyncio.to_thread(
+            _validate_supabase_session,
+            supabase_url,
+            server_key,
+            authorization,
+        )
+    except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
+        return []
+    if not valid_session:
+        return []
+
+    expires, cached = _faculty_cache
+    if cached and time.monotonic() < expires:
+        return cached
+
+    headers = {"apikey": server_key, "Authorization": f"Bearer {server_key}"}
+    async with _faculty_cache_lock:
+        expires, cached = _faculty_cache
+        if cached and time.monotonic() < expires:
+            return cached
+        try:
+            profile_rows, detail_rows, slot_rows = await asyncio.gather(
+                asyncio.to_thread(
+                    _fetch_json,
+                    f"{supabase_url}/rest/v1/profiles",
+                    headers,
+                    {"select": "id,full_name,department", "role": "eq.faculty"},
+                ),
+                asyncio.to_thread(
+                    _fetch_json,
+                    f"{supabase_url}/rest/v1/faculty_profiles",
+                    headers,
+                    {
+                        "select": (
+                            "user_id,expertise,subjects,consultation_topics,"
+                            "research_interests,office_location,profile_completed_at"
+                        ),
+                        "active": "eq.true",
+                        "profile_completed_at": "not.is.null",
+                    },
+                ),
+                asyncio.to_thread(
+                    _fetch_json,
+                    f"{supabase_url}/rest/v1/availability",
+                    headers,
+                    {
+                        "select": "faculty_id,starts_at,location,consultation_mode",
+                        "is_open": "eq.true",
+                        "starts_at": f"gt.{datetime.now(timezone.utc).isoformat()}",
+                        "order": "starts_at.asc",
+                        "limit": "200",
+                    },
+                ),
+            )
+            names = {str(row["id"]): row for row in profile_rows}
+            slots_by_faculty: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+            for row in slot_rows:
+                faculty_id = str(row.get("faculty_id", ""))
+                if faculty_id and len(slots_by_faculty[faculty_id]) < 5:
+                    slots_by_faculty[faculty_id].append((
+                        str(row.get("starts_at", "")),
+                        str(row.get("location") or "Location shown in the portal"),
+                        str(row.get("consultation_mode") or "consultation"),
+                    ))
+            items: list[FacultyDirectoryItem] = []
+            for row in detail_rows:
+                user_id = str(row.get("user_id", ""))
+                profile = names.get(user_id)
+                if not profile:
+                    continue
+                items.append(FacultyDirectoryItem(
+                    user_id=user_id,
+                    full_name=str(profile.get("full_name") or "Faculty member"),
+                    department=str(profile.get("department") or "CLSU"),
+                    expertise=tuple(row.get("expertise") or ()),
+                    subjects=tuple(row.get("subjects") or ()),
+                    consultation_topics=tuple(row.get("consultation_topics") or ()),
+                    research_interests=tuple(row.get("research_interests") or ()),
+                    office_location=str(row.get("office_location") or ""),
+                    next_slots=tuple(slots_by_faculty.get(user_id, ())),
+                ))
+            _faculty_cache = (
+                time.monotonic() + FACULTY_CACHE_TTL_SECONDS,
+                items,
+            )
+            return items
+        except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError, KeyError):
+            return []
+
+
+def _faculty_matches(
+    message: str,
+    faculty: list[FacultyDirectoryItem],
+) -> list[FacultyDirectoryItem]:
+    generic = {
+        "faculty", "professor", "prof", "teacher", "available", "availability",
+        "expert", "expertise", "consultation", "find", "help", "need", "subject",
+    }
+    query = _tokens(message) - generic
+    normalized = " ".join(message.lower().split())
+    ranked: list[tuple[float, FacultyDirectoryItem]] = []
+    for item in faculty:
+        labels = (
+            item.full_name,
+            item.department,
+            *item.expertise,
+            *item.subjects,
+            *item.consultation_topics,
+            *item.research_interests,
+        )
+        searchable = " ".join(labels)
+        candidate_tokens = _tokens(searchable)
+        score = float(len(query & candidate_tokens))
+        if item.full_name.lower() in normalized:
+            score += 5
+        if any(label.lower() in normalized for label in labels if len(label) >= 4):
+            score += 3
+        if score > 0 or not query:
+            ranked.append((score, item))
+    ranked.sort(key=lambda pair: (-pair[0], pair[1].full_name.lower()))
+    return [item for _, item in ranked]
+
+
+def _infer_discovery_intent(
+    message: str,
+    classified_intent: str,
+    faculty: list[FacultyDirectoryItem],
+) -> str:
+    if classified_intent in {"expertise", "availability"} or not faculty:
+        return classified_intent
+    normalized = " ".join(message.lower().split())
+    tokens = _tokens(message)
+    for item in faculty:
+        searchable_labels = (
+            item.full_name,
+            *item.expertise,
+            *item.subjects,
+            *item.consultation_topics,
+            *item.research_interests,
+        )
+        if any(label.lower() in normalized for label in searchable_labels if len(label) >= 4):
+            return "expertise"
+        if tokens & _tokens(" ".join(searchable_labels)):
+            return "expertise"
+    return classified_intent
+
+
+def _format_slot(starts_at: str) -> str:
+    try:
+        value = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+        local = value.astimezone(ZoneInfo("Asia/Manila"))
+        return local.strftime("%a, %b %d at %I:%M %p").replace(" 0", " ")
+    except (TypeError, ValueError):
+        return "the published time shown in Faculty availability"
+
+
+def _live_faculty_response(
+    message: str,
+    intent: str,
+    faculty: list[FacultyDirectoryItem],
+) -> ChatResponse | None:
+    if intent not in {"expertise", "availability"} or not faculty:
+        return None
+    matches = _faculty_matches(message, faculty)
+    if intent == "availability":
+        matches = [item for item in matches if item.next_slots]
+    if not matches:
+        return ChatResponse(
+            answer=(
+                "I could not find a verified faculty profile or open time matching that subject. "
+                "Try the subject name, course title, consultation topic, or faculty surname, then check Faculty availability."
+            ),
+            intent=intent,
+            confidence=0.78,
+            escalation=False,
+            source="Live CLSU faculty profiles and published availability",
+            suggestions=["Show faculty with open times", "How do I request a consultation?"],
+        )
+    lines: list[str] = []
+    for item in matches[:4]:
+        labels = list(item.subjects[:2] or item.expertise[:2] or item.consultation_topics[:2])
+        description = ", ".join(labels) or item.department
+        if item.next_slots:
+            slot = item.next_slots[0]
+            lines.append(f"{item.full_name} — {description}; next open time: {_format_slot(slot[0])}.")
+        else:
+            lines.append(f"{item.full_name} — {description}; no open future time is currently published.")
+    prefix = (
+        "Here are the closest verified faculty matches:"
+        if intent == "expertise"
+        else "Here are the matching faculty members with published open times:"
+    )
+    return ChatResponse(
+        answer=f"{prefix}\n" + "\n".join(f"• {line}" for line in lines),
+        intent=intent,
+        confidence=0.9,
+        escalation=False,
+        source="Live CLSU faculty profiles and published availability",
+        suggestions=["How do I request a consultation?", "Open Faculty availability"],
+    )
+
+
+async def _record_unanswered_question(message: str, response: ChatResponse) -> None:
+    if response.intent != "fallback" or is_sensitive(message):
+        return
+    if re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", message) or re.search(r"\b\d{7,}\b", message):
+        return
+    supabase_url = (os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL", "")).rstrip("/")
+    server_key = os.getenv("SUPABASE_SECRET_KEY") or ""
+    if not supabase_url or not server_key:
+        return
+    headers = {"apikey": server_key, "Authorization": f"Bearer {server_key}"}
+    try:
+        await asyncio.to_thread(
+            _post_json,
+            f"{supabase_url}/rest/v1/rpc/record_chatbot_gap",
+            headers,
+            {
+                "question_text": message,
+                "question_intent": response.intent,
+                "question_confidence": response.confidence,
+            },
+        )
+    except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
+        return
+
+
+def build_response(
+    message: str,
+    knowledge: list[KnowledgeItem],
+    faculty: list[FacultyDirectoryItem] | None = None,
+) -> ChatResponse:
     if is_sensitive(message):
         return ChatResponse(
             answer=(
@@ -512,8 +813,12 @@ def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse
             suggestions=["Ask about consultation booking", "View faculty availability"],
         )
 
-    matched_item, faq_score = _rank_knowledge(message, knowledge)
     intent, intent_confidence = classify_intent(message)
+    intent = _infer_discovery_intent(message, intent, faculty or [])
+    live_response = _live_faculty_response(message, intent, faculty or [])
+    if live_response:
+        return live_response
+    matched_item, faq_score = _rank_knowledge(message, knowledge)
     if matched_item and faq_score >= 0.27:
         return ChatResponse(
             answer=matched_item.answer,
@@ -615,8 +920,13 @@ async def chat(
         trust_cookie, expiry = _new_chat_trust_cookie(trust_secret)
         _set_chat_trust_cookie(response, trust_cookie)
         response.headers["X-Chat-Trusted-Until"] = str(expiry)
-    knowledge, _ = await _load_approved_knowledge(authorization)
-    return build_response(request.message, knowledge)
+    (knowledge, _), faculty = await asyncio.gather(
+        _load_approved_knowledge(authorization),
+        _load_live_faculty(authorization),
+    )
+    chat_response = build_response(request.message, knowledge, faculty)
+    await _record_unanswered_question(request.message, chat_response)
+    return chat_response
 
 
 @app.get("/{unknown_path:path}", response_class=HTMLResponse, include_in_schema=False)
