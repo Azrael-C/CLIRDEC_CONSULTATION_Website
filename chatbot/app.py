@@ -8,6 +8,7 @@ the bundled workflow answers keep the service useful during local setup.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict, deque
 import json
 import os
 import re
@@ -20,7 +21,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import spacy
-from fastapi import FastAPI, Header, Request as FastAPIRequest
+from fastapi import FastAPI, Header, HTTPException, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -54,7 +55,7 @@ app.add_middleware(
     allow_origins=_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Turnstile-Token"],
 )
 
 
@@ -210,7 +211,11 @@ class KnowledgeStatus(BaseModel):
 
 
 _cache: tuple[float, list[KnowledgeItem], str] = (0.0, [], "bundled")
+_cache_lock = asyncio.Lock()
 CACHE_TTL_SECONDS = max(30, int(os.getenv("FAQ_CACHE_SECONDS", "300")))
+_chat_requests: dict[str, deque[float]] = defaultdict(deque)
+_chat_rate_lock = asyncio.Lock()
+CHAT_RATE_LIMIT = max(1, int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20")))
 
 
 def _fetch_json(url: str, headers: dict[str, str], params: dict[str, str]) -> list[dict[str, Any]]:
@@ -220,6 +225,45 @@ def _fetch_json(url: str, headers: dict[str, str], params: dict[str, str]) -> li
     if not isinstance(payload, list):
         raise ValueError("FAQ response was not a list")
     return payload
+
+
+def _verify_turnstile_response(secret: str, token: str, remote_ip: str | None) -> bool:
+    data = {"secret": secret, "response": token}
+    if remote_ip:
+        data["remoteip"] = remote_ip
+    request = Request(
+        "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+        data=urlencode(data).encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    with urlopen(request, timeout=5) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return bool(payload.get("success"))
+
+
+async def _protect_chat_request(request: FastAPIRequest, token: str | None) -> None:
+    client_key = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    async with _chat_rate_lock:
+        attempts = _chat_requests[client_key]
+        while attempts and attempts[0] <= now - 60:
+            attempts.popleft()
+        if len(attempts) >= CHAT_RATE_LIMIT:
+            raise HTTPException(status_code=429, detail="Too many chatbot requests. Try again shortly.")
+        attempts.append(now)
+
+    secret = os.getenv("TURNSTILE_SECRET_KEY", "")
+    if not secret:
+        return
+    if not token:
+        raise HTTPException(status_code=403, detail="Complete the security check before asking a question.")
+    try:
+        valid = await asyncio.to_thread(_verify_turnstile_response, secret, token, client_key)
+    except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
+        raise HTTPException(status_code=503, detail="The security check is temporarily unavailable.")
+    if not valid:
+        raise HTTPException(status_code=403, detail="The security check was not accepted.")
 
 
 def _tokens(text: str) -> set[str]:
@@ -276,40 +320,51 @@ def is_sensitive(message: str) -> bool:
 
 
 async def _load_approved_knowledge(authorization: str | None) -> tuple[list[KnowledgeItem], str]:
+    """Load approved FAQ entries with a server-only Supabase credential.
+
+    The browser authorization header is deliberately ignored here. Knowledge
+    retrieval is an application backend responsibility and must not depend on
+    whichever user's request happens to warm a global serverless cache. Only a
+    successful database response is cached; missing configuration, database
+    errors, and empty results fall back for that request without poisoning
+    later authenticated requests.
+    """
     global _cache
     expires, cached, source = _cache
     if cached and time.monotonic() < expires:
         return cached, source
 
     supabase_url = (os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL", "")).rstrip("/")
-    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    anon_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("VITE_SUPABASE_ANON_KEY", "")
-    api_key = service_key or anon_key
-    bearer = service_key or (authorization.removeprefix("Bearer ").strip() if authorization else "")
-    if not supabase_url or not api_key or not bearer:
-        _cache = (time.monotonic() + CACHE_TTL_SECONDS, [], "bundled workflow answers")
+    server_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not server_key:
         return [], "bundled workflow answers"
 
-    headers = {"apikey": api_key, "Authorization": f"Bearer {bearer}"}
+    headers = {"apikey": server_key, "Authorization": f"Bearer {server_key}"}
     params = {
         "select": "question,answer,category,source_reference,training_phrases",
         "status": "eq.approved",
         "order": "updated_at.desc",
         "limit": "200",
     }
-    try:
-        rows = await asyncio.to_thread(
-            _fetch_json,
-            f"{supabase_url}/rest/v1/faq_entries",
-            headers,
-            params,
-        )
-        items = [KnowledgeItem(**row) for row in rows]
-        _cache = (time.monotonic() + CACHE_TTL_SECONDS, items, "Supabase approved FAQ entries")
-        return items, "Supabase approved FAQ entries"
-    except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
-        _cache = (time.monotonic() + 60, [], "bundled workflow answers")
-        return [], "bundled workflow answers"
+    async with _cache_lock:
+        expires, cached, source = _cache
+        if cached and time.monotonic() < expires:
+            return cached, source
+        try:
+            rows = await asyncio.to_thread(
+                _fetch_json,
+                f"{supabase_url}/rest/v1/faq_entries",
+                headers,
+                params,
+            )
+            items = [KnowledgeItem(**row) for row in rows]
+            if not items:
+                return [], "bundled workflow answers"
+            source = "Supabase approved FAQ entries"
+            _cache = (time.monotonic() + CACHE_TTL_SECONDS, items, source)
+            return items, source
+        except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
+            return [], "bundled workflow answers"
 
 
 def build_response(message: str, knowledge: list[KnowledgeItem]) -> ChatResponse:
@@ -390,7 +445,13 @@ async def knowledge_status(authorization: str | None = Header(default=None)) -> 
 
 @app.post("/api/chat", response_model=ChatResponse)
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, authorization: str | None = Header(default=None)) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    http_request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+    x_turnstile_token: str | None = Header(default=None),
+) -> ChatResponse:
+    await _protect_chat_request(http_request, x_turnstile_token)
     knowledge, _ = await _load_approved_knowledge(authorization)
     return build_response(request.message, knowledge)
 

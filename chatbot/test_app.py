@@ -1,5 +1,10 @@
+import asyncio
+import os
 import unittest
+from unittest.mock import patch
 
+import app
+from fastapi import HTTPException
 from app import KnowledgeItem, build_response, classify_intent, is_sensitive
 
 
@@ -76,6 +81,45 @@ class AssistantTests(unittest.TestCase):
         response = build_response("What is the meaning of life?", [])
         self.assertTrue(response.escalation)
         self.assertEqual(response.intent, "fallback")
+
+    def test_failed_or_unconfigured_knowledge_load_does_not_cache_fallback(self):
+        app._cache = (0.0, [], "bundled")
+        with patch.dict(os.environ, {}, clear=True):
+            items, source = asyncio.run(app._load_approved_knowledge("Bearer browser-token"))
+        self.assertEqual(items, [])
+        self.assertEqual(source, "bundled workflow answers")
+        self.assertEqual(app._cache, (0.0, [], "bundled"))
+
+    def test_successful_server_side_knowledge_load_is_cached(self):
+        app._cache = (0.0, [], "bundled")
+        rows = [{
+            "question": "How do I book?",
+            "answer": "Choose an available time.",
+            "category": "Booking",
+            "source_reference": "Approved workflow",
+            "training_phrases": ["Schedule a consultation"],
+        }]
+        environment = {
+            "SUPABASE_URL": "https://project.supabase.co",
+            "SUPABASE_SECRET_KEY": "server-secret",
+        }
+        with patch.dict(os.environ, environment, clear=True), patch.object(app, "_fetch_json", return_value=rows) as fetch:
+            first = asyncio.run(app._load_approved_knowledge(None))
+            second = asyncio.run(app._load_approved_knowledge("Bearer ignored-browser-token"))
+        self.assertEqual(first[1], "Supabase approved FAQ entries")
+        self.assertEqual(second[0][0].question, "How do I book?")
+        self.assertEqual(fetch.call_count, 1)
+        headers = fetch.call_args.args[1]
+        self.assertEqual(headers["apikey"], "server-secret")
+        self.assertEqual(headers["Authorization"], "Bearer server-secret")
+
+    def test_chat_requires_turnstile_token_when_secret_is_configured(self):
+        request = type("Request", (), {"client": type("Client", (), {"host": "203.0.113.9"})()})()
+        app._chat_requests.clear()
+        with patch.dict(os.environ, {"TURNSTILE_SECRET_KEY": "server-secret"}, clear=True):
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(app._protect_chat_request(request, None))
+        self.assertEqual(raised.exception.status_code, 403)
 
 
 if __name__ == "__main__":

@@ -289,11 +289,16 @@ Deno.serve(async (request) => {
         }),
       });
       if (!response.ok) throw new Error(`Resend ${response.status}: ${await response.text()}`);
+      const resendResponse = await response.json() as { id?: string };
+      if (!resendResponse.id) throw new Error("Resend did not return an email identifier");
       const { error: updateError } = await supabase
         .from("email_notifications")
         .update({
           status: "sent",
           sent_at: new Date().toISOString(),
+          provider_email_id: resendResponse.id,
+          provider_status: "email.sent",
+          provider_status_at: new Date().toISOString(),
           processing_started_at: null,
           last_error: null,
         })
