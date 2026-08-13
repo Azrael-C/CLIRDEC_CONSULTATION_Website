@@ -1,0 +1,14 @@
+name = "clirdec-email-scheduler"
+main = "src/index.js"
+compatibility_date = "2026-08-12"
+workers_dev = false
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+SUPABASE_EMAIL_FUNCTION_URL = "https://ieuipychazciovjhkpps.supabase.co/functions/v1/send-email-notifications"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
