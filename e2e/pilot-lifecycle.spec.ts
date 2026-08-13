@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const required = [
   "SUPABASE_URL",
@@ -17,11 +17,21 @@ function environment() {
   return Object.fromEntries(required.map((key) => [key, process.env[key]!])) as Record<(typeof required)[number], string>;
 }
 
-async function signIn(page: Page, email: string, password: string) {
-  await page.goto("/");
-  await page.getByLabel("Email address").fill(email);
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Log in", exact: true }).click();
+async function signIn(page: Page, admin: SupabaseClient, email: string) {
+  // Production authentication is intentionally protected by a real Turnstile
+  // challenge, which a CI browser must never try to solve. Generate a one-time
+  // test-only magic link with the server-side admin client so the lifecycle test
+  // can exercise the authenticated application without weakening CAPTCHA.
+  const redirectTo = process.env.E2E_BASE_URL?.replace(/\/$/, "") || "http://127.0.0.1:4173";
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+    options: { redirectTo },
+  });
+  const actionLink = data?.properties?.action_link;
+  if (error || !actionLink) throw error || new Error(`Could not generate a test sign-in link for ${email}.`);
+
+  await page.goto(actionLink);
   await expect(page.getByRole("button", { name: /Sign out/i })).toBeVisible();
 }
 
@@ -40,7 +50,7 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
   const reviewComment = `E2E review ${Date.now()}: clear and helpful consultation.`;
 
   await test.step("student books a faculty-published time", async () => {
-    await signIn(page, env.TEST_STUDENT_EMAIL, env.TEST_USER_PASSWORD);
+    await signIn(page, admin, env.TEST_STUDENT_EMAIL);
     await page.getByRole("button", { name: "Faculty availability" }).click();
     await page.getByRole("button", { name: /Review and request/ }).first().click();
     await page.getByLabel("Consultation topic and concern").fill(topic);
@@ -52,7 +62,7 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
   let appointmentId = "";
   let availabilityId = "";
   await test.step("faculty approves the request", async () => {
-    await signIn(page, env.TEST_FACULTY_EMAIL, env.TEST_USER_PASSWORD);
+    await signIn(page, admin, env.TEST_FACULTY_EMAIL);
     await page.getByRole("button", { name: "Requests", exact: true }).click();
     const request = page.locator("article").filter({ hasText: topic });
     await expect(request).toBeVisible();
@@ -93,7 +103,7 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
   });
 
   await test.step("student submits a review", async () => {
-    await signIn(page, env.TEST_STUDENT_EMAIL, env.TEST_USER_PASSWORD);
+    await signIn(page, admin, env.TEST_STUDENT_EMAIL);
     await page.getByRole("button", { name: "My requests" }).click();
     const request = page.locator("article").filter({ hasText: topic });
     await request.getByRole("button", { name: "5 stars" }).click();
@@ -104,7 +114,7 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
   });
 
   await test.step("administrator sees the review report", async () => {
-    await signIn(page, env.TEST_ADMIN_EMAIL, env.TEST_USER_PASSWORD);
+    await signIn(page, admin, env.TEST_ADMIN_EMAIL);
     await page.getByRole("button", { name: /Reviews and insights/ }).click();
     await expect(page.getByText(reviewComment)).toBeVisible();
   });
