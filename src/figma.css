@@ -138,6 +138,12 @@ a:focus-visible {
 .password-visibility { position: absolute; top: 50%; right: .6rem; display: inline-flex; align-items: center; gap: .35rem; min-height: 34px; padding: .35rem .5rem; border: 0; border-radius: 6px; background: transparent; color: var(--figma-green-dark); transform: translateY(-50%); font-size: .72rem; font-weight: 800; }
 .password-visibility:hover { background: var(--figma-green-soft); }
 .password-visibility svg { width: 18px; height: 18px; }
+.turnstile-field { position: relative; width: 100%; min-height: 68px; margin-top: 1rem; }
+.turnstile-widget-shell { width: 100%; }
+.turnstile-field.is-complete { min-height: 48px; }
+.turnstile-field.is-complete .turnstile-widget-shell { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.turnstile-confirmed { display: flex; align-items: center; gap: .55rem; min-height: 48px; margin: 0; padding: .7rem .85rem; border: 1px solid #b8dbc6; border-radius: 8px; background: #f1f9f4; color: var(--figma-green-dark); font-size: .75rem; font-weight: 800; }
+.turnstile-confirmed > span { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--figma-green); color: #fff; font-size: .8rem; }
 .password-privacy { display: flex; gap: .65rem; align-items: center; margin: -.35rem 0 .65rem; padding: .65rem .75rem; border: 1px solid #d6e4db; border-radius: 8px; background: #f5faf6; }
 .password-privacy.visible { border-color: #e4d48d; background: #fff9dc; }
 .password-privacy > span { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #fff; font-size: 1rem; }
@@ -286,6 +292,8 @@ a:focus-visible {
 .messages p, .message-wrap p { border-radius: 8px; }
 .prompts button { border-radius: 999px; }
 .chatbot form input { border-radius: 7px; }
+.chatbot form .chat-turnstile { flex: 0 1 320px; min-width: 250px; margin: 0; }
+.chatbot form .chat-turnstile.is-complete { flex-basis: 230px; min-width: 210px; }
 
 /* Dialogs */
 .modal-backdrop { background: rgba(14, 28, 21, .38); backdrop-filter: blur(2px); }
@@ -1173,4 +1181,9 @@ body {
   .profile-preference-card { grid-template-columns: 38px minmax(0,1fr); }
   .profile-preference-card > b { grid-column: 2; justify-self: start; }
   .faculty-profile-editor > .profile-card-header { grid-column: auto; }
+}
+
+@media (max-width: 560px) {
+  .chatbot form .chat-turnstile,
+  .chatbot form .chat-turnstile.is-complete { flex: 0 0 auto; min-width: 0; }
 }

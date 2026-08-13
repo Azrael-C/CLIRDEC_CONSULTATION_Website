@@ -1338,15 +1338,23 @@ function ProductionAuth({
             </>
           )}
           {TURNSTILE_SITE_KEY && (
-            <div className="turnstile-field">
-              <Turnstile
-                key={captchaGeneration}
-                siteKey={TURNSTILE_SITE_KEY}
-                options={{ theme: "light", size: "flexible", action: creating ? "student_signup" : "portal_login" }}
-                onSuccess={setCaptchaToken}
-                onExpire={() => setCaptchaToken("")}
-                onError={() => setCaptchaToken("")}
-              />
+            <div className={`turnstile-field${captchaToken ? " is-complete" : ""}`}>
+              <div className="turnstile-widget-shell" aria-hidden={Boolean(captchaToken)}>
+                <Turnstile
+                  key={captchaGeneration}
+                  siteKey={TURNSTILE_SITE_KEY}
+                  options={{ theme: "light", size: "flexible", action: creating ? "student_signup" : "portal_login" }}
+                  onSuccess={setCaptchaToken}
+                  onExpire={() => setCaptchaToken("")}
+                  onError={() => setCaptchaToken("")}
+                />
+              </div>
+              {captchaToken && (
+                <p className="turnstile-confirmed" role="status">
+                  <span aria-hidden="true">✓</span>
+                  Security check complete
+                </p>
+              )}
               <input type="hidden" name="captcha_token" value={captchaToken} />
             </div>
           )}
@@ -1449,6 +1457,8 @@ function PasswordRecovery({
   const [localError, setLocalError] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmationVisible, setConfirmationVisible] = useState(false);
   const valid = studentPasswordIsValid(password);
   const matches = confirmation.length > 0 && password === confirmation;
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1487,20 +1497,33 @@ function PasswordRecovery({
         <form className="login" onSubmit={submit}>
           <p className="eyebrow">PASSWORD RECOVERY</p>
           <h2>Set your new password</h2>
-          <label>
-            New password
-            <input
-              name="password"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              aria-describedby="recovery-password-rules"
-              aria-invalid={password.length > 0 && !valid}
-            />
-          </label>
+          <div className="auth-field">
+            <label htmlFor="recovery-password">New password</label>
+            <span className="password-field">
+              <input
+                id="recovery-password"
+                name="password"
+                type={passwordVisible ? "text" : "password"}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                aria-describedby="recovery-password-rules"
+                aria-invalid={password.length > 0 && !valid}
+              />
+              <button
+                type="button"
+                className="password-visibility"
+                aria-label={passwordVisible ? "Hide new password" : "Show new password"}
+                aria-pressed={passwordVisible}
+                onClick={() => setPasswordVisible((value) => !value)}
+              >
+                <PasswordVisibilityIcon visible={passwordVisible} />
+                <span>{passwordVisible ? "Hide" : "Show"}</span>
+              </button>
+            </span>
+          </div>
           <ul
             className="password-rules"
             id="recovery-password-rules"
@@ -1516,19 +1539,32 @@ function PasswordRecovery({
               );
             })}
           </ul>
-          <label>
-            Confirm password
-            <input
-              name="confirmation"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              aria-invalid={confirmation.length > 0 && !matches}
-            />
-          </label>
+          <div className="auth-field">
+            <label htmlFor="recovery-password-confirmation">Confirm password</label>
+            <span className="password-field">
+              <input
+                id="recovery-password-confirmation"
+                name="confirmation"
+                type={confirmationVisible ? "text" : "password"}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                aria-invalid={confirmation.length > 0 && !matches}
+              />
+              <button
+                type="button"
+                className="password-visibility"
+                aria-label={confirmationVisible ? "Hide confirmation password" : "Show confirmation password"}
+                aria-pressed={confirmationVisible}
+                onClick={() => setConfirmationVisible((value) => !value)}
+              >
+                <PasswordVisibilityIcon visible={confirmationVisible} />
+                <span>{confirmationVisible ? "Hide" : "Show"}</span>
+              </button>
+            </span>
+          </div>
           <button className="primary" disabled={saving || !valid || !matches}>
             {saving ? "Updating…" : "Update password"}
           </button>
@@ -2569,14 +2605,24 @@ function Chat({
             disabled={!PRODUCTION_SECURITY_READY}
           />
           {TURNSTILE_SITE_KEY && (
-            <Turnstile
-              key={captchaGeneration}
-              siteKey={TURNSTILE_SITE_KEY}
-              options={{ theme: "light", size: "flexible", action: "chatbot_question" }}
-              onSuccess={setCaptchaToken}
-              onExpire={() => setCaptchaToken("")}
-              onError={() => setCaptchaToken("")}
-            />
+            <div className={`turnstile-field chat-turnstile${captchaToken ? " is-complete" : ""}`}>
+              <div className="turnstile-widget-shell" aria-hidden={Boolean(captchaToken)}>
+                <Turnstile
+                  key={captchaGeneration}
+                  siteKey={TURNSTILE_SITE_KEY}
+                  options={{ theme: "light", size: "flexible", action: "chatbot_question" }}
+                  onSuccess={setCaptchaToken}
+                  onExpire={() => setCaptchaToken("")}
+                  onError={() => setCaptchaToken("")}
+                />
+              </div>
+              {captchaToken && (
+                <p className="turnstile-confirmed" role="status">
+                  <span aria-hidden="true">✓</span>
+                  Security check complete
+                </p>
+              )}
+            </div>
           )}
           <button className="primary" disabled={!PRODUCTION_SECURITY_READY}>Send →</button>
         </form>
