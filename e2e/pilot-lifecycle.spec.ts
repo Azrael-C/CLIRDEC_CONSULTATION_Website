@@ -64,6 +64,13 @@ async function signOut(page: Page) {
   await expect(page.getByRole("heading", { name: "Log in to your portal" })).toBeVisible();
 }
 
+async function dismissFacultyOnboarding(page: Page) {
+  const skipButton = page.getByRole("button", { name: "Skip for now" });
+  await skipButton.waitFor({ state: "visible", timeout: 10_000 });
+  await skipButton.click();
+  await expect(skipButton).toBeHidden();
+}
+
 test("student to admin consultation lifecycle queues and sends email", async ({ page }) => {
   test.setTimeout(180_000);
   const env = environment();
@@ -86,6 +93,7 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
   let appointmentId = "";
   await test.step("faculty approves the request", async () => {
     await signIn(page, admin, env.TEST_FACULTY_EMAIL);
+    await dismissFacultyOnboarding(page);
     await page.getByRole("button", { name: "Requests", exact: true }).click();
     const request = page.locator("article").filter({ hasText: topic });
     await expect(request).toBeVisible();
