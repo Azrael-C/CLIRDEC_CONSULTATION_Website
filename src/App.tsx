@@ -17,6 +17,7 @@ import {
   loadFacultyPortal,
   loadStudentPortal,
   removeFacultyAvailability,
+  recordUserPresence,
   resolveChatbotGap,
   rescheduleAppointment,
   submitConsultationReview,
@@ -407,6 +408,25 @@ function App() {
       void supabase.removeChannel(channel);
     };
   }, [user?.id, user?.role]);
+  useEffect(() => {
+    if (!configured || !user?.id) return;
+    const heartbeat = () => {
+      if (document.visibilityState !== "visible") return;
+      void recordUserPresence(user.id).catch(() => {
+        // Presence is operational metadata and must never interrupt portal use.
+      });
+    };
+    heartbeat();
+    const interval = window.setInterval(heartbeat, 45_000);
+    const onVisibilityChange = () => heartbeat();
+    window.addEventListener("focus", heartbeat);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", heartbeat);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [user?.id]);
   async function loadStudentData(studentId: string) {
     try {
       const data = await loadStudentPortal(studentId);
@@ -627,6 +647,9 @@ function App() {
     return true;
   }
   async function logout() {
+    if (configured && user?.id) {
+      await recordUserPresence(user.id, false).catch(() => undefined);
+    }
     setUser(null);
     setView("home");
     setNotice("");
@@ -2892,6 +2915,7 @@ type FView = "fhome" | "requests" | "availability" | "fprofile";
 type AView =
   | "ahome"
   | "users"
+  | "activity"
   | "appointments"
   | "reviews"
   | "knowledge"
@@ -2907,6 +2931,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
     fprofile: ["Faculty profile | CLSU FacultyConnect", "Manage faculty expertise and consultation profile information."],
     ahome: ["Administration overview | CLSU FacultyConnect", "Monitor FacultyConnect users, consultations, and service performance."],
     users: ["Users and roles | CLSU FacultyConnect", "Administer audited FacultyConnect roles and review student self-registration rules."],
+    activity: ["Active users | CLSU FacultyConnect", "Monitor recent authenticated portal activity across student, faculty, and administrator roles."],
     appointments: ["Consultation logs | CLSU FacultyConnect", "Review consultation status, participants, schedules, and service exceptions."],
     reviews: ["Reviews and insights | CLSU FacultyConnect", "Analyze consultation ratings and comments by year level, college, and course."],
     knowledge: ["Chatbot training | CLSU FacultyConnect", "Train and test the consultation assistant with approved answers, example phrases, and official sources."],
@@ -2924,6 +2949,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         ["ahome", "Service overview", "home"],
         ["knowledge", "Chatbot training", "assistant"],
         ["users", "Users and roles", "users"],
+        ["activity", "Active users", "users"],
         ["appointments", "Consultation logs", "calendar"],
         ["reviews", "Reviews and insights", "report"],
         ["reports", "Quality assurance", "report"],
@@ -3029,6 +3055,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
                 ["ahome", "Overview", "home"],
                 ["knowledge", "Train AI", "assistant"],
                 ["users", "Users", "users"],
+                ["activity", "Active", "users"],
                 ["appointments", "Logs", "calendar"],
                 ["reviews", "Reviews", "report"],
                 ["reports", "QA", "calendar"],
@@ -3994,6 +4021,30 @@ function FacultyRequestWorkspace({
   );
 }
 
+type PresenceStatus = "active" | "recent" | "offline";
+const ACTIVE_PRESENCE_WINDOW_MS = 2 * 60 * 1000;
+const RECENT_PRESENCE_WINDOW_MS = 15 * 60 * 1000;
+
+function presenceStatus(lastSeenAt: string | null, now = Date.now()): PresenceStatus {
+  if (!lastSeenAt) return "offline";
+  const age = Math.max(0, now - new Date(lastSeenAt).getTime());
+  if (age <= ACTIVE_PRESENCE_WINDOW_MS) return "active";
+  if (age <= RECENT_PRESENCE_WINDOW_MS) return "recent";
+  return "offline";
+}
+
+function relativePresence(lastSeenAt: string | null, now = Date.now()) {
+  if (!lastSeenAt) return "No portal activity recorded";
+  const elapsed = Math.max(0, now - new Date(lastSeenAt).getTime());
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? "day" : "days"} ago`;
+}
+
 function AdminPages({ view, user }: { view: AView; user: User }) {
   const [data, setData] = useState<AdminPortal>({
     users: [],
@@ -4005,6 +4056,9 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
+  const [presenceQuery, setPresenceQuery] = useState("");
+  const [presenceFilter, setPresenceFilter] = useState<"all" | PresenceStatus>("all");
+  const [presenceRole, setPresenceRole] = useState<"all" | Role>("all");
   const [appointmentFilter, setAppointmentFilter] = useState<
     "all" | AppointmentStatus
   >("all");
@@ -4223,10 +4277,40 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     (item) => item.status === "completed",
   ).length;
   const filteredUsers = data.users.filter((item) =>
-    (item.full_name + " " + item.department + " " + item.role)
+    (item.full_name + " " + item.email + " " + item.department + " " + item.role)
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  const presenceNow = Date.now();
+  const presenceUsers = data.users.map((item) => ({
+    ...item,
+    presence: presenceStatus(item.last_seen_at, presenceNow),
+  }));
+  const presenceCounts = {
+    active: presenceUsers.filter((item) => item.presence === "active").length,
+    recent: presenceUsers.filter((item) => item.presence === "recent").length,
+    offline: presenceUsers.filter((item) => item.presence === "offline").length,
+  };
+  const normalizedPresenceQuery = presenceQuery.trim().toLowerCase();
+  const visiblePresenceUsers = presenceUsers
+    .filter((item) => presenceFilter === "all" || item.presence === presenceFilter)
+    .filter((item) => presenceRole === "all" || item.role === presenceRole)
+    .filter((item) =>
+      !normalizedPresenceQuery ||
+      [item.full_name, item.email, item.department, item.role]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedPresenceQuery),
+    )
+    .sort((a, b) => {
+      const rank: Record<PresenceStatus, number> = { active: 0, recent: 1, offline: 2 };
+      return (
+        rank[a.presence] - rank[b.presence] ||
+        (b.last_seen_at ? new Date(b.last_seen_at).getTime() : 0) -
+          (a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0) ||
+        a.full_name.localeCompare(b.full_name)
+      );
+    });
   const filteredAppointments =
     appointmentFilter === "all"
       ? data.appointments
@@ -4368,6 +4452,114 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         </div>
       </>
     );
+  if (view === "activity")
+    return (
+      <>
+        {feedback}
+        <Head
+          label="PORTAL PRESENCE"
+          title="Currently active users"
+          copy="Monitor recent authenticated portal activity across student, faculty, and administrator accounts."
+        />
+        <Stats
+          data={[
+            [String(presenceCounts.active), "Active now"],
+            [String(presenceCounts.recent), "Recently active"],
+            [String(presenceCounts.offline), "Offline"],
+            [String(data.users.length), "Registered users"],
+          ]}
+        />
+        <div className="scope-note presence-scope-note">
+          <b><span className="presence-dot active" /> Privacy-conscious activity</b>
+          <span>
+            “Active now” means the authenticated portal sent a heartbeat within the
+            last two minutes. FacultyConnect does not record page contents, typing,
+            precise location, or activity outside this portal.
+          </span>
+        </div>
+        <section className="presence-toolbar" aria-label="Active user filters">
+          <div className="search-box">
+            <span>⌕</span>
+            <input
+              value={presenceQuery}
+              onChange={(event) => setPresenceQuery(event.target.value)}
+              placeholder="Search name, email, department, or role"
+              aria-label="Search active users"
+            />
+          </div>
+          <label>
+            <span>Role</span>
+            <select
+              value={presenceRole}
+              onChange={(event) => setPresenceRole(event.target.value as "all" | Role)}
+            >
+              <option value="all">All roles</option>
+              <option value="student">Students</option>
+              <option value="faculty">Faculty</option>
+              <option value="admin">Administrators</option>
+            </select>
+          </label>
+        </section>
+        <div className="filter-tabs presence-filter-tabs" aria-label="Activity status filters">
+          {([
+            ["all", "All", data.users.length],
+            ["active", "Active now", presenceCounts.active],
+            ["recent", "Recently active", presenceCounts.recent],
+            ["offline", "Offline", presenceCounts.offline],
+          ] as const).map(([status, label, count]) => (
+            <button
+              type="button"
+              key={status}
+              className={presenceFilter === status ? "active" : ""}
+              aria-pressed={presenceFilter === status}
+              onClick={() => setPresenceFilter(status)}
+            >
+              {label} {count}
+            </button>
+          ))}
+        </div>
+        <Data headings={["User", "Role", "Activity", "Last seen", "Account"]}>
+          {visiblePresenceUsers.map((item) => (
+            <div className="data-row presence-row" key={item.id}>
+              <span data-label="User" className="presence-identity">
+                <i>{item.full_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</i>
+                <div>
+                  <b>{item.full_name}</b>
+                  <small>{item.email}</small>
+                </div>
+              </span>
+              <span data-label="Role">
+                <b>{item.role === "admin" ? "Administrator" : item.role === "faculty" ? "Faculty" : "Student"}</b>
+                <small>{item.department || "Department not set"}</small>
+              </span>
+              <span data-label="Activity">
+                <i className={`presence-pill ${item.presence}`}>
+                  <span className={`presence-dot ${item.presence}`} />
+                  {item.presence === "active" ? "Active now" : item.presence === "recent" ? "Recently active" : "Offline"}
+                </i>
+              </span>
+              <span data-label="Last seen">
+                <b>{relativePresence(item.last_seen_at, presenceNow)}</b>
+                <small>{item.last_seen_at ? formatManilaDateTime(new Date(item.last_seen_at), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Waiting for first heartbeat"}</small>
+              </span>
+              <span data-label="Account">
+                <b>{item.id === user.id ? "This administrator" : "Registered"}</b>
+                <small>Joined {formatManilaDateTime(new Date(item.created_at), { month: "short", day: "numeric", year: "numeric" })}</small>
+              </span>
+            </div>
+          ))}
+          {!visiblePresenceUsers.length && (
+            <div className="empty-card presence-empty">
+              No users match the selected activity, role, and search filters.
+            </div>
+          )}
+        </Data>
+        <p className="presence-refresh-note">
+          Activity refreshes automatically every minute. A user becomes offline
+          after 15 minutes without a heartbeat.
+        </p>
+      </>
+    );
   if (view === "users")
     return (
       <>
@@ -4394,7 +4586,9 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           />
         </div>
         <Data headings={["User", "Department", "Role", "Status", "Action"]}>
-          {filteredUsers.map((item) => (
+          {filteredUsers.map((item) => {
+            const itemPresence = presenceStatus(item.last_seen_at, presenceNow);
+            return (
             <div className="data-row" key={item.id}>
               <span data-label="User">
                 <b>{item.full_name}</b>
@@ -4418,7 +4612,14 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 </select>
               </span>
               <span data-label="Status">
-                <i className="active-pill">Active</i>
+                <i className={`presence-pill ${itemPresence}`}>
+                  <span className={`presence-dot ${itemPresence}`} />
+                  {itemPresence === "active"
+                    ? "Active now"
+                    : itemPresence === "recent"
+                      ? "Recently active"
+                      : "Offline"}
+                </i>
               </span>
               <span data-label="Action">
                 <small>
@@ -4426,7 +4627,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 </small>
               </span>
             </div>
-          ))}
+            );
+          })}
         </Data>
       </>
     );

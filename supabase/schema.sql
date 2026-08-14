@@ -20,11 +20,15 @@ create table public.profiles (
     )
   ),
   email_notifications boolean not null default true,
+  last_seen_at timestamptz,
   created_at timestamptz not null default now()
 );
 create unique index profiles_student_number_unique
 on public.profiles (upper(student_number))
 where student_number is not null;
+create index profiles_last_seen_at_idx
+on public.profiles (last_seen_at desc)
+where last_seen_at is not null;
 create table public.faculty_profiles (
   user_id uuid primary key references public.profiles(id) on delete cascade,
   expertise text[] not null default '{}',
@@ -465,8 +469,8 @@ revoke all on table public.audit_logs from anon,authenticated;
 revoke all on table public.registration_allowlist from anon,authenticated;
 revoke all on table public.chatbot_unanswered_questions from anon,authenticated;
 
-grant update (full_name,department,email_notifications,college,program,year_level) on public.profiles to authenticated;
-grant select (id,full_name,role,department,email_notifications,student_number,college,program,year_level) on public.profiles to authenticated;
+grant update (full_name,department,email_notifications,college,program,year_level,last_seen_at) on public.profiles to authenticated;
+grant select (id,full_name,email,role,department,email_notifications,student_number,college,program,year_level,last_seen_at,created_at) on public.profiles to authenticated;
 grant select on public.faculty_profiles to authenticated;
 grant update (expertise,bio,subjects,consultation_topics,research_interests,office_location,profile_completed_at) on public.faculty_profiles to authenticated;
 grant select,insert on public.availability to authenticated;

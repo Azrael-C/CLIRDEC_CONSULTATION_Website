@@ -814,6 +814,31 @@ body {
 .admin-content .qa-list p { margin-bottom: .55rem; padding: .8rem; border: 1px solid #dde6df; border-radius: 10px; background: rgba(255,255,255,.78); }
 .admin-content .qa-list p:last-child { margin-bottom: 0; }
 
+/* Administrator presence monitor */
+.presence-scope-note { display: grid; grid-template-columns: minmax(180px,.34fr) minmax(0,1fr); align-items: center; gap: 1rem; margin-bottom: 1rem; border-left-color: var(--portal-accent); }
+.presence-scope-note > b { display: flex; align-items: center; gap: .5rem; }
+.presence-toolbar { display: grid; grid-template-columns: minmax(260px,1fr) minmax(170px,.28fr); align-items: end; gap: .7rem; margin-bottom: .7rem; }
+.presence-toolbar .search-box { margin: 0; }
+.presence-toolbar > label { display: grid; gap: .3rem; color: #43554a; font-size: .62rem; font-weight: 850; }
+.presence-toolbar select { min-height: 45px; padding: .65rem .75rem; border: 1px solid #c9d7cd; border-radius: 9px; color: var(--figma-ink); background: #fff; font: inherit; }
+.presence-toolbar select:focus { border-color: var(--portal-accent); outline: 0; box-shadow: 0 0 0 4px rgba(var(--portal-accent-rgb),.09); }
+.presence-filter-tabs { margin-bottom: .9rem; }
+.presence-row { grid-template-columns: 1.45fr .9fr .7fr .9fr .85fr; }
+.presence-identity { display: grid!important; grid-template-columns: 38px minmax(0,1fr); align-items: center; gap: .65rem; }
+.presence-identity > i { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; color: var(--portal-accent); background: #e3f1e8; font-size: .64rem; font-style: normal; font-weight: 900; }
+.presence-identity > div { min-width: 0; }
+.presence-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.presence-pill { display: inline-flex; width: fit-content; align-items: center; gap: .4rem; padding: .32rem .55rem; border-radius: 999px; font-size: .6rem; font-style: normal; font-weight: 850; white-space: nowrap; }
+.presence-pill.active { color: #09663b; background: #ddf4e5; }
+.presence-pill.recent { color: #795f00; background: #fff2bd; }
+.presence-pill.offline { color: #627068; background: #e9eeea; }
+.presence-dot { display: inline-block; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: #98a49c; }
+.presence-dot.active { background: #1aac62; box-shadow: 0 0 0 4px rgba(26,172,98,.13); }
+.presence-dot.recent { background: #d4a900; }
+.presence-dot.offline { background: #929d96; }
+.presence-refresh-note { margin: .8rem .15rem 0; color: var(--figma-muted); font-size: .59rem; line-height: 1.5; }
+.presence-empty { grid-column: 1/-1; margin: .8rem; }
+
 /* Admin chatbot training */
 .training-workflow {
   display: grid;
@@ -1123,6 +1148,8 @@ body {
   .admin-content .filter-tabs { width: 100%; overflow-x: auto; border-radius: 12px; scrollbar-width: none; }
   .admin-content .filter-tabs::-webkit-scrollbar { display: none; }
   .admin-content .filter-tabs button { flex: 0 0 auto; }
+  .presence-scope-note,.presence-toolbar { grid-template-columns: 1fr; }
+  .presence-row { grid-template-columns: 1fr!important; }
   .review-breakdowns { grid-template-columns: 1fr; }
   .consultation-review > .primary { width: 100%; }
   .content { padding-bottom: 6.6rem; }

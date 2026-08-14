@@ -76,8 +76,11 @@ export type ChatbotGap = {
 export type AdminUser = {
   id: string;
   full_name: string;
+  email: string;
   role: Role;
   department: string;
+  last_seen_at: string | null;
+  created_at: string;
 };
 
 export type ConsultationReview = {
@@ -161,6 +164,16 @@ function initials(name: string) {
 }
 
 export { initials };
+
+export async function recordUserPresence(userId: string, active = true) {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ last_seen_at: active ? new Date().toISOString() : null })
+    .eq("id", userId);
+  if (error) {
+    throw new Error(friendlyError(error, "Portal activity could not be recorded."));
+  }
+}
 
 export async function loadStudentPortal(studentId: string) {
   const now = new Date().toISOString();
@@ -614,7 +627,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
   ] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id,full_name,role,department")
+      .select("id,full_name,email,role,department,last_seen_at,created_at")
       .order("full_name"),
     supabase
       .from("appointments")
@@ -681,6 +694,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       ...profile,
       role: profile.role as Role,
       department: profile.department || "",
+      last_seen_at: profile.last_seen_at || null,
     })),
     appointments,
     faqs: (faqs || []) as FaqEntry[],
