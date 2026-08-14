@@ -77,13 +77,13 @@ For deployment, Vercel Services deploys the React build and FastAPI/spaCy servic
 
 - Visual Studio Code
 - Git and GitHub
-- Node.js LTS with npm or pnpm
+- Node.js LTS with npm
 - Python 3.13 with a virtual environment to match CI and production
 - Supabase CLI for schema migrations and Edge Function deployment
 - Postman or Bruno for API testing; FastAPI `/docs` is development-only and disabled in production
 - Browser responsive-mode testing for phone and desktop layouts
 
-Do not use both npm and pnpm in the same checkout. Choose one package manager and commit its lockfile.
+The repository is standardized on npm and `package-lock.json`; do not add a second package-manager lockfile.
 
 ## Testing stack
 
