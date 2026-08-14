@@ -1,4 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { supabase } from "./supabase";
+import { recordClientError } from "./backend";
 
 export class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -15,6 +17,9 @@ export class ErrorBoundary extends Component<
       message: error.message,
       componentStack: information.componentStack,
     });
+    void supabase.auth.getUser().then(({ data }) => {
+      if (data.user) return recordClientError(data.user.id, "render_error", error.message);
+    }).catch(() => undefined);
   }
 
   render() {

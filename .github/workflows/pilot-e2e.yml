@@ -2,6 +2,9 @@ name: Pilot end-to-end lifecycle
 
 on:
   workflow_dispatch:
+  schedule:
+    # 2:00 AM Asia/Manila. The controlled test identities are reset first.
+    - cron: "0 18 * * *"
 
 permissions:
   contents: read

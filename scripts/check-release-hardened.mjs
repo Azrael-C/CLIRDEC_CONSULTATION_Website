@@ -26,6 +26,13 @@ const app = read("src/App.tsx");
 const backend = read("src/backend.ts");
 const styles = read("src/figma.css");
 const vercel = read("vercel.json");
+const operationsMigration = read("supabase/migrations/20260814120000_operations_hardening.sql");
+const mfaEnforcementMigration = read("supabase/migrations/20260814123000_enforce_privileged_mfa.sql");
+const mfaGate = read("src/MfaGate.tsx");
+const operations = read("src/AdminOperations.tsx");
+const calendar = read("src/calendar.ts");
+const lifecycle = read(".github/workflows/pilot-e2e.yml");
+const backupRunbook = read("BACKUP_RETENTION_RUNBOOK.md");
 
 for (const sql of [schema, migration]) {
   assertIncludes(sql, "gmail\\.com|clsu2\\.edu\\.ph", "Student email-domain registration SQL");
@@ -117,5 +124,25 @@ for (const sql of [schema, reviewMigration]) {
   assertIncludes(sql, "college", "Review college snapshot");
   assertIncludes(sql, "program", "Review program snapshot");
 }
+assertIncludes(operationsMigration, "account_status_changed", "Audited account lifecycle control");
+assertIncludes(operationsMigration, "delete from auth.sessions", "Privileged session revocation");
+assertIncludes(mfaEnforcementMigration, "auth.jwt()->>'aal'", "Database MFA assurance enforcement");
+assertIncludes(mfaEnforcementMigration, "apply only after", "Coordinated MFA rollout guidance");
+assertIncludes(operationsMigration, "Verified faculty access required", "Privileged workflow MFA enforcement");
+assertIncludes(operationsMigration, "is distinct from 'student'::public.user_role", "Suspended student workflow enforcement");
+assertIncludes(operationsMigration, "retention_preview", "Non-destructive retention preview");
+assertIncludes(operationsMigration, "client_error_events", "Privacy-filtered client monitoring");
+assertIncludes(operationsMigration, "record_client_error", "Rate-limited client monitoring RPC");
+assertIncludes(operationsMigration, "rate limit reached", "Client monitoring abuse protection");
+assertIncludes(mfaGate, "challengeAndVerify", "TOTP challenge and verification");
+assertIncludes(operations, "Email delivery health", "Administrator delivery monitoring");
+assertIncludes(operations, "Privileged audit trail", "Administrator audit viewer");
+assertIncludes(operations, "Print or save PDF report", "Printable PDF evidence export");
+assertIncludes(calendar, "BEGIN:VCALENDAR", "iCalendar export");
+assertIncludes(calendar, "calendar.google.com", "Google Calendar integration");
+assertIncludes(calendar, '"CANCELLED" ? "CANCEL"', "Calendar cancellation update");
+assertIncludes(chatbot, "review_due_at.gt", "Expired knowledge exclusion");
+assertIncludes(lifecycle, 'cron: "0 18 * * *"', "Nightly lifecycle automation");
+assertIncludes(backupRunbook, "restore drill", "Backup restore procedure");
 
 console.log("Release hardening checks passed.");

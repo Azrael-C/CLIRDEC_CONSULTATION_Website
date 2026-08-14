@@ -8,7 +8,7 @@
 | Frontend | React 18 + TypeScript + Vite | Student, faculty, and MISO interfaces | Free / open source |
 | Styling | Responsive CSS + Libre Franklin | CLSU-aligned, mobile-first interface | Free |
 | Client routing | React Router | Role-based pages and navigation | Free / open source |
-| Authentication | Supabase Auth | Student, faculty, and administrator sign-in | Free tier |
+| Authentication | Supabase Auth + TOTP MFA | Student sign-in and mandatory two-step verification for faculty/administrators | Free tier |
 | Database | Supabase PostgreSQL | Profiles, approved availability, consultation requests, FAQ knowledge, audit records, and email queue | Free tier |
 | Authorization | PostgreSQL Row-Level Security | Separate student, faculty, and administrator permissions | Included with Supabase |
 | Server functions | Supabase Edge Functions | Protected email processing and administrative operations | Free tier for the pilot |
@@ -49,6 +49,9 @@ For deployment, Vercel Services deploys the React build and FastAPI/spaCy servic
 - Database-enforced protection against double booking
 - Minimum necessary personal data only
 - Backup/export procedure for pilot data
+- Audited account suspension/deactivation and privileged-session revocation
+- Administrator email, audit, browser-error, retention, and service-health monitoring
+- `.ics` and Google Calendar actions for confirmed, completed, and cancelled consultations
 
 ### NLP chatbot
 
@@ -77,7 +80,7 @@ For deployment, Vercel Services deploys the React build and FastAPI/spaCy servic
 - Node.js LTS with npm or pnpm
 - Python 3.13 with a virtual environment to match CI and production
 - Supabase CLI for schema migrations and Edge Function deployment
-- Postman, Bruno, or FastAPI `/docs` for API testing
+- Postman or Bruno for API testing; FastAPI `/docs` is development-only and disabled in production
 - Browser responsive-mode testing for phone and desktop layouts
 
 Do not use both npm and pnpm in the same checkout. Choose one package manager and commit its lockfile.
@@ -90,7 +93,7 @@ Do not use both npm and pnpm in the same checkout. Choose one package manager an
 | Browser workflow tests | Playwright |
 | Python API tests | Pytest + FastAPI TestClient |
 | Database/security tests | Supabase local development + SQL/RLS test cases |
-| Accessibility checks | axe-core plus keyboard/manual review |
+| Accessibility checks | axe-core + Playwright desktop/mobile checks plus keyboard/manual review |
 | Pilot acceptance | Approved FAQ test set and representative Student/Faculty task scripts |
 
 The acceptance targets remain provisional until Product Owner confirmation: at least 80% FAQ accuracy, response within three seconds under normal pilot conditions, at least 80% task completion, average satisfaction of 4/5, safe fallback for unsupported questions, and no critical security or privacy defect.
@@ -121,6 +124,8 @@ Frontend variables may contain only public client configuration:
 VITE_SUPABASE_URL
 VITE_SUPABASE_PUBLISHABLE_KEY
 VITE_CHATBOT_URL
+VITE_TURNSTILE_SITE_KEY
+VITE_RELEASE
 ```
 
 Server-only secrets:
@@ -133,6 +138,7 @@ EMAIL_FROM
 EMAIL_CRON_SECRET
 PORTAL_URL
 TURNSTILE_SECRET_KEY
+CHAT_TRUST_SECRET
 ```
 
 Never prefix server secrets with `VITE_`, commit them to GitHub, or place them in browser code.
@@ -145,7 +151,7 @@ Do not add these during the initial pilot unless the Product Owner expands scope
 - Vector database or embeddings
 - Automatic faculty ranking or performance scoring
 - Push notifications or SMS
-- Calendar synchronization
+- Two-way Google/Microsoft calendar synchronization (downloadable `.ics`, cancellation updates, and Google Calendar links are included)
 - Full machine-learning recommendation engine
 - Advanced analytics warehouse
 - Mobile application separate from the responsive website

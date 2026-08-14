@@ -6,7 +6,7 @@ Use a dedicated Supabase development or pilot project. Do not seed test users in
 
 1. Create a Supabase project.
 2. Open SQL Editor.
-3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, apply the versioned SQL files that have not yet run, including `supabase/chatbot_training_migration.sql` for administrator-managed example phrases and `supabase/active_user_presence_migration.sql` for the active-user monitor.
+3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, apply the versioned SQL files that have not yet run, including `supabase/chatbot_training_migration.sql` for administrator-managed example phrases, `supabase/active_user_presence_migration.sql` for the active-user monitor, and `supabase/migrations/20260814120000_operations_hardening.sql` for account lifecycle controls, retention previews, and operational monitoring. Deploy the matching frontend before applying the separate MFA enforcement migration described below.
 4. Confirm that Row-Level Security is enabled on every public table.
 5. Before a new student registers, approve the exact email in **MISO Administration → Manage users**. Approvals are single-use. Existing accounts are unaffected; faculty and administrator roles are assigned only by an administrator after registration.
 
@@ -137,3 +137,25 @@ Apply `supabase/faculty_discovery_chatbot_migration.sql`. When an administrator 
 The chatbot validates the Supabase login session before returning live directory information. It combines completed, active faculty profiles with future open availability, caches successful directory reads for `FACULTY_CACHE_SECONDS` (60 seconds by default), and identifies the source as `Live CLSU faculty profiles and published availability`. Empty or failed database reads are never presented as invented faculty matches or schedules.
 
 Safe low-confidence questions are recorded through the server-only `record_chatbot_gap` function. Questions containing email addresses, long identification numbers, or sensitive-topic indicators are excluded. Administrators can review repeated gaps, start a source-backed FAQ draft, approve the final answer, or mark a gap reviewed from **Chatbot training**.
+
+## 12. Privileged MFA and account lifecycle
+
+The portal enrolls privileged users in TOTP and challenges them at sign-in. Roll this out in three ordered steps: apply `20260814120000_operations_hardening.sql`, deploy the matching frontend, then apply `20260814123000_enforce_privileged_mfa.sql`. The second migration requires an `aal2` Supabase session for faculty and administrator database permissions. Do not reverse this order, because existing privileged sessions must have the MFA gate available before database enforcement begins.
+
+Because `supabase db push` applies every pending migration, use this controlled production sequence:
+
+1. Run the complete phase-one SQL file in the Supabase SQL Editor.
+2. Record it in CLI history with `npx supabase migration repair --linked --status applied 20260814120000`.
+3. Deploy the frontend and confirm a faculty/admin login reaches the two-step verification screen.
+4. Run `npx supabase db push --linked`; only `20260814123000_enforce_privileged_mfa.sql` should remain.
+5. Sign in with TOTP as faculty and administrator, then run the complete lifecycle workflow.
+
+Administrators can suspend, deactivate, or reactivate accounts from **Users and roles**. Restrictions are audited, faculty schedules close automatically, and existing database sessions are revoked. Public signup remains student-only. Faculty and administrator access must still be assigned by an authorized administrator.
+
+## 13. Operations, retention, backup, and reporting
+
+The **Operations and health** page shows delayed or failed email, Resend webhook evidence, privacy-filtered browser errors, privileged audit records, retention-policy previews, CSV exports, and printable release evidence. Retention is intentionally preview-only: the portal does not delete records automatically.
+
+Follow `BACKUP_RETENTION_RUNBOOK.md` for encrypted backup handling and an isolated restore drill. Use `scripts/backup-database.ps1` with a private database URL. Never commit a backup or put one in a public CI artifact.
+
+Confirmed and completed appointments offer `.ics` downloads and Google Calendar links. Lifecycle tests run nightly and on demand; public authentication and privacy pages are checked on desktop and mobile with Playwright and axe.

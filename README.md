@@ -25,6 +25,11 @@ npm run check
 - Responsive phone and desktop interface
 - Backend email queue and protected Resend worker for Gmail or CLSU addresses
 - Secure password recovery and student email-notification preferences
+- Mandatory TOTP two-step verification for faculty and administrators
+- Audited suspension, deactivation, and reactivation of user accounts
+- Administrator health monitoring, retention previews, and CSV/PDF-ready reports
+- `.ics` and Google Calendar actions for confirmed consultations
+- Nightly full-lifecycle, desktop accessibility, and mobile accessibility tests
 
 ## Run the web app
 
@@ -68,3 +73,9 @@ Email is sent from the backend, never from React. The database trigger places me
 The initial events are request receipt, faculty decision, schedule change/cancellation, and appointment reminder. Students can disable optional email notifications in their profile; legally or operationally required notices should be defined with the Product Owner before implementation.
 
 Do not place Gmail passwords, Google app passwords, Resend keys, or the Supabase service-role key in `.env` variables beginning with `VITE_`; those values become visible in the browser bundle.
+
+## Production operations
+
+Use the zero-downtime rollout order in `BACKEND_SETUP.md`: apply `20260814120000_operations_hardening.sql`, deploy the frontend, and only then apply `20260814123000_enforce_privileged_mfa.sql`. The administrator **Operations and health** workspace monitors delivery failures, audit activity, browser errors, knowledge review dates, and approved retention periods without automatically deleting data.
+
+Use [BACKUP_RETENTION_RUNBOOK.md](BACKUP_RETENTION_RUNBOOK.md) for backup and restore drills. Run `npm run test:a11y` for desktop and Pixel-sized public accessibility checks, and use the scheduled `Pilot end-to-end lifecycle` workflow for the complete student-to-admin consultation path.
