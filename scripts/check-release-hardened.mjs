@@ -15,6 +15,7 @@ const realtimeMigration = read("supabase/realtime_portal_migration.sql");
 const registrationMigration = read("supabase/student_email_domain_registration_migration.sql");
 const completeEmailMigration = read("supabase/complete_email_notifications_migration.sql");
 const chatbotTrainingMigration = read("supabase/chatbot_training_migration.sql");
+const presenceMigration = read("supabase/active_user_presence_migration.sql");
 const chatbot = read("chatbot/app.py");
 const resendWebhook = read("supabase/functions/resend-webhook/index.ts");
 const deliveryMigration = read("supabase/resend_delivery_webhooks_migration.sql");
@@ -75,6 +76,10 @@ assertIncludes(schema, "training_phrases text[]", "Chatbot training phrase stora
 assertIncludes(chatbotTrainingMigration, "faq_training_phrases_limit", "Training phrase database limit");
 assertIncludes(app, "Build, verify, and improve Consult AI", "Administrator chatbot training page");
 assertIncludes(app, "Test the live chatbot", "Administrator chatbot test console");
+assertIncludes(app, "Currently active users", "Administrator presence monitor");
+assertIncludes(app, "recordUserPresence(user.id)", "Authenticated presence heartbeat");
+assertIncludes(backend, "last_seen_at", "Administrator presence data loading");
+assertIncludes(presenceMigration, "profiles_last_seen_at_idx", "Presence activity index");
 assertIncludes(backend, "normalizeTrainingPhrases", "Training phrase input validation");
 assertIncludes(chatbot, "training_phrases", "spaCy approved phrase retrieval");
 assertIncludes(chatbot, 'os.getenv("SUPABASE_SECRET_KEY")', "Server-only chatbot database credential");
