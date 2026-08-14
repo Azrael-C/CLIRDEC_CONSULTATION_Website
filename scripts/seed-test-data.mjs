@@ -38,8 +38,25 @@ async function findUser(email) {
 async function ensureUser(email, fullName) {
   const existing = await findUser(email);
   if (existing) {
-    const { error: deleteError } = await supabase.auth.admin.deleteUser(existing.id);
-    if (deleteError) throw deleteError;
+    const { data: factorData, error: factorListError } =
+      await supabase.auth.admin.mfa.listFactors({ userId: existing.id });
+    if (factorListError) throw factorListError;
+    for (const factor of factorData?.factors || []) {
+      const { error: factorDeleteError } =
+        await supabase.auth.admin.mfa.deleteFactor({
+          userId: existing.id,
+          id: factor.id,
+        });
+      if (factorDeleteError) throw factorDeleteError;
+    }
+    const { data, error } = await supabase.auth.admin.updateUserById(existing.id, {
+      email,
+      password: process.env.TEST_USER_PASSWORD,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+    if (error) throw error;
+    return data.user;
   }
   const { data, error } = await supabase.auth.admin.createUser({
     email,
