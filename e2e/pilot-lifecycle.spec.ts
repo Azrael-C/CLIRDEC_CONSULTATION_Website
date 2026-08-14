@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { readFileSync } from "node:fs";
+import * as OTPAuth from "otpauth";
 
 const required = [
   "SUPABASE_URL",
@@ -15,6 +17,14 @@ function environment() {
   const missing = required.filter((key) => !process.env[key]);
   if (missing.length) throw new Error(`Missing E2E configuration: ${missing.join(", ")}`);
   return Object.fromEntries(required.map((key) => [key, process.env[key]!])) as Record<(typeof required)[number], string>;
+}
+
+let mfaSecrets: Record<string, string> = {};
+try {
+  mfaSecrets = JSON.parse(readFileSync(".e2e-mfa.json", "utf8")) as Record<string, string>;
+} catch {
+  // Public accessibility checks can run without seeded privileged accounts.
+  // The lifecycle seeder creates this ignored file before authenticated tests.
 }
 
 async function signIn(page: Page, admin: SupabaseClient, email: string) {
@@ -32,6 +42,20 @@ async function signIn(page: Page, admin: SupabaseClient, email: string) {
   if (error || !actionLink) throw error || new Error(`Could not generate a test sign-in link for ${email}.`);
 
   await page.goto(actionLink);
+  const mfaSecret = mfaSecrets[email];
+  if (mfaSecret) {
+    await expect(page.getByRole("heading", { name: "Two-step verification required" })).toBeVisible();
+    const totp = new OTPAuth.TOTP({
+      issuer: "CLSU FacultyConnect",
+      label: email,
+      algorithm: "SHA1",
+      digits: 6,
+      period: 30,
+      secret: mfaSecret,
+    });
+    await page.getByLabel("Six-digit verification code").fill(totp.generate());
+    await page.getByRole("button", { name: "Verify and continue" }).click();
+  }
   await expect(page.getByRole("button", { name: /Sign out/i })).toBeVisible();
 }
 
@@ -117,9 +141,13 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
   });
 });
 
-test("public authentication page has no serious accessibility violations", async ({ page }) => {
+test("@a11y public authentication and policy pages have no serious accessibility violations", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "Log in to your portal" })).toBeVisible();
   const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact || ""))).toEqual([]);
+  await page.goto("/privacy-policy");
+  await expect(page.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeVisible();
+  const policyResults = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(policyResults.violations.filter((violation) => ["serious", "critical"].includes(violation.impact || ""))).toEqual([]);
 });

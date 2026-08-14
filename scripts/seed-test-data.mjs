@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { writeFile } from "node:fs/promises";
+import * as OTPAuth from "otpauth";
 
 const required = [
   "SUPABASE_URL",
@@ -35,7 +37,10 @@ async function findUser(email) {
 
 async function ensureUser(email, fullName) {
   const existing = await findUser(email);
-  if (existing) return existing;
+  if (existing) {
+    const { error: deleteError } = await supabase.auth.admin.deleteUser(existing.id);
+    if (deleteError) throw deleteError;
+  }
   const { data, error } = await supabase.auth.admin.createUser({
     email,
     password: process.env.TEST_USER_PASSWORD,
@@ -44,6 +49,37 @@ async function ensureUser(email, fullName) {
   });
   if (error) throw error;
   return data.user;
+}
+
+async function configureMfa(email) {
+  const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { error: loginError } = await client.auth.signInWithPassword({
+    email,
+    password: process.env.TEST_USER_PASSWORD,
+  });
+  if (loginError) throw loginError;
+  const { data, error } = await client.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: "FacultyConnect E2E",
+  });
+  if (error || !data) throw error || new Error(`Could not enroll MFA for ${email}`);
+  const totp = new OTPAuth.TOTP({
+    issuer: "CLSU FacultyConnect",
+    label: email,
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30,
+    secret: data.totp.secret,
+  });
+  const { error: verifyError } = await client.auth.mfa.challengeAndVerify({
+    factorId: data.id,
+    code: totp.generate(),
+  });
+  if (verifyError) throw verifyError;
+  await client.auth.signOut({ scope: "local" });
+  return data.totp.secret;
 }
 
 const accounts = [
@@ -74,6 +110,12 @@ for (const account of accounts) {
   });
   if (error) throw error;
 }
+
+const mfaSecrets = {};
+for (const account of accounts.filter((item) => item.role !== "student")) {
+  mfaSecrets[account.email] = await configureMfa(account.email);
+}
+await writeFile(".e2e-mfa.json", JSON.stringify(mfaSecrets), { encoding: "utf8", mode: 0o600 });
 
 const { error: facultyError } = await supabase.from("faculty_profiles").upsert({
   user_id: users.faculty.id,

@@ -81,6 +81,9 @@ export type AdminUser = {
   department: string;
   last_seen_at: string | null;
   created_at: string;
+  account_status: "active" | "suspended" | "deactivated";
+  status_reason: string | null;
+  status_changed_at: string | null;
 };
 
 export type ConsultationReview = {
@@ -110,6 +113,65 @@ export type FaqEntry = {
   approved_by: string | null;
   approved_at: string | null;
   updated_at: string;
+  content_owner_id: string | null;
+  last_reviewed_at: string | null;
+  review_due_at: string | null;
+  review_interval_days: number;
+};
+
+export type EmailNotificationEvidence = {
+  id: string;
+  event_type: string;
+  subject: string;
+  status: "queued" | "processing" | "sent" | "failed";
+  attempts: number;
+  last_error: string | null;
+  scheduled_for: string;
+  sent_at: string | null;
+  created_at: string;
+  provider_email_id: string | null;
+  provider_status: string | null;
+  provider_status_at: string | null;
+};
+
+export type EmailDeliveryEvent = {
+  webhook_id: string;
+  provider_email_id: string;
+  event_type: string;
+  event_created_at: string;
+  recipient_addresses: string[];
+  subject: string | null;
+  received_at: string;
+};
+
+export type AuditEntry = {
+  id: number;
+  actor_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type RetentionPolicy = {
+  record_type: string;
+  retention_days: number;
+  rationale: string;
+  approved: boolean;
+  updated_at: string;
+  eligible_records: number;
+};
+
+export type ClientErrorEvent = {
+  id: number;
+  reporter_id: string | null;
+  event_type: string;
+  message: string;
+  route: string;
+  release: string | null;
+  created_at: string;
 };
 
 export type AdminPortal = {
@@ -118,6 +180,11 @@ export type AdminPortal = {
   faqs: FaqEntry[];
   reviews: ConsultationReview[];
   chatbotGaps: ChatbotGap[];
+  emailNotifications: EmailNotificationEvidence[];
+  deliveryEvents: EmailDeliveryEvent[];
+  auditLogs: AuditEntry[];
+  retentionPolicies: RetentionPolicy[];
+  clientErrors: ClientErrorEvent[];
 };
 
 export type AdminNotificationSummary = {
@@ -624,10 +691,16 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     { data: faqs, error: faqError },
     { data: reviews, error: reviewError },
     { data: chatbotGaps, error: chatbotGapError },
+    { data: emailNotifications, error: emailNotificationError },
+    { data: deliveryEvents, error: deliveryEventError },
+    { data: auditLogs, error: auditError },
+    { data: retentionPolicies, error: retentionError },
+    { data: retentionPreview, error: retentionPreviewError },
+    { data: clientErrors, error: clientError },
   ] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id,full_name,email,role,department,last_seen_at,created_at")
+      .select("id,full_name,email,role,department,last_seen_at,created_at,account_status,status_reason,status_changed_at")
       .order("full_name"),
     supabase
       .from("appointments")
@@ -638,7 +711,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     supabase
       .from("faq_entries")
       .select(
-        "id,question,answer,category,source_reference,training_phrases,status,created_by,approved_by,approved_at,updated_at",
+        "id,question,answer,category,source_reference,training_phrases,status,created_by,approved_by,approved_at,updated_at,content_owner_id,last_reviewed_at,review_due_at,review_interval_days",
       )
       .order("updated_at", { ascending: false }),
     supabase
@@ -652,11 +725,36 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       .order("occurrence_count", { ascending: false })
       .order("last_seen_at", { ascending: false })
       .limit(50),
+    supabase
+      .from("email_notifications")
+      .select("id,event_type,subject,status,attempts,last_error,scheduled_for,sent_at,created_at,provider_email_id,provider_status,provider_status_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("email_delivery_events")
+      .select("webhook_id,provider_email_id,event_type,event_created_at,recipient_addresses,subject,received_at")
+      .order("event_created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("audit_logs")
+      .select("id,actor_id,action,resource_type,resource_id,old_data,new_data,created_at")
+      .order("created_at", { ascending: false })
+      .limit(250),
+    supabase
+      .from("retention_policies")
+      .select("record_type,retention_days,rationale,approved,updated_at")
+      .order("record_type"),
+    supabase.rpc("retention_preview"),
+    supabase
+      .from("client_error_events")
+      .select("id,reporter_id,event_type,message,route,release,created_at")
+      .order("created_at", { ascending: false })
+      .limit(100),
   ]);
-  if (userError || appointmentError || faqError || reviewError || chatbotGapError) {
+  if (userError || appointmentError || faqError || reviewError || chatbotGapError || emailNotificationError || deliveryEventError || auditError || retentionError || retentionPreviewError || clientError) {
     throw new Error(
       friendlyError(
-        userError || appointmentError || faqError || reviewError || chatbotGapError,
+        userError || appointmentError || faqError || reviewError || chatbotGapError || emailNotificationError || deliveryEventError || auditError || retentionError || retentionPreviewError || clientError,
         "The administration workspace could not be loaded.",
       ),
     );
@@ -695,12 +793,41 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       role: profile.role as Role,
       department: profile.department || "",
       last_seen_at: profile.last_seen_at || null,
+      account_status: profile.account_status || "active",
+      status_reason: profile.status_reason || null,
+      status_changed_at: profile.status_changed_at || null,
     })),
     appointments,
     faqs: (faqs || []) as FaqEntry[],
     reviews: (reviews || []) as ConsultationReview[],
     chatbotGaps: (chatbotGaps || []) as ChatbotGap[],
+    emailNotifications: (emailNotifications || []) as EmailNotificationEvidence[],
+    deliveryEvents: (deliveryEvents || []) as EmailDeliveryEvent[],
+    auditLogs: (auditLogs || []) as AuditEntry[],
+    retentionPolicies: (retentionPolicies || []).map((policy) => ({
+      ...policy,
+      eligible_records: Number((retentionPreview || []).find((item: any) => item.record_type === policy.record_type)?.eligible_records || 0),
+    })) as RetentionPolicy[],
+    clientErrors: (clientErrors || []) as ClientErrorEvent[],
   };
+}
+
+export async function recordClientError(
+  userId: string,
+  eventType: ClientErrorEvent["event_type"],
+  message: string,
+) {
+  void userId;
+  const privacyFiltered = message
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email removed]")
+    .replace(/\b\d{7,}\b/g, "[identifier removed]")
+    .slice(0, 500);
+  await supabase.rpc("record_client_error", {
+    target_event_type: eventType,
+    target_message: privacyFiltered || "Client error without a safe message",
+    target_route: window.location.pathname.slice(0, 200),
+    target_release: String(import.meta.env.VITE_RELEASE || "unknown").slice(0, 100),
+  });
 }
 
 export async function resolveChatbotGap(
@@ -814,6 +941,36 @@ export async function adminSetRole(userId: string, role: Role) {
     );
 }
 
+export async function adminSetAccountStatus(
+  userId: string,
+  status: "active" | "suspended" | "deactivated",
+  reason = "",
+) {
+  const { error } = await supabase.rpc("admin_set_account_status", {
+    target_user: userId,
+    new_status: status,
+    reason: reason.trim() || null,
+  });
+  if (error)
+    throw new Error(friendlyError(error, "The account status could not be updated."));
+}
+
+export async function updateRetentionPolicy(input: {
+  recordType: string;
+  retentionDays: number;
+  rationale: string;
+  approved: boolean;
+}) {
+  const { error } = await supabase.rpc("admin_update_retention_policy", {
+    target_record_type: input.recordType,
+    target_days: input.retentionDays,
+    target_rationale: input.rationale,
+    target_approved: input.approved,
+  });
+  if (error)
+    throw new Error(friendlyError(error, "The retention policy could not be updated."));
+}
+
 export async function createFaqEntry(input: {
   userId: string;
   question: string;
@@ -821,6 +978,8 @@ export async function createFaqEntry(input: {
   category: string;
   sourceReference: string;
   trainingPhrases: string[];
+  contentOwnerId?: string;
+  reviewIntervalDays?: number;
 }) {
   if (input.question.trim().length < 8 || input.answer.trim().length < 15) {
     throw new Error("Provide a complete question and a clear approved answer.");
@@ -843,6 +1002,8 @@ export async function createFaqEntry(input: {
     training_phrases: trainingPhrases,
     status: "draft",
     created_by: input.userId,
+    content_owner_id: input.contentOwnerId || input.userId,
+    review_interval_days: input.reviewIntervalDays || 180,
   });
   if (error)
     throw new Error(friendlyError(error, "The FAQ draft could not be saved."));
@@ -874,6 +1035,8 @@ export async function updateFaqEntry(input: {
   category: string;
   sourceReference: string;
   trainingPhrases: string[];
+  contentOwnerId?: string;
+  reviewIntervalDays?: number;
 }) {
   if (input.question.trim().length < 8 || input.answer.trim().length < 15)
     throw new Error("Provide a complete question and a clear approved answer.");
@@ -897,6 +1060,10 @@ export async function updateFaqEntry(input: {
       status: "draft",
       approved_by: null,
       approved_at: null,
+      content_owner_id: input.contentOwnerId || null,
+      review_interval_days: input.reviewIntervalDays || 180,
+      last_reviewed_at: null,
+      review_due_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", input.faqId);
@@ -905,12 +1072,22 @@ export async function updateFaqEntry(input: {
 }
 
 export async function approveFaqEntry(faqId: string, approverId: string) {
+  const { data: faq } = await supabase
+    .from("faq_entries")
+    .select("review_interval_days")
+    .eq("id", faqId)
+    .single();
+  const reviewedAt = new Date();
+  const dueAt = new Date(reviewedAt);
+  dueAt.setDate(dueAt.getDate() + Number(faq?.review_interval_days || 180));
   const { error } = await supabase
     .from("faq_entries")
     .update({
       status: "approved",
       approved_by: approverId,
       approved_at: new Date().toISOString(),
+      last_reviewed_at: reviewedAt.toISOString(),
+      review_due_at: dueAt.toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", faqId);

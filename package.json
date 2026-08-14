@@ -2,6 +2,7 @@
   "name": "clsu-faculty-connect",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "npm@11.17.0",
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader runner",
@@ -11,6 +12,7 @@
     "test:scheduling": "node scripts/check-scheduling.mjs",
     "test:release": "node scripts/check-release-hardened.mjs",
     "test:production": "node scripts/check-production-smoke.mjs",
+    "test:a11y": "playwright test --grep @a11y",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "check": "npm run typecheck && npm run test:scheduling && npm run test:release && npm run build",
@@ -30,6 +32,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "otpauth": "^9.5.1",
     "typescript": "5.9.3",
     "vite": "^6.1.0"
   }

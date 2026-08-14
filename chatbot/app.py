@@ -527,8 +527,9 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
 
     headers = {"apikey": server_key, "Authorization": f"Bearer {server_key}"}
     params = {
-        "select": "question,answer,category,source_reference,training_phrases",
+        "select": "question,answer,category,source_reference,training_phrases,review_due_at",
         "status": "eq.approved",
+        "or": f"(review_due_at.is.null,review_due_at.gt.{datetime.now(timezone.utc).isoformat()})",
         "order": "updated_at.desc",
         "limit": "200",
     }
@@ -543,7 +544,7 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
                 headers,
                 params,
             )
-            items = [KnowledgeItem(**row) for row in rows]
+            items = [KnowledgeItem(**{key: value for key, value in row.items() if key != "review_due_at"}) for row in rows]
             if not items:
                 return [], "bundled workflow answers"
             source = "Supabase approved FAQ entries"

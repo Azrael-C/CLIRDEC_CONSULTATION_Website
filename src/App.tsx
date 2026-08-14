@@ -4,6 +4,7 @@ import { Turnstile } from "@marsidev/react-turnstile";
 import { supabase, configured } from "./supabase";
 import {
   adminSetRole,
+  adminSetAccountStatus,
   approveFaqEntry,
   archiveFaqEntry,
   bookAppointment,
@@ -23,6 +24,7 @@ import {
   submitConsultationReview,
   updateFaqEntry,
   updateFacultyProfile,
+  recordClientError,
   type AdminPortal,
   type AppointmentStatus,
   type ConsultationReview,
@@ -33,6 +35,13 @@ import {
   type FacultyRequest,
   type ChatbotGap,
 } from "./backend";
+import { PrivilegedMfaGate } from "./MfaGate";
+import { AdminOperations } from "./AdminOperations";
+import {
+  appointmentCalendarDetails,
+  downloadCalendarFile,
+  googleCalendarUrl,
+} from "./calendar";
 import {
   addCalendarDays,
   availabilityValidationMessage,
@@ -66,6 +75,7 @@ type User = {
   program?: string;
   year_level?: string;
   email_notifications: boolean;
+  account_status: "active" | "suspended" | "deactivated";
 };
 type Slot = {
   id: string;
@@ -324,7 +334,7 @@ function App() {
       const { data: p, error } = await supabase
         .from("profiles")
         .select(
-          "full_name,role,department,student_number,college,program,year_level,email_notifications",
+          "full_name,role,department,student_number,college,program,year_level,email_notifications,account_status,status_reason",
         )
         .eq("id", id)
         .single();
@@ -334,6 +344,12 @@ function App() {
           "Your account exists, but its portal profile could not be loaded.",
         );
         setUser(null);
+        return;
+      }
+      if (p.account_status && p.account_status !== "active") {
+        setNotice(`This account is ${p.account_status}. ${p.status_reason || "Contact MISO for assistance."}`);
+        setUser(null);
+        await supabase.auth.signOut({ scope: "local" });
         return;
       }
       setUser({
@@ -347,6 +363,7 @@ function App() {
         program: p.program || "",
         year_level: p.year_level || "",
         email_notifications: p.email_notifications ?? true,
+        account_status: p.account_status || "active",
       });
     };
     supabase.auth.getSession().then(async ({ data }) => {
@@ -425,6 +442,28 @@ function App() {
       window.clearInterval(interval);
       window.removeEventListener("focus", heartbeat);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [user?.id]);
+  useEffect(() => {
+    if (!configured || !user?.id) return;
+    const runtimeError = (event: ErrorEvent) => {
+      void recordClientError(
+        user.id,
+        "runtime_error",
+        event.message || "Unknown browser runtime error",
+      ).catch(() => undefined);
+    };
+    const rejection = (event: PromiseRejectionEvent) => {
+      const message = event.reason instanceof Error
+        ? event.reason.message
+        : String(event.reason || "Unhandled promise rejection");
+      void recordClientError(user.id, "unhandled_rejection", message).catch(() => undefined);
+    };
+    window.addEventListener("error", runtimeError);
+    window.addEventListener("unhandledrejection", rejection);
+    return () => {
+      window.removeEventListener("error", runtimeError);
+      window.removeEventListener("unhandledrejection", rejection);
     };
   }, [user?.id]);
   async function loadStudentData(studentId: string) {
@@ -716,6 +755,7 @@ function App() {
       year_level: yearLevel,
       department: [program, yearLevel].filter(Boolean).join(" · "),
       email_notifications: values.emailNotifications,
+      account_status: user.account_status,
     });
     setNotice("Profile has been updated.");
     return true;
@@ -749,6 +789,11 @@ function App() {
       setReschedulingId(null);
       setView("schedule");
     } catch (cause) {
+      void recordClientError(
+        user.id,
+        "booking_error",
+        cause instanceof Error ? cause.message : "Consultation booking failed",
+      ).catch(() => undefined);
       setNotice(
         cause instanceof Error
           ? cause.message
@@ -832,6 +877,13 @@ function App() {
       const challengeRequired =
         cause instanceof ChatbotRequestError &&
         (cause.status === 403 || cause.status === 429);
+      if (!challengeRequired && user) {
+        void recordClientError(
+          user.id,
+          "chatbot_error",
+          cause instanceof Error ? cause.message : "Chatbot request failed",
+        ).catch(() => undefined);
+      }
       setChat((c) => [
         ...c,
         {
@@ -869,7 +921,11 @@ function App() {
       />
     );
   if (user.role !== "student")
-    return <RoleWorkspace user={user} logout={logout} />;
+    return (
+      <PrivilegedMfaGate onSignOut={logout}>
+        <RoleWorkspace user={user} logout={logout} />
+      </PrivilegedMfaGate>
+    );
   const nav = (next: View) => {
     setView(next);
     setMenu(false);
@@ -2278,6 +2334,64 @@ function Schedule({
                       ? "Location no longer applies."
                       : "Final location follows faculty approval."}
                 </small>
+                {(s.status === "confirmed" || s.status === "completed") && s.appointment_id && (
+                  <div className="calendar-actions" aria-label="Calendar options">
+                    <button
+                      type="button"
+                      className="outline"
+                      onClick={() =>
+                        downloadCalendarFile(
+                          appointmentCalendarDetails({
+                            id: s.appointment_id!,
+                            facultyName: s.faculty_name,
+                            topic: s.topic || s.expertise,
+                            startsAt: s.starts_at,
+                            endsAt: s.ends_at,
+                            location: s.location,
+                          }),
+                        )
+                      }
+                    >
+                      Download calendar (.ics)
+                    </button>
+                    <a
+                      className="outline button-link"
+                      href={googleCalendarUrl(
+                        appointmentCalendarDetails({
+                          id: s.appointment_id,
+                          facultyName: s.faculty_name,
+                          topic: s.topic || s.expertise,
+                          startsAt: s.starts_at,
+                          endsAt: s.ends_at,
+                          location: s.location,
+                        }),
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Add to Google Calendar
+                    </a>
+                  </div>
+                )}
+                {s.status === "cancelled" && s.appointment_id && (
+                  <div className="calendar-actions" aria-label="Calendar cancellation">
+                    <button
+                      type="button"
+                      className="outline"
+                      onClick={() => downloadCalendarFile(appointmentCalendarDetails({
+                        id: s.appointment_id!,
+                        facultyName: s.faculty_name,
+                        topic: s.topic || s.expertise,
+                        startsAt: s.starts_at,
+                        endsAt: s.ends_at,
+                        location: s.location,
+                        status: "cancelled",
+                      }))}
+                    >
+                      Download calendar cancellation
+                    </button>
+                  </div>
+                )}
                 {active && s.appointment_id && (
                   <div className="inline-actions">
                     <button
@@ -2919,6 +3033,7 @@ type AView =
   | "appointments"
   | "reviews"
   | "knowledge"
+  | "operations"
   | "reports";
 function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   const faculty = user.role === "faculty";
@@ -2935,6 +3050,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
     appointments: ["Consultation logs | CLSU FacultyConnect", "Review consultation status, participants, schedules, and service exceptions."],
     reviews: ["Reviews and insights | CLSU FacultyConnect", "Analyze consultation ratings and comments by year level, college, and course."],
     knowledge: ["Chatbot training | CLSU FacultyConnect", "Train and test the consultation assistant with approved answers, example phrases, and official sources."],
+    operations: ["Operations and health | CLSU FacultyConnect", "Monitor email delivery, audit records, application errors, retention, and release evidence."],
     reports: ["Quality assurance | CLSU FacultyConnect", "Track service acceptance criteria, quality targets, and release evidence."],
   };
   usePageMetadata(portalMetadata[view][0], portalMetadata[view][1]);
@@ -2952,6 +3068,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         ["activity", "Active users", "users"],
         ["appointments", "Consultation logs", "calendar"],
         ["reviews", "Reviews and insights", "report"],
+        ["operations", "Operations and health", "report"],
         ["reports", "Quality assurance", "report"],
       ];
   const navigate = (target: FView | AView) => {
@@ -3058,6 +3175,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
                 ["activity", "Active", "users"],
                 ["appointments", "Logs", "calendar"],
                 ["reviews", "Reviews", "report"],
+                ["operations", "Health", "report"],
                 ["reports", "QA", "calendar"],
               ]
         }
@@ -3600,6 +3718,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
         {feedback}
         <FacultyRequestWorkspace
           requests={requests}
+          facultyName={user.name}
           filter={requestFilter}
           setFilter={setRequestFilter}
           decide={decide}
@@ -3901,12 +4020,14 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
 }
 function FacultyRequestWorkspace({
   requests,
+  facultyName,
   filter,
   setFilter,
   decide,
   complete,
 }: {
   requests: FacultyRequest[];
+  facultyName: string;
   filter: "pending" | "confirmed" | "completed";
   setFilter: (value: "pending" | "confirmed" | "completed") => void;
   decide: (id: string, status: "confirmed" | "declined") => Promise<void>;
@@ -3998,15 +4119,46 @@ function FacultyRequestWorkspace({
                 </div>
               </>
             )}
-            {request.status === "confirmed" && (
+            {(request.status === "confirmed" || request.status === "completed") && (
               <div className="request-actions">
                 <button
-                  className="primary"
-                  disabled={new Date(request.ends_at) > new Date()}
-                  onClick={() => void complete(request.id)}
+                  type="button"
+                  className="outline"
+                  onClick={() => downloadCalendarFile(appointmentCalendarDetails({
+                    id: request.id,
+                    facultyName,
+                    topic: request.topic,
+                    startsAt: request.starts_at,
+                    endsAt: request.ends_at,
+                    location: request.location,
+                  }))}
                 >
-                  Mark completed
+                  Download calendar (.ics)
                 </button>
+                <a
+                  className="outline button-link"
+                  href={googleCalendarUrl(appointmentCalendarDetails({
+                    id: request.id,
+                    facultyName,
+                    topic: request.topic,
+                    startsAt: request.starts_at,
+                    endsAt: request.ends_at,
+                    location: request.location,
+                  }))}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Add to Google Calendar
+                </a>
+                {request.status === "confirmed" && (
+                  <button
+                    className="primary"
+                    disabled={new Date(request.ends_at) > new Date()}
+                    onClick={() => void complete(request.id)}
+                  >
+                    Mark completed
+                  </button>
+                )}
               </div>
             )}
           </article>
@@ -4052,6 +4204,11 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     faqs: [],
     reviews: [],
     chatbotGaps: [],
+    emailNotifications: [],
+    deliveryEvents: [],
+    auditLogs: [],
+    retentionPolicies: [],
+    clientErrors: [],
   });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -4069,6 +4226,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     answer: "",
     category: "Consultation procedure",
     trainingPhrases: "",
+    contentOwnerId: user.id,
+    reviewIntervalDays: 180,
   });
   const [trainingQuestion, setTrainingQuestion] = useState("");
   const [trainingReply, setTrainingReply] = useState<ChatbotReply | null>(null);
@@ -4114,6 +4273,29 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       );
     }
   };
+  const changeAccountStatus = async (
+    id: string,
+    status: "active" | "suspended" | "deactivated",
+  ) => {
+    const reason = status === "active"
+      ? "Account reactivated by an authorized administrator."
+      : window.prompt(
+          `Record the reason for ${status === "suspended" ? "suspending" : "deactivating"} this account:`,
+          "Administrative review",
+        );
+    if (reason === null) return;
+    if (status !== "active" && !reason.trim()) {
+      setMessage("A reason is required when restricting an account.");
+      return;
+    }
+    try {
+      await adminSetAccountStatus(id, status, reason);
+      setMessage(`Account ${status}. Existing sessions were revoked and the change was audited.`);
+      await refresh();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "The account status could not be updated.");
+    }
+  };
   const saveFaq = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trainingPhrases = faqDraft.trainingPhrases
@@ -4129,6 +4311,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           sourceReference: faqDraft.source,
           category: faqDraft.category,
           trainingPhrases,
+          contentOwnerId: faqDraft.contentOwnerId,
+          reviewIntervalDays: faqDraft.reviewIntervalDays,
         });
       } else {
         await createFaqEntry({
@@ -4138,6 +4322,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           sourceReference: faqDraft.source,
           category: faqDraft.category,
           trainingPhrases,
+          contentOwnerId: faqDraft.contentOwnerId,
+          reviewIntervalDays: faqDraft.reviewIntervalDays,
         });
       }
       setFaqDraft({
@@ -4146,6 +4332,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         answer: "",
         category: "Consultation procedure",
         trainingPhrases: "",
+        contentOwnerId: user.id,
+        reviewIntervalDays: 180,
       });
       setEditingFaqId(null);
       setMessage(
@@ -4170,6 +4358,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       answer: faq.answer,
       category: faq.category,
       trainingPhrases: (faq.training_phrases || []).join("\n"),
+      contentOwnerId: faq.content_owner_id || faq.created_by,
+      reviewIntervalDays: faq.review_interval_days || 180,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -4181,6 +4371,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       answer: "",
       category: "Consultation procedure",
       trainingPhrases: "",
+      contentOwnerId: user.id,
+      reviewIntervalDays: 180,
     });
   };
   const draftFromGap = (gap: ChatbotGap) => {
@@ -4201,6 +4393,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       answer: "",
       category: categoryByIntent[gap.detected_intent] || "Consultation procedure",
       trainingPhrases: `${gap.sample_question}\nPlease help me with: ${gap.sample_question}`,
+      contentOwnerId: user.id,
+      reviewIntervalDays: 180,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
     setMessage("A training draft was started from the unanswered student question. Verify the official source before saving.");
@@ -4585,7 +4779,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             placeholder="Search by name or CLSU ID"
           />
         </div>
-        <Data headings={["User", "Department", "Role", "Status", "Action"]}>
+        <Data headings={["User", "Department", "Role", "Status", "Account action"]}>
           {filteredUsers.map((item) => {
             const itemPresence = presenceStatus(item.last_seen_at, presenceNow);
             return (
@@ -4612,19 +4806,22 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 </select>
               </span>
               <span data-label="Status">
-                <i className={`presence-pill ${itemPresence}`}>
-                  <span className={`presence-dot ${itemPresence}`} />
-                  {itemPresence === "active"
-                    ? "Active now"
-                    : itemPresence === "recent"
-                      ? "Recently active"
-                      : "Offline"}
+                <i className={`account-status-pill ${item.account_status}`}>
+                  {item.account_status}
                 </i>
+                <small>{item.account_status === "active" ? (itemPresence === "active" ? "Active now" : itemPresence === "recent" ? "Recently active" : "Offline") : item.status_reason || "Access restricted"}</small>
               </span>
-              <span data-label="Action">
-                <small>
-                  {item.id === user.id ? "Current account" : "Audited change"}
-                </small>
+              <span data-label="Account action" className="account-actions">
+                {item.id === user.id ? (
+                  <small>Current administrator</small>
+                ) : item.account_status === "active" ? (
+                  <>
+                    <button type="button" className="outline" onClick={() => void changeAccountStatus(item.id, "suspended")}>Suspend</button>
+                    <button type="button" className="danger-button" onClick={() => void changeAccountStatus(item.id, "deactivated")}>Deactivate</button>
+                  </>
+                ) : (
+                  <button type="button" className="primary" onClick={() => void changeAccountStatus(item.id, "active")}>Reactivate</button>
+                )}
               </span>
             </div>
             );
@@ -4858,6 +5055,26 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 </select>
                 <small>The category organizes the library and shows which student needs are covered.</small>
               </label>
+              <div className="training-governance-fields">
+                <label>
+                  <span className="training-field-title"><i>6</i> Content owner</span>
+                  <select value={faqDraft.contentOwnerId} onChange={(event) => setFaqDraft((draft) => ({ ...draft, contentOwnerId: event.target.value }))}>
+                    {data.users.filter((entry) => entry.role !== "student" && entry.account_status === "active").map((entry) => (
+                      <option key={entry.id} value={entry.id}>{entry.full_name} · {entry.role}</option>
+                    ))}
+                  </select>
+                  <small>The faculty member or administrator accountable for future verification.</small>
+                </label>
+                <label>
+                  <span className="training-field-title"><i>7</i> Review frequency</span>
+                  <select value={faqDraft.reviewIntervalDays} onChange={(event) => setFaqDraft((draft) => ({ ...draft, reviewIntervalDays: Number(event.target.value) }))}>
+                    <option value={90}>Every 90 days</option>
+                    <option value={180}>Every 180 days</option>
+                    <option value={365}>Every year</option>
+                  </select>
+                  <small>The approved source must be checked again after this period.</small>
+                </label>
+              </div>
               <div className="training-form-actions">
                 <button className="primary">
                   {editingFaqId ? "Save changes as draft" : "Save training draft"}
@@ -5004,6 +5221,13 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                     <b>{faq.question}</b>
                     <small>{faq.category} · {faq.source_reference}</small>
                     <p>{faq.answer}</p>
+                    <small className={faq.review_due_at && new Date(faq.review_due_at).getTime() < Date.now() ? "freshness overdue" : "freshness"}>
+                      {faq.status === "approved"
+                        ? faq.review_due_at
+                          ? `Review ${new Date(faq.review_due_at).getTime() < Date.now() ? "overdue" : "due"} ${formatManilaDateTime(new Date(faq.review_due_at), { month: "short", day: "numeric", year: "numeric" })}`
+                          : "Review date not assigned"
+                        : `Review every ${faq.review_interval_days || 180} days after approval`}
+                    </small>
                     <div className="phrase-chips">
                       {(faq.training_phrases || []).slice(0, 4).map((phrase) => (
                         <em key={phrase}>{phrase}</em>
@@ -5104,6 +5328,17 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             )}
           </div>
         </Work>
+      </>
+    );
+  if (view === "operations")
+    return (
+      <>
+        {feedback}
+        <AdminOperations
+          data={data}
+          onRefresh={() => refresh(false)}
+          onMessage={setMessage}
+        />
       </>
     );
   return (
