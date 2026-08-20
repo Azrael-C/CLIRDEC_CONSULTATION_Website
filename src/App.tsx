@@ -1049,6 +1049,14 @@ function App() {
           </button>
         </div>
       </header>
+      {menu && (
+        <button
+          type="button"
+          className="sidebar-scrim"
+          aria-label="Close navigation menu"
+          onClick={() => setMenu(false)}
+        />
+      )}
       <aside className={menu ? "sidebar open" : "sidebar"}>
         <nav>
           <Nav
@@ -2210,21 +2218,86 @@ function MobilePortalNav({
   items: Array<[string, string, NavIconName]>;
   navigate: (target: string) => void;
 }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const usesOverflowMenu = items.length > 5;
+  const visibleItems = usesOverflowMenu ? items.slice(0, 4) : items;
+  const overflowItems = usesOverflowMenu ? items.slice(4) : [];
+  const overflowIsActive = overflowItems.some(([target]) => target === active);
+  const go = (target: string) => {
+    setMoreOpen(false);
+    navigate(target);
+  };
+  useEffect(() => {
+    if (!moreOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [moreOpen]);
   return (
-    <nav className="mobile-portal-nav" aria-label="Mobile portal navigation">
-      {items.map(([target, label, icon]) => (
+    <>
+      {moreOpen && (
         <button
           type="button"
-          key={target}
-          className={active === target ? "active" : ""}
-          aria-current={active === target ? "page" : undefined}
-          onClick={() => navigate(target)}
-        >
-          <NavIcon name={icon} />
-          <span>{label}</span>
-        </button>
-      ))}
-    </nav>
+          className="mobile-more-scrim"
+          aria-label="Close more navigation options"
+          onClick={() => setMoreOpen(false)}
+        />
+      )}
+      {moreOpen && (
+        <nav id="mobile-more-menu" className="mobile-more-menu" aria-label="More administration pages">
+          <header>
+            <div>
+              <b>More administration pages</b>
+              <small>Reports, consultation records, and service health</small>
+            </div>
+            <button type="button" aria-label="Close more navigation options" onClick={() => setMoreOpen(false)}>×</button>
+          </header>
+          <div>
+            {overflowItems.map(([target, label, icon]) => (
+              <button
+                type="button"
+                key={target}
+                className={active === target ? "active" : ""}
+                aria-current={active === target ? "page" : undefined}
+                onClick={() => go(target)}
+              >
+                <NavIcon name={icon} />
+                <span>{label}</span>
+                <i aria-hidden="true">→</i>
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
+      <nav className={`mobile-portal-nav ${usesOverflowMenu ? "has-overflow-menu" : ""}`} aria-label="Mobile portal navigation">
+        {visibleItems.map(([target, label, icon]) => (
+          <button
+            type="button"
+            key={target}
+            className={active === target ? "active" : ""}
+            aria-current={active === target ? "page" : undefined}
+            onClick={() => go(target)}
+          >
+            <NavIcon name={icon} />
+            <span>{label}</span>
+          </button>
+        ))}
+        {usesOverflowMenu && (
+          <button
+            type="button"
+            className={overflowIsActive || moreOpen ? "active" : ""}
+            aria-expanded={moreOpen}
+            aria-controls={moreOpen ? "mobile-more-menu" : undefined}
+            onClick={() => setMoreOpen((current) => !current)}
+          >
+            <span className="mobile-more-icon" aria-hidden="true">•••</span>
+            <span>More</span>
+          </button>
+        )}
+      </nav>
+    </>
   );
 }
 function statusLabel(status: AppointmentStatus = "pending") {
@@ -3350,6 +3423,14 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
           </button>
         </div>
       </header>
+      {menu && (
+        <button
+          type="button"
+          className="sidebar-scrim"
+          aria-label="Close navigation menu"
+          onClick={() => setMenu(false)}
+        />
+      )}
       <aside className={menu ? "sidebar open" : "sidebar"}>
         <div>
           <p className="side-kicker">
@@ -5428,104 +5509,115 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
               <span>Clear question</span><span>Verified source</span><span>Approved wording</span><span>2–20 examples</span>
             </div>
             <form className="knowledge-form training-entry-form" onSubmit={saveFaq}>
-              <label>
-                <span className="training-field-title"><i>1</i> Canonical student question</span>
-                <input
-                  name="question"
-                  required
-                  value={faqDraft.question}
-                  onChange={(event) =>
-                    setFaqDraft((draft) => ({ ...draft, question: event.target.value }))
-                  }
-                  placeholder="How do I request a faculty consultation?"
-                  maxLength={500}
-                />
-                <small>Use the clearest version of the student’s intent, not every possible variation.</small>
-              </label>
-              <label>
-                <span className="training-field-title"><i>2</i> Official source or evidence</span>
-                <input
-                  name="source"
-                  required
-                  value={faqDraft.source}
-                  onChange={(event) =>
-                    setFaqDraft((draft) => ({ ...draft, source: event.target.value }))
-                  }
-                  placeholder="Official page, advisory, procedure, or faculty schedule"
-                  maxLength={500}
-                />
-                <small>Name the policy, advisory, office page, or accountable faculty source. Unsourced entries cannot be approved.</small>
-              </label>
-              <label>
-                <span className="training-field-title"><i>3</i> Student-facing answer</span>
-                <textarea
-                  name="answer"
-                  required
-                  value={faqDraft.answer}
-                  onChange={(event) =>
-                    setFaqDraft((draft) => ({ ...draft, answer: event.target.value }))
-                  }
-                  placeholder="Write the verified response"
-                  maxLength={5000}
-                />
-                <small>Give the direct answer first, followed by the next step, office, or booking action.</small>
-              </label>
-              <label>
-                <span className="training-field-title"><i>4</i> Example questions and phrases</span>
-                <textarea
-                  name="trainingPhrases"
-                  required
-                  value={faqDraft.trainingPhrases}
-                  onChange={(event) =>
-                    setFaqDraft((draft) => ({
-                      ...draft,
-                      trainingPhrases: event.target.value,
-                    }))
-                  }
-                  placeholder={"How can I book?\nPaano magpa-schedule?\nI need a consultation"}
-                  maxLength={4000}
-                />
-                <small>Enter 2–20 natural variations, one per line. English and Filipino are supported.</small>
-              </label>
-              <label>
-                <span className="training-field-title"><i>5</i> Intent category</span>
-                <select
-                  name="category"
-                  value={faqDraft.category}
-                  onChange={(event) =>
-                    setFaqDraft((draft) => ({ ...draft, category: event.target.value }))
-                  }
-                >
-                  <option>Office hours and contacts</option>
-                  <option>Consultation procedure</option>
-                  <option>Faculty availability</option>
-                  <option>Faculty expertise</option>
-                  <option>Consultation location</option>
-                  <option>Request status and changes</option>
-                  <option>CLIRDEC services</option>
-                </select>
-                <small>The category organizes the library and shows which student needs are covered.</small>
-              </label>
-              <div className="training-governance-fields">
+              <fieldset className="training-form-section training-answer-section">
+                <legend><span>1</span> Student question and answer</legend>
                 <label>
-                  <span className="training-field-title"><i>6</i> Content owner</span>
-                  <select value={faqDraft.contentOwnerId} onChange={(event) => setFaqDraft((draft) => ({ ...draft, contentOwnerId: event.target.value }))}>
-                    {data.users.filter((entry) => entry.role !== "student" && entry.account_status === "active").map((entry) => (
-                      <option key={entry.id} value={entry.id}>{entry.full_name} · {entry.role}</option>
-                    ))}
-                  </select>
-                  <small>The faculty member or administrator accountable for future verification.</small>
+                  <span>Canonical student question</span>
+                  <input
+                    name="question"
+                    required
+                    value={faqDraft.question}
+                    onChange={(event) =>
+                      setFaqDraft((draft) => ({ ...draft, question: event.target.value }))
+                    }
+                    placeholder="How do I request a faculty consultation?"
+                    maxLength={500}
+                  />
+                  <small>Use the clearest version of the student’s intent.</small>
                 </label>
                 <label>
-                  <span className="training-field-title"><i>7</i> Review frequency</span>
-                  <select value={faqDraft.reviewIntervalDays} onChange={(event) => setFaqDraft((draft) => ({ ...draft, reviewIntervalDays: Number(event.target.value) }))}>
-                    <option value={90}>Every 90 days</option>
-                    <option value={180}>Every 180 days</option>
-                    <option value={365}>Every year</option>
-                  </select>
-                  <small>The approved source must be checked again after this period.</small>
+                  <span>Student-facing answer</span>
+                  <textarea
+                    name="answer"
+                    required
+                    value={faqDraft.answer}
+                    onChange={(event) =>
+                      setFaqDraft((draft) => ({ ...draft, answer: event.target.value }))
+                    }
+                    placeholder="Write the verified response"
+                    maxLength={5000}
+                  />
+                  <small>Give the direct answer first, then the next step or booking action.</small>
                 </label>
-              </div>
+              </fieldset>
+              <fieldset className="training-form-section training-evidence-section">
+                <legend><span>2</span> Evidence and matching phrases</legend>
+                <div className="training-form-columns">
+                  <label>
+                    <span>Official source or evidence</span>
+                    <input
+                      name="source"
+                      required
+                      value={faqDraft.source}
+                      onChange={(event) =>
+                        setFaqDraft((draft) => ({ ...draft, source: event.target.value }))
+                      }
+                      placeholder="Official page, advisory, procedure, or faculty schedule"
+                      maxLength={500}
+                    />
+                    <small>Name the accountable source. Unsourced entries cannot be approved.</small>
+                  </label>
+                  <label>
+                    <span>Example questions and phrases</span>
+                    <textarea
+                      name="trainingPhrases"
+                      required
+                      value={faqDraft.trainingPhrases}
+                      onChange={(event) =>
+                        setFaqDraft((draft) => ({
+                          ...draft,
+                          trainingPhrases: event.target.value,
+                        }))
+                      }
+                      placeholder={"How can I book?\nPaano magpa-schedule?\nI need a consultation"}
+                      maxLength={4000}
+                    />
+                    <small>Enter 2–20 natural English or Filipino variations, one per line.</small>
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset className="training-form-section training-governance-section">
+                <legend><span>3</span> Ownership and review</legend>
+                <div className="training-governance-fields">
+                  <label>
+                    <span>Intent category</span>
+                    <select
+                      name="category"
+                      value={faqDraft.category}
+                      onChange={(event) =>
+                        setFaqDraft((draft) => ({ ...draft, category: event.target.value }))
+                      }
+                    >
+                      <option>Office hours and contacts</option>
+                      <option>Consultation procedure</option>
+                      <option>Faculty availability</option>
+                      <option>Faculty expertise</option>
+                      <option>Consultation location</option>
+                      <option>Request status and changes</option>
+                      <option>CLIRDEC services</option>
+                    </select>
+                    <small>Groups related student needs in the library.</small>
+                  </label>
+                  <label>
+                    <span>Content owner</span>
+                    <select value={faqDraft.contentOwnerId} onChange={(event) => setFaqDraft((draft) => ({ ...draft, contentOwnerId: event.target.value }))}>
+                      {data.users.filter((entry) => entry.role !== "student" && entry.account_status === "active").map((entry) => (
+                        <option key={entry.id} value={entry.id}>{entry.full_name} · {entry.role}</option>
+                      ))}
+                    </select>
+                    <small>Person accountable for future verification.</small>
+                  </label>
+                  <label>
+                    <span>Review frequency</span>
+                    <select value={faqDraft.reviewIntervalDays} onChange={(event) => setFaqDraft((draft) => ({ ...draft, reviewIntervalDays: Number(event.target.value) }))}>
+                      <option value={90}>Every 90 days</option>
+                      <option value={180}>Every 180 days</option>
+                      <option value={365}>Every year</option>
+                    </select>
+                    <small>When the source must be checked again.</small>
+                  </label>
+                </div>
+              </fieldset>
               <div className="training-form-actions">
                 <button className="primary">
                   {editingFaqId ? "Save changes as draft" : "Save training draft"}
