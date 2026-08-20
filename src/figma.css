@@ -440,22 +440,24 @@ a:focus-visible {
 .chat-trust-active > span { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--figma-green); color: #fff; font-size: .68rem; }
 .student-content.view-assistant {
   display: flex;
-  height: calc(100dvh - 76px);
-  min-height: 0;
+  height: auto;
+  min-height: calc(100dvh - 76px);
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 .student-content.view-assistant > .notice,
 .student-content.view-assistant > .page-head,
 .student-content.view-assistant > .assistant-safety { flex: 0 0 auto; }
 .student-content.view-assistant .chatbot {
   display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
+  height: clamp(640px, 72dvh, 820px);
+  min-height: 640px;
+  max-height: 820px;
+  flex: 0 0 auto;
   flex-direction: column;
 }
 .student-content.view-assistant .messages {
-  min-height: 0;
+  min-height: 300px;
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
