@@ -141,6 +141,7 @@ export type EmailDeliveryEvent = {
   event_created_at: string;
   recipient_addresses: string[];
   subject: string | null;
+  details: Record<string, unknown>;
   received_at: string;
 };
 
@@ -732,7 +733,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       .limit(200),
     supabase
       .from("email_delivery_events")
-      .select("webhook_id,provider_email_id,event_type,event_created_at,recipient_addresses,subject,received_at")
+      .select("webhook_id,provider_email_id,event_type,event_created_at,recipient_addresses,subject,details,received_at")
       .order("event_created_at", { ascending: false })
       .limit(200),
     supabase

@@ -49,6 +49,31 @@ function friendlyAction(value: string) {
   return value.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
+function isDeliveryProblem(eventType: string) {
+  return [
+    "email.bounced",
+    "email.complained",
+    "email.failed",
+    "email.delivery_delayed",
+    "email.suppressed",
+  ].includes(eventType);
+}
+
+function deliveryEventTone(eventType: string) {
+  if (eventType === "email.delivered") return "sent";
+  if (["email.bounced", "email.complained", "email.failed", "email.suppressed"].includes(eventType)) return "failed";
+  return "processing";
+}
+
+function deliveryEventExplanation(eventType: string, details: Record<string, unknown>) {
+  const providerMessage = typeof details.message === "string" ? details.message : "";
+  const providerType = typeof details.type === "string" ? details.type : "";
+  if (eventType === "email.suppressed") {
+    return providerMessage || `Recipient is on Resend's suppression list${providerType ? ` (${providerType})` : ""}. Verify the address and resolve the earlier bounce or complaint before removing it.`;
+  }
+  return providerMessage;
+}
+
 export function AdminOperations({
   data,
   onRefresh,
@@ -82,9 +107,7 @@ export function AdminOperations({
       new Date(item.scheduled_for).getTime() < now - 10 * 60_000,
   );
   const failed = data.emailNotifications.filter((item) => item.status === "failed");
-  const deliveryProblems = data.deliveryEvents.filter((item) =>
-    ["email.bounced", "email.complained", "email.failed", "email.delivery_delayed"].includes(item.event_type),
-  );
+  const deliveryProblems = data.deliveryEvents.filter((item) => isDeliveryProblem(item.event_type));
   const errors24h = data.clientErrors.filter(
     (event) => new Date(event.created_at).getTime() > now - 24 * 60 * 60_000,
   );
@@ -209,7 +232,7 @@ export function AdminOperations({
           <span>Email queue</span><b>{overdue.length}</b><small>more than 10 minutes overdue</small>
         </article>
         <article className={failed.length + deliveryProblems.length ? "attention" : ""}>
-          <span>Delivery problems</span><b>{failed.length + deliveryProblems.length}</b><small>failed, bounced, delayed, or complained</small>
+          <span>Delivery problems</span><b>{failed.length + deliveryProblems.length}</b><small>failed, bounced, suppressed, delayed, or complained</small>
         </article>
         <article className={errors24h.length ? "attention" : ""}>
           <span>Application errors</span><b>{errors24h.length}</b><small>recorded in the last 24 hours</small>
@@ -257,14 +280,22 @@ export function AdminOperations({
           </div>
         </details>
         <details id="provider-events" className="work-card operations-detail" open={Boolean(deliveryProblems.length)}>
-          <summary><span><b>Email provider events</b><small>Delivery, bounce, complaint, and delay evidence</small></span><em>{data.deliveryEvents.length}</em></summary>
+          <summary><span><b>Email provider events</b><small>Delivery, suppression, bounce, complaint, and delay evidence</small></span><em>{data.deliveryEvents.length}</em></summary>
           <div className="operations-list">
-            {data.deliveryEvents.slice(0, 12).map((item) => (
-              <article key={item.webhook_id}>
-                <span className={`status ${item.event_type.includes("delivered") ? "sent" : item.event_type.includes("failed") || item.event_type.includes("bounced") ? "failed" : "processing"}`}>{item.event_type.replace("email.", "")}</span>
-                <div><b>{item.subject || "Transactional email"}</b><small>{item.recipient_addresses.join(", ") || "Recipient withheld"}</small><p>{new Date(item.event_created_at).toLocaleString()}</p></div>
-              </article>
-            ))}
+            {data.deliveryEvents.slice(0, 12).map((item) => {
+              const explanation = deliveryEventExplanation(item.event_type, item.details || {});
+              return (
+                <article key={item.webhook_id}>
+                  <span className={`status ${deliveryEventTone(item.event_type)}`}>{item.event_type.replace("email.", "")}</span>
+                  <div>
+                    <b>{item.subject || "Transactional email"}</b>
+                    <small>{item.recipient_addresses.join(", ") || "Recipient withheld"}</small>
+                    <p>{explanation || new Date(item.event_created_at).toLocaleString()}</p>
+                    {explanation && <small>{new Date(item.event_created_at).toLocaleString()}</small>}
+                  </div>
+                </article>
+              );
+            })}
             {!data.deliveryEvents.length && <div className="empty-card">No provider webhook evidence has been received yet.</div>}
           </div>
         </details>

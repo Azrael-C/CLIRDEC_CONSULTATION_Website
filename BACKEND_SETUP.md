@@ -108,7 +108,7 @@ The manual `Pilot end-to-end lifecycle` GitHub workflow resets three dedicated t
 
 ## 8. Resend delivery monitoring
 
-Apply `supabase/resend_delivery_webhooks_migration.sql`, deploy `resend-webhook`, and add its `RESEND_WEBHOOK_SECRET` Supabase Function secret. In Resend, create a webhook pointing to `https://YOUR_PROJECT_REF.supabase.co/functions/v1/resend-webhook` for `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, and `email.failed`. The function verifies the raw request signature, ignores webhook replays by `svix-id`, and stores provider delivery evidence without exposing the signing secret to the browser.
+Apply `supabase/resend_delivery_webhooks_migration.sql`, deploy `resend-webhook`, and add its `RESEND_WEBHOOK_SECRET` Supabase Function secret. In Resend, create a webhook pointing to `https://YOUR_PROJECT_REF.supabase.co/functions/v1/resend-webhook` for `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.failed`, and `email.suppressed`. The function verifies the raw request signature, ignores webhook replays by `svix-id`, and stores provider delivery evidence—including the reason Resend suppressed a recipient—without exposing the signing secret to the browser.
 
 ## 9. Abuse protection
 

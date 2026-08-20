@@ -15,7 +15,7 @@ create table if not exists public.email_delivery_events (
   provider_email_id text not null,
   event_type text not null check (event_type in (
     'email.sent','email.delivered','email.delivery_delayed',
-    'email.bounced','email.complained','email.failed'
+    'email.bounced','email.complained','email.failed','email.suppressed'
   )),
   event_created_at timestamptz not null,
   recipient_addresses text[] not null default '{}',
