@@ -60,6 +60,7 @@ import {
   NotificationCenter,
   type NotificationAppointment,
 } from "./Notifications";
+import { ThemeToggle, useTheme } from "./theme";
 
 type Role = "student" | "faculty" | "admin";
 type View = "home" | "find" | "schedule" | "assistant" | "profile";
@@ -1015,6 +1016,7 @@ function App() {
           </span>
         </button>
         <div className="top-actions">
+          <ThemeToggle compact />
           <NotificationCenter
             user={user}
             studentAppointments={studentNotifications}
@@ -1231,6 +1233,7 @@ function ProductionAuth({
   clearNotice: () => void;
   notice: string;
 }) {
+  const { theme } = useTheme();
   const [creating, setCreating] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -1299,6 +1302,7 @@ function ProductionAuth({
         </small>
       </section>
       <section className="auth-panel">
+        <div className="auth-theme-control"><ThemeToggle /></div>
         <form
           className={creating ? "login student-signup" : "login"}
           onSubmit={submitAuth}
@@ -1559,7 +1563,7 @@ function ProductionAuth({
                 <Turnstile
                   key={captchaGeneration}
                   siteKey={TURNSTILE_SITE_KEY}
-                  options={{ theme: "light", size: "flexible", action: creating ? "student_signup" : "portal_login" }}
+                  options={{ theme, size: "flexible", action: creating ? "student_signup" : "portal_login" }}
                   onSuccess={setCaptchaToken}
                   onExpire={() => setCaptchaToken("")}
                   onError={() => setCaptchaToken("")}
@@ -1659,6 +1663,7 @@ function ForgotPasswordPage({
   notice: string;
   clearNotice: () => void;
 }) {
+  const { theme } = useTheme();
   const [email, setEmail] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [sending, setSending] = useState(false);
@@ -1714,6 +1719,7 @@ function ForgotPasswordPage({
         </small>
       </section>
       <section className="auth-panel recovery-panel">
+        <div className="auth-theme-control"><ThemeToggle /></div>
         <form className="login recovery-request-card" onSubmit={submit}>
           <span className="mobile-brand">
             <BrandLogo />
@@ -1772,7 +1778,7 @@ function ForgotPasswordPage({
                     <Turnstile
                       key={captchaGeneration}
                       siteKey={TURNSTILE_SITE_KEY}
-                      options={{ theme: "light", size: "flexible", action: "password_recovery" }}
+                      options={{ theme, size: "flexible", action: "password_recovery" }}
                       onSuccess={setCaptchaToken}
                       onExpire={() => setCaptchaToken("")}
                       onError={() => setCaptchaToken("")}
@@ -1867,6 +1873,7 @@ function PasswordRecovery({
         </div>
       </section>
       <section className="auth-panel">
+        <div className="auth-theme-control"><ThemeToggle /></div>
         <form className="login" onSubmit={submit}>
           <p className="eyebrow">PASSWORD RECOVERY</p>
           <h1>Set your new password</h1>
@@ -1959,6 +1966,7 @@ function PrivacyPolicyPage() {
   return (
     <main className="public-policy-page" id="main-content">
       <SkipLink />
+      <div className="public-theme-control"><ThemeToggle /></div>
       <header className="public-policy-header">
         <a className="public-brand" href="/">
           <BrandLogo tone="light" size="hero" />
@@ -2057,6 +2065,7 @@ function NotFoundPage() {
   return (
     <main className="not-found-page" id="main-content">
       <SkipLink />
+      <div className="public-theme-control"><ThemeToggle /></div>
       <section>
         <a className="public-brand" href="/">
           <BrandLogo tone="light" size="hero" />
@@ -2083,7 +2092,7 @@ function BrandLogo({
 }) {
   return (
     <img
-      className={`brand-logo brand-logo-${size}`}
+      className={`brand-logo brand-logo-${size} brand-logo-${tone}`}
       src={tone === "light" ? "/brand/Logo_white.png" : "/brand/Logo_Black.png"}
       alt=""
       aria-hidden="true"
@@ -3015,6 +3024,7 @@ function Chat({
   setQuestion: (s: string) => void;
   ask: (e: FormEvent, captchaToken?: string) => Promise<ChatAskResult>;
 }) {
+  const { theme } = useTheme();
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaGeneration, setCaptchaGeneration] = useState(0);
   const [chatTrusted, setChatTrusted] = useState(false);
@@ -3192,7 +3202,7 @@ function Chat({
                 <Turnstile
                   key={captchaGeneration}
                   siteKey={TURNSTILE_SITE_KEY}
-                  options={{ theme: "light", size: "flexible", action: "chatbot_question" }}
+                  options={{ theme, size: "flexible", action: "chatbot_question" }}
                   onSuccess={setCaptchaToken}
                   onExpire={() => setCaptchaToken("")}
                   onError={() => setCaptchaToken("")}
@@ -3390,6 +3400,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
           </span>
         </button>
         <div className="top-actions">
+          <ThemeToggle compact />
           <NotificationCenter
             user={user}
             onNavigate={(target) => navigate(target as FView | AView)}
@@ -4571,6 +4582,7 @@ function relativePresence(lastSeenAt: string | null, now = Date.now()) {
 }
 
 function AdminPages({ view, user }: { view: AView; user: User }) {
+  const { theme } = useTheme();
   const [data, setData] = useState<AdminPortal>({
     users: [],
     appointments: [],
@@ -5665,7 +5677,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                     <Turnstile
                       key={trainingCaptchaGeneration}
                       siteKey={TURNSTILE_SITE_KEY}
-                      options={{ theme: "light", size: "flexible", action: "admin_chatbot_test" }}
+                      options={{ theme, size: "flexible", action: "admin_chatbot_test" }}
                       onSuccess={setTrainingCaptchaToken}
                       onExpire={() => setTrainingCaptchaToken("")}
                       onError={() => setTrainingCaptchaToken("")}
