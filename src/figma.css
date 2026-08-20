@@ -504,7 +504,7 @@ a:focus-visible {
 
 /* Dialogs */
 .modal-backdrop { background: rgba(14, 28, 21, .38); backdrop-filter: blur(2px); }
-.modal { width: min(500px, 100%); border-radius: 10px; padding: 1.45rem; box-shadow: 0 26px 80px rgba(10, 31, 20, .22); }
+.modal { width: min(500px, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain; border-radius: 10px; padding: 1.45rem; box-shadow: 0 26px 80px rgba(10, 31, 20, .22); }
 .modal-close { width: 30px; height: 30px; border-radius: 50%; }
 .topic input, .topic textarea, .topic select { width: 100%; border: 1px solid #bdc8c0; border-radius: 7px; padding: .8rem; background: #fff; }
 .modal-actions { display: flex; justify-content: flex-end; gap: .65rem; }
@@ -567,6 +567,16 @@ a:focus-visible {
   .mobile-brand { margin-bottom: 2rem; }
   .app { padding-left: 0; }
   .sidebar { top: 76px; }
+  .sidebar-scrim {
+    position: fixed;
+    z-index: 24;
+    inset: 76px 0 0;
+    display: block;
+    width: 100%;
+    border: 0;
+    background: rgba(8, 32, 20, .38);
+    backdrop-filter: blur(2px);
+  }
   .content { padding: 2rem 1.2rem; }
   .faculty-grid, .overview-grid, .workspace-grid, .knowledge-layout, .report-grid,
   .profile-layout, .editable-profile { grid-template-columns: 1fr; }
@@ -577,6 +587,7 @@ a:focus-visible {
   .topbar { height: 68px; padding: 0 .85rem; }
   .app { padding-top: 68px; }
   .sidebar { top: 68px; }
+  .sidebar-scrim { inset-block-start: 68px; }
   .brand-logo { width: 38px; height: 38px; }
   .brand-button b { font-size: .85rem; }
   .profile-chip { display: none; }
@@ -587,6 +598,8 @@ a:focus-visible {
   .student-avatar { width: 62px; height: 62px; }
   .edit-profile-button { position: static; justify-self: start; margin-bottom: .4rem; }
   .modal { padding: 1.15rem; }
+  .modal-actions { align-items: stretch; flex-direction: column-reverse; }
+  .modal-actions > button { width: 100%; min-height: 44px; }
 }
 
 /* Functional notification center */
@@ -661,6 +674,8 @@ a:focus-visible {
 .notification-empty { margin: 0; padding: 2rem 1rem; color: var(--figma-muted); font-size: .76rem; line-height: 1.5; text-align: center; }
 .notification-error { color: #99392f; }
 .notification-panel > footer { padding: .7rem 1rem; background: #f5f7f4; color: var(--figma-muted); font-size: .62rem; line-height: 1.4; }
+.sidebar-scrim, .mobile-more-scrim, .mobile-more-menu { display: none; }
+@media (max-width: 900px) { .sidebar-scrim { display: block; } }
 
 /* Published schedule cards */
 .published-slots {
@@ -1451,6 +1466,42 @@ body {
   .mobile-portal-nav button.active { background: var(--figma-green); color: #fff; box-shadow: 0 6px 14px rgba(8,122,73,.22); }
   .mobile-portal-nav .nav-icon { width: 19px; height: 19px; }
   .mobile-portal-nav span { overflow: hidden; max-width: 100%; font-size: .58rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-portal-nav.has-overflow-menu { grid-auto-columns: minmax(54px,1fr); overflow: visible; }
+  .mobile-more-icon { display: grid; place-items: center; width: 19px; height: 19px; font-size: .8rem!important; letter-spacing: .08em; }
+  .mobile-more-scrim {
+    position: fixed;
+    z-index: 88;
+    inset: 0;
+    display: block;
+    width: 100%;
+    border: 0;
+    background: rgba(7,31,19,.46);
+    backdrop-filter: blur(2px);
+  }
+  .mobile-more-menu {
+    position: fixed;
+    z-index: 89;
+    right: 10px;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    left: 10px;
+    display: block;
+    overflow: hidden;
+    border: 1px solid #c9d8cd;
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(8,40,24,.27);
+  }
+  .mobile-more-menu > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 1rem; border-bottom: 1px solid #e0e8e2; background: linear-gradient(90deg,#f0f7f2,#fffbed); }
+  .mobile-more-menu > header div { min-width: 0; display: grid; gap: .18rem; }
+  .mobile-more-menu > header b { font-size: .76rem; }
+  .mobile-more-menu > header small { color: var(--figma-muted); font-size: .6rem; line-height: 1.4; }
+  .mobile-more-menu > header button { flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: #e9f1eb; color: var(--figma-green); font-size: 1.15rem; }
+  .mobile-more-menu > div { display: grid; padding: .45rem; }
+  .mobile-more-menu > div > button { min-height: 48px; display: grid; grid-template-columns: 24px minmax(0,1fr) auto; align-items: center; gap: .65rem; border: 0; border-radius: 10px; background: transparent; padding: .6rem .7rem; color: #415248; text-align: left; }
+  .mobile-more-menu > div > button.active { background: #e8f4eb; color: var(--figma-green); }
+  .mobile-more-menu > div > button .nav-icon { width: 20px; height: 20px; }
+  .mobile-more-menu > div > button span { font-size: .72rem; font-weight: 800; }
+  .mobile-more-menu > div > button i { color: #7c8a81; font-style: normal; }
   .auth { padding-bottom: 74px; }
   .mobile-auth-cta { position: fixed; z-index: 90; left: 12px; right: 12px; bottom: max(10px,env(safe-area-inset-bottom)); display: block; }
   .mobile-auth-cta button { width: 100%; min-height: 48px; border: 1px solid rgba(255,255,255,.45); border-radius: 13px; background: var(--figma-green); color: #fff; box-shadow: 0 14px 34px rgba(8,70,42,.28); font-weight: 800; }
@@ -1470,6 +1521,8 @@ body {
   .portal-loader.compact { grid-template-columns: 1fr; justify-items: center; text-align: center; }
   .notification-panel { position: fixed; top: 76px; right: 12px; left: 12px; width: auto; }
   .notification-list { max-height: calc(100vh - 230px); }
+  .notification-item { grid-template-columns: 10px minmax(0,1fr); }
+  .notification-item time { grid-column: 2; white-space: normal; }
   .published-slot { grid-template-columns: minmax(0, 1fr); gap: .4rem; }
   .published-slot-remove, .published-slot-lock { justify-self: start; }
   .availability-summary-band { grid-template-columns: 1fr; }
@@ -1538,6 +1591,34 @@ body {
   .profile-preference-card { grid-template-columns: 38px minmax(0,1fr); }
   .profile-preference-card > b { grid-column: 2; justify-self: start; }
   .faculty-profile-editor > .profile-card-header { grid-column: auto; }
+  .admin-content .data-card { overflow: visible; border: 0; background: transparent; box-shadow: none; }
+  .admin-content .data-row:not(.data-head),
+  .admin-content .data-row.appointment-row:not(.data-head),
+  .admin-content .presence-row { grid-template-columns: 1fr!important; gap: .75rem; margin-bottom: .7rem; border: 1px solid #d5e1d8; border-radius: 13px; background: #fff; box-shadow: 0 8px 22px rgba(25,64,43,.055); }
+  .admin-content .data-row:not(.data-head) > span { min-width: 0; padding-bottom: .6rem; border-bottom: 1px solid #edf2ee; overflow-wrap: anywhere; }
+  .admin-content .data-row:not(.data-head) > span:last-child { padding-bottom: 0; border-bottom: 0; }
+  .admin-content .role-select { width: 100%; min-height: 44px; }
+  .admin-content .account-actions { align-items: stretch; }
+  .admin-content .account-actions button { min-height: 42px; }
+  .metrics article { min-width: 0; }
+  .metrics b, .metrics span { overflow-wrap: anywhere; }
+  .admin-review-head { align-items: flex-start; flex-direction: column; gap: .35rem; }
+}
+
+@media (max-width: 430px) {
+  .brand-button { min-width: 0; gap: .55rem; }
+  .brand-button > span:last-child { min-width: 0; }
+  .brand-button b { display: block; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brand-button small { display: none; }
+  .top-actions { gap: .4rem; }
+  .icon-button, .menu-button { width: 40px; height: 40px; }
+  .page-head h1, .page-head.compact h1, .portal-head h1 { font-size: 1.72rem; overflow-wrap: anywhere; }
+  .metrics { grid-template-columns: 1fr; }
+  .filter-tabs { padding-bottom: .2rem; scroll-snap-type: x proximity; }
+  .filter-tabs button { scroll-snap-align: start; }
+  .request-actions { align-items: stretch; flex-direction: column; }
+  .request-actions button { width: 100%; min-height: 42px; }
+  .review-breakdown-list > div { align-items: flex-start; }
 }
 
 @media (max-width: 560px) {

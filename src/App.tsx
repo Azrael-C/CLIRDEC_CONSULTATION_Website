@@ -1049,6 +1049,14 @@ function App() {
           </button>
         </div>
       </header>
+      {menu && (
+        <button
+          type="button"
+          className="sidebar-scrim"
+          aria-label="Close navigation menu"
+          onClick={() => setMenu(false)}
+        />
+      )}
       <aside className={menu ? "sidebar open" : "sidebar"}>
         <nav>
           <Nav
@@ -2210,21 +2218,86 @@ function MobilePortalNav({
   items: Array<[string, string, NavIconName]>;
   navigate: (target: string) => void;
 }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const usesOverflowMenu = items.length > 5;
+  const visibleItems = usesOverflowMenu ? items.slice(0, 4) : items;
+  const overflowItems = usesOverflowMenu ? items.slice(4) : [];
+  const overflowIsActive = overflowItems.some(([target]) => target === active);
+  const go = (target: string) => {
+    setMoreOpen(false);
+    navigate(target);
+  };
+  useEffect(() => {
+    if (!moreOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [moreOpen]);
   return (
-    <nav className="mobile-portal-nav" aria-label="Mobile portal navigation">
-      {items.map(([target, label, icon]) => (
+    <>
+      {moreOpen && (
         <button
           type="button"
-          key={target}
-          className={active === target ? "active" : ""}
-          aria-current={active === target ? "page" : undefined}
-          onClick={() => navigate(target)}
-        >
-          <NavIcon name={icon} />
-          <span>{label}</span>
-        </button>
-      ))}
-    </nav>
+          className="mobile-more-scrim"
+          aria-label="Close more navigation options"
+          onClick={() => setMoreOpen(false)}
+        />
+      )}
+      {moreOpen && (
+        <nav id="mobile-more-menu" className="mobile-more-menu" aria-label="More administration pages">
+          <header>
+            <div>
+              <b>More administration pages</b>
+              <small>Reports, consultation records, and service health</small>
+            </div>
+            <button type="button" aria-label="Close more navigation options" onClick={() => setMoreOpen(false)}>×</button>
+          </header>
+          <div>
+            {overflowItems.map(([target, label, icon]) => (
+              <button
+                type="button"
+                key={target}
+                className={active === target ? "active" : ""}
+                aria-current={active === target ? "page" : undefined}
+                onClick={() => go(target)}
+              >
+                <NavIcon name={icon} />
+                <span>{label}</span>
+                <i aria-hidden="true">→</i>
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
+      <nav className={`mobile-portal-nav ${usesOverflowMenu ? "has-overflow-menu" : ""}`} aria-label="Mobile portal navigation">
+        {visibleItems.map(([target, label, icon]) => (
+          <button
+            type="button"
+            key={target}
+            className={active === target ? "active" : ""}
+            aria-current={active === target ? "page" : undefined}
+            onClick={() => go(target)}
+          >
+            <NavIcon name={icon} />
+            <span>{label}</span>
+          </button>
+        ))}
+        {usesOverflowMenu && (
+          <button
+            type="button"
+            className={overflowIsActive || moreOpen ? "active" : ""}
+            aria-expanded={moreOpen}
+            aria-controls={moreOpen ? "mobile-more-menu" : undefined}
+            onClick={() => setMoreOpen((current) => !current)}
+          >
+            <span className="mobile-more-icon" aria-hidden="true">•••</span>
+            <span>More</span>
+          </button>
+        )}
+      </nav>
+    </>
   );
 }
 function statusLabel(status: AppointmentStatus = "pending") {
@@ -3350,6 +3423,14 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
           </button>
         </div>
       </header>
+      {menu && (
+        <button
+          type="button"
+          className="sidebar-scrim"
+          aria-label="Close navigation menu"
+          onClick={() => setMenu(false)}
+        />
+      )}
       <aside className={menu ? "sidebar open" : "sidebar"}>
         <div>
           <p className="side-kicker">
