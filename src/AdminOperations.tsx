@@ -5,6 +5,31 @@ import {
   type RetentionPolicy,
 } from "./backend";
 
+type ServiceProbe = {
+  loading: boolean;
+  healthy: boolean;
+  approvedEntries: number | null;
+  source: string;
+};
+
+async function fetchServiceStatus(): Promise<ServiceProbe> {
+  try {
+    const [health, knowledge] = await Promise.all([
+      fetch("/api/health", { cache: "no-store" }),
+      fetch("/api/knowledge-status", { cache: "no-store" }),
+    ]);
+    const knowledgeBody = knowledge.ok ? await knowledge.json() : null;
+    return {
+      loading: false,
+      healthy: health.ok && knowledge.ok,
+      approvedEntries: typeof knowledgeBody?.approved_entries === "number" ? knowledgeBody.approved_entries : null,
+      source: String(knowledgeBody?.source || (knowledge.ok ? "Knowledge status available" : "Knowledge status unavailable")),
+    };
+  } catch {
+    return { loading: false, healthy: false, approvedEntries: null, source: "Chatbot service unavailable" };
+  }
+}
+
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
@@ -33,32 +58,21 @@ export function AdminOperations({
   onRefresh: () => Promise<void>;
   onMessage: (message: string) => void;
 }) {
-  const [serviceProbe, setServiceProbe] = useState<{
-    loading: boolean;
-    healthy: boolean;
-    approvedEntries: number | null;
-    source: string;
-  }>({ loading: true, healthy: false, approvedEntries: null, source: "Checking service" });
+  const [serviceProbe, setServiceProbe] = useState<ServiceProbe>({
+    loading: true,
+    healthy: false,
+    approvedEntries: null,
+    source: "Checking service",
+  });
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
   useEffect(() => {
     let active = true;
-    async function probe() {
-      try {
-        const [health, knowledge] = await Promise.all([
-          fetch("/api/health", { cache: "no-store" }),
-          fetch("/api/knowledge-status", { cache: "no-store" }),
-        ]);
-        const knowledgeBody = knowledge.ok ? await knowledge.json() : null;
-        if (active) setServiceProbe({
-          loading: false,
-          healthy: health.ok && knowledge.ok,
-          approvedEntries: typeof knowledgeBody?.approved_entries === "number" ? knowledgeBody.approved_entries : null,
-          source: String(knowledgeBody?.source || (knowledge.ok ? "Knowledge status available" : "Knowledge status unavailable")),
-        });
-      } catch {
-        if (active) setServiceProbe({ loading: false, healthy: false, approvedEntries: null, source: "Chatbot service unavailable" });
-      }
-    }
-    void probe();
+    void fetchServiceStatus().then((result) => {
+      if (!active) return;
+      setServiceProbe(result);
+      setLastChecked(new Date());
+    });
     return () => { active = false; };
   }, []);
   const now = Date.now();
@@ -82,6 +96,50 @@ export function AdminOperations({
     : overdue.length || failed.length || deliveryProblems.length || errors24h.length || !serviceProbe.healthy
       ? "Action required"
       : "Healthy";
+  const operationalIssues = [
+    ...(!serviceProbe.loading && !serviceProbe.healthy ? [{
+      key: "chatbot",
+      title: "Chatbot service cannot be reached",
+      detail: "Students may not receive answers until the chatbot deployment or environment configuration is restored.",
+      href: "#service-details",
+      action: "View service details",
+    }] : []),
+    ...(overdue.length ? [{
+      key: "overdue-email",
+      title: `${overdue.length} ${overdue.length === 1 ? "email is" : "emails are"} more than 10 minutes overdue`,
+      detail: "Appointment confirmations or reminders may reach users late.",
+      href: "#email-health",
+      action: "Review email queue",
+    }] : []),
+    ...(failed.length || deliveryProblems.length ? [{
+      key: "delivery",
+      title: `${failed.length + deliveryProblems.length} email delivery ${failed.length + deliveryProblems.length === 1 ? "problem needs" : "problems need"} review`,
+      detail: "Check the failure reason before retrying or contacting the recipient.",
+      href: "#provider-events",
+      action: "Inspect delivery events",
+    }] : []),
+    ...(errors24h.length ? [{
+      key: "client-error",
+      title: `${errors24h.length} application ${errors24h.length === 1 ? "error was" : "errors were"} recorded today`,
+      detail: "Review the affected page and release before the next pilot session.",
+      href: "#application-errors",
+      action: "Inspect app errors",
+    }] : []),
+  ];
+
+  async function refreshStatus() {
+    setRefreshing(true);
+    try {
+      const [result] = await Promise.all([fetchServiceStatus(), onRefresh()]);
+      setServiceProbe(result);
+      setLastChecked(new Date());
+      onMessage("Operations data and service status were refreshed.");
+    } catch (cause) {
+      onMessage(cause instanceof Error ? cause.message : "Operations status could not be refreshed.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   function exportAppointments() {
     downloadCsv(
@@ -121,32 +179,73 @@ export function AdminOperations({
       <section className="page-head portal-head">
         <div>
           <p className="eyebrow">OPERATIONS AND ACCOUNTABILITY</p>
-          <h1>System health and records</h1>
-          <p>Monitor delivery, application errors, privileged changes, retention readiness, and release evidence.</p>
+          <h1>Operations and system health</h1>
+          <p>See what is working, what needs attention, and the records required for a safe pilot.</p>
         </div>
       </section>
-      <div className="metrics">
-        <article><b className={serviceState === "Healthy" ? "healthy-text" : "attention-text"}>{serviceState}</b><span>Overall status</span></article>
-        <article><b className={serviceProbe.healthy ? "healthy-text" : "attention-text"}>{serviceProbe.loading ? "Checking" : serviceProbe.healthy ? "Online" : "Unavailable"}</b><span>Chatbot API</span></article>
-        <article><b>{serviceProbe.approvedEntries ?? "â€”"}</b><span>Approved live answers</span></article>
-        <article><b>{overdue.length}</b><span>Emails overdue 10+ min</span></article>
-        <article><b>{deliveryProblems.length + failed.length}</b><span>Delivery problems</span></article>
-        <article><b>{errors24h.length}</b><span>Client errors in 24 hours</span></article>
+      <section className={`operations-overview ${serviceState === "Healthy" ? "healthy" : serviceProbe.loading ? "checking" : "attention"}`}>
+        <div className="operations-overview-copy">
+          <span className="operations-state"><i aria-hidden="true" />{serviceState}</span>
+          <h2>{serviceState === "Healthy" ? "Core services are ready" : serviceProbe.loading ? "Checking the live services" : "Some items need administrator attention"}</h2>
+          <p>{serviceState === "Healthy"
+            ? "The chatbot, email queue, and monitored application activity have no current warning signs."
+            : serviceProbe.loading
+              ? "This normally takes only a few seconds. The page remains usable while checks finish."
+              : `${operationalIssues.length} ${operationalIssues.length === 1 ? "issue has" : "issues have"} been prioritized below with a recommended next action.`}</p>
+          <small>{lastChecked ? `Last checked ${lastChecked.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Waiting for first check"}</small>
+        </div>
+        <button type="button" className="outline operations-refresh" onClick={() => void refreshStatus()} disabled={refreshing}>
+          {refreshing ? "Refreshing…" : "Refresh status"}
+        </button>
+      </section>
+
+      <div className="operations-summary-grid" aria-label="System health summary">
+        <article>
+          <span>Chatbot service</span>
+          <b className={serviceProbe.healthy ? "healthy-text" : "attention-text"}>{serviceProbe.loading ? "Checking" : serviceProbe.healthy ? "Online" : "Unavailable"}</b>
+          <small>{serviceProbe.approvedEntries ?? "—"} approved answers available</small>
+        </article>
+        <article className={overdue.length ? "attention" : ""}>
+          <span>Email queue</span><b>{overdue.length}</b><small>more than 10 minutes overdue</small>
+        </article>
+        <article className={failed.length + deliveryProblems.length ? "attention" : ""}>
+          <span>Delivery problems</span><b>{failed.length + deliveryProblems.length}</b><small>failed, bounced, delayed, or complained</small>
+        </article>
+        <article className={errors24h.length ? "attention" : ""}>
+          <span>Application errors</span><b>{errors24h.length}</b><small>recorded in the last 24 hours</small>
+        </article>
       </div>
-      <div className="operations-alerts" aria-label="Operational alerts">
-        {!overdue.length && !failed.length && !deliveryProblems.length && !errors24h.length && serviceProbe.healthy ? (
-          <div className="scope-note success"><b>All monitored checks are clear</b><span>No overdue mail, delivery failure, complaint, bounce, or client error currently needs administrator attention.</span></div>
+
+      <section className="work-card operations-priority-card" aria-labelledby="operations-priority-title">
+        <div className="card-title">
+          <div><span className="section-kicker">NEXT ACTIONS</span><h2 id="operations-priority-title">What needs attention</h2></div>
+          <span>{operationalIssues.length ? `${operationalIssues.length} open` : "All clear"}</span>
+        </div>
+        {operationalIssues.length ? (
+          <div className="operations-issue-list">
+            {operationalIssues.map((issue, index) => (
+              <article key={issue.key}>
+                <i aria-hidden="true">{index + 1}</i>
+                <div><b>{issue.title}</b><p>{issue.detail}</p></div>
+                <a href={issue.href}>{issue.action}<span aria-hidden="true">→</span></a>
+              </article>
+            ))}
+          </div>
         ) : (
-          <div className="scope-note warning"><b>Administrator review required</b><span>{overdue.length} overdue, {failed.length} failed, {deliveryProblems.length} provider delivery events, {errors24h.length} recent application errors, and chatbot API status {serviceProbe.loading ? "is still being checked" : serviceProbe.healthy ? "is healthy" : "requires attention"}.</span></div>
+          <div className="operations-all-clear">
+            <i aria-hidden="true">✓</i>
+            <div><b>No immediate action is required</b><span>Continue routine monitoring and run the full lifecycle test before each pilot release.</span></div>
+          </div>
         )}
-      </div>
-      <div className="scope-note">
-        <b>Knowledge source</b>
-        <span>{serviceProbe.source}</span>
-      </div>
-      <div className="operations-grid">
-        <section className="work-card">
-          <div className="card-title"><h2>Email delivery health</h2><span>{data.emailNotifications.length} recent messages</span></div>
+      </section>
+
+      <section className="operations-section-heading">
+        <div><span className="section-kicker">SERVICE DETAILS</span><h2>Delivery and application diagnostics</h2></div>
+        <p>Open a panel only when you need the underlying evidence.</p>
+      </section>
+      <div className="operations-details-grid">
+        <details id="email-health" className="work-card operations-detail" open={Boolean(overdue.length || failed.length)}>
+          <summary><span><b>Email queue</b><small>Messages waiting or unable to send</small></span><em>{overdue.length + failed.length}</em></summary>
           <div className="operations-list">
             {[...overdue, ...failed].slice(0, 12).map((item) => (
               <article key={item.id}>
@@ -156,9 +255,9 @@ export function AdminOperations({
             ))}
             {!overdue.length && !failed.length && <div className="empty-card">No queued or failed email requires attention.</div>}
           </div>
-        </section>
-        <section className="work-card">
-          <div className="card-title"><h2>Provider delivery events</h2><span>Resend webhook evidence</span></div>
+        </details>
+        <details id="provider-events" className="work-card operations-detail" open={Boolean(deliveryProblems.length)}>
+          <summary><span><b>Email provider events</b><small>Delivery, bounce, complaint, and delay evidence</small></span><em>{data.deliveryEvents.length}</em></summary>
           <div className="operations-list">
             {data.deliveryEvents.slice(0, 12).map((item) => (
               <article key={item.webhook_id}>
@@ -168,11 +267,39 @@ export function AdminOperations({
             ))}
             {!data.deliveryEvents.length && <div className="empty-card">No provider webhook evidence has been received yet.</div>}
           </div>
-        </section>
+        </details>
+        <details id="application-errors" className="work-card operations-detail" open={Boolean(errors24h.length)}>
+          <summary><span><b>Application errors</b><small>Privacy-filtered errors reported by signed-in browsers</small></span><em>{errors24h.length}</em></summary>
+          <div className="operations-list">
+            {data.clientErrors.slice(0, 20).map((item) => (
+              <article key={item.id}>
+                <span className="status failed">{item.event_type.replace(/_/g, " ")}</span>
+                <div><b>{item.route}</b><p>{item.message}</p><small>{new Date(item.created_at).toLocaleString()} · release {item.release || "unknown"}</small></div>
+              </article>
+            ))}
+            {!data.clientErrors.length && <div className="empty-card">No authenticated application errors have been recorded.</div>}
+          </div>
+        </details>
+        <details id="service-details" className="work-card operations-detail">
+          <summary><span><b>Chatbot knowledge service</b><small>Live API and approved-answer source</small></span><em className={serviceProbe.healthy ? "healthy" : "attention"}>{serviceProbe.loading ? "…" : serviceProbe.healthy ? "Online" : "Check"}</em></summary>
+          <div className="operations-service-copy">
+            <dl>
+              <div><dt>API status</dt><dd>{serviceProbe.loading ? "Checking" : serviceProbe.healthy ? "Available" : "Unavailable"}</dd></div>
+              <div><dt>Approved answers</dt><dd>{serviceProbe.approvedEntries ?? "Not reported"}</dd></div>
+              <div><dt>Knowledge source</dt><dd>{serviceProbe.source}</dd></div>
+            </dl>
+            <p>If this service is unavailable, check the production chatbot deployment and its server-side Supabase environment variables.</p>
+          </div>
+        </details>
       </div>
-      <div className="operations-grid">
-        <section className="work-card">
-          <div className="card-title"><h2>Privileged audit trail</h2><span>{audit24h.length} changes in 24 hours</span></div>
+
+      <section className="operations-section-heading">
+        <div><span className="section-kicker">ACCOUNTABILITY</span><h2>Administrative records</h2></div>
+        <p>Use these records for investigation, privacy review, and release evidence.</p>
+      </section>
+      <div className="operations-details-grid">
+        <details className="work-card operations-detail">
+          <summary><span><b>Admin activity log</b><small>Role, content, and configuration changes</small></span><em>{audit24h.length} today</em></summary>
           <div className="audit-timeline">
             {data.auditLogs.slice(0, 30).map((item) => (
               <article key={item.id}>
@@ -182,35 +309,24 @@ export function AdminOperations({
             ))}
             {!data.auditLogs.length && <div className="empty-card">No administrative changes are recorded.</div>}
           </div>
-        </section>
-        <section className="work-card">
-          <div className="card-title"><h2>Application monitoring</h2><span>Privacy-filtered errors</span></div>
-          <div className="operations-list">
-            {data.clientErrors.slice(0, 20).map((item) => (
-              <article key={item.id}>
-                <span className="status failed">{item.event_type.replace(/_/g, " ")}</span>
-                <div><b>{item.route}</b><p>{item.message}</p><small>{new Date(item.created_at).toLocaleString()} · release {item.release || "unknown"}</small></div>
-              </article>
+        </details>
+        <details className="work-card operations-detail operations-retention-detail">
+          <summary><span><b>Retention and restore readiness</b><small>Policy settings and backup drill checklist</small></span><em>{data.retentionPolicies.length} policies</em></summary>
+          <div className="scope-note"><b>Preview only</b><span>This page reports eligible records and saves approved policy settings. It never deletes records automatically.</span></div>
+          <div className="retention-grid">
+            {data.retentionPolicies.map((policy) => (
+              <RetentionEditor key={policy.record_type} policy={policy} onRefresh={onRefresh} onMessage={onMessage} />
             ))}
-            {!data.clientErrors.length && <div className="empty-card">No authenticated client errors have been recorded.</div>}
           </div>
-        </section>
+          <div className="restore-checklist">
+            <h3>Restore drill checklist</h3>
+            <ol><li>Export a schema-only and data backup with the Supabase CLI.</li><li>Restore into an isolated non-production project.</li><li>Run the lifecycle test against the restored project.</li><li>Record the date, operator, duration, and result in the release evidence.</li></ol>
+          </div>
+        </details>
       </div>
-      <section className="work-card retention-workspace">
-        <div className="card-title"><h2>Retention and restore readiness</h2><span>Preview only · no automatic deletion</span></div>
-        <div className="scope-note"><b>Safe retention workflow</b><span>Approve a policy only after the Product Owner and CLSU privacy authority confirm it. Eligible counts are informational; this page never deletes records.</span></div>
-        <div className="retention-grid">
-          {data.retentionPolicies.map((policy) => (
-            <RetentionEditor key={policy.record_type} policy={policy} onRefresh={onRefresh} onMessage={onMessage} />
-          ))}
-        </div>
-        <div className="restore-checklist">
-          <h3>Required restore drill evidence</h3>
-          <ol><li>Export a schema-only and data backup with the Supabase CLI.</li><li>Restore into an isolated non-production project.</li><li>Run the lifecycle test against the restored project.</li><li>Record the date, operator, duration, and result in the release evidence.</li></ol>
-        </div>
-      </section>
       <section className="work-card export-center">
-        <div className="card-title"><h2>Reports and release evidence</h2><span>Privacy-conscious exports</span></div>
+        <div className="card-title"><div><span className="section-kicker">REPORTS</span><h2>Export release evidence</h2></div><span>CSV or print-ready PDF</span></div>
+        <p className="export-description">Exports contain operational records and may include personal data. Store them only in an approved CLSU location.</p>
         <div className="export-actions">
           <button className="outline" onClick={exportAppointments}>Export consultations CSV</button>
           <button className="outline" onClick={exportReviews}>Export reviews CSV</button>

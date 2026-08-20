@@ -135,8 +135,8 @@ assertIncludes(operationsMigration, "client_error_events", "Privacy-filtered cli
 assertIncludes(operationsMigration, "record_client_error", "Rate-limited client monitoring RPC");
 assertIncludes(operationsMigration, "rate limit reached", "Client monitoring abuse protection");
 assertIncludes(mfaGate, "challengeAndVerify", "TOTP challenge and verification");
-assertIncludes(operations, "Email delivery health", "Administrator delivery monitoring");
-assertIncludes(operations, "Privileged audit trail", "Administrator audit viewer");
+assertIncludes(operations, "Email queue", "Administrator delivery monitoring");
+assertIncludes(operations, "Admin activity log", "Administrator audit viewer");
 assertIncludes(operations, "Print or save PDF report", "Printable PDF evidence export");
 assertIncludes(calendar, "BEGIN:VCALENDAR", "iCalendar export");
 assertIncludes(calendar, "calendar.google.com", "Google Calendar integration");
