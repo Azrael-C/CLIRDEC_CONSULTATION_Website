@@ -4232,6 +4232,13 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [trainingQuestion, setTrainingQuestion] = useState("");
   const [trainingReply, setTrainingReply] = useState<ChatbotReply | null>(null);
   const [trainingTestLoading, setTrainingTestLoading] = useState(false);
+  const [trainingCaptchaToken, setTrainingCaptchaToken] = useState("");
+  const [trainingCaptchaGeneration, setTrainingCaptchaGeneration] = useState(0);
+  const [trainingChatTrusted, setTrainingChatTrusted] = useState(false);
+  const [trainingTrustExpiresAt, setTrainingTrustExpiresAt] = useState(0);
+  const [trainingTrustLoading, setTrainingTrustLoading] = useState(
+    Boolean(TURNSTILE_SITE_KEY),
+  );
   const [trainingLibraryQuery, setTrainingLibraryQuery] = useState("");
   const [trainingLibraryStatus, setTrainingLibraryStatus] = useState<
     "all" | FaqStatus
@@ -4260,6 +4267,38 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       window.removeEventListener("focus", backgroundRefresh);
     };
   }, []);
+  useEffect(() => {
+    let active = true;
+    void getChatTrustStatus().then((status) => {
+      if (!active) return;
+      setTrainingChatTrusted(status.trusted);
+      setTrainingTrustExpiresAt(
+        status.trusted ? Date.now() + status.expiresInSeconds * 1000 : 0,
+      );
+      setTrainingTrustLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!trainingChatTrusted || !trainingTrustExpiresAt) return;
+    const remaining = trainingTrustExpiresAt - Date.now();
+    if (remaining <= 0) {
+      setTrainingChatTrusted(false);
+      setTrainingTrustExpiresAt(0);
+      setTrainingCaptchaGeneration((value) => value + 1);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setTrainingChatTrusted(false);
+      setTrainingTrustExpiresAt(0);
+      setTrainingCaptchaGeneration((value) => value + 1);
+    }, remaining);
+    return () => window.clearTimeout(timer);
+  }, [trainingChatTrusted, trainingTrustExpiresAt]);
+  const trainingCaptchaRequired =
+    Boolean(TURNSTILE_SITE_KEY) && !trainingTrustLoading && !trainingChatTrusted;
   const changeRole = async (id: string, role: Role) => {
     try {
       await adminSetRole(id, role);
@@ -4410,17 +4449,46 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   };
   const testTraining = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!PRODUCTION_SECURITY_READY) {
+      setMessage("Chatbot testing is paused until the security check is configured.");
+      return;
+    }
+    if (trainingTrustLoading) return;
+    if (trainingCaptchaRequired && !trainingCaptchaToken) {
+      setMessage("Complete the chatbot security check before running a live test.");
+      return;
+    }
     const question = trainingQuestion.trim();
     if (!question) return;
     setTrainingTestLoading(true);
     setTrainingReply(null);
     try {
-      setTrainingReply(await requestChatbotReply(question));
-    } catch {
-      setMessage(
-        "The chatbot test service is unavailable. Confirm the FastAPI deployment and VITE_CHATBOT_URL.",
-      );
+      setTrainingReply(await requestChatbotReply(question, trainingCaptchaToken || undefined));
+      if (trainingCaptchaToken) {
+        const status = await getChatTrustStatus();
+        setTrainingChatTrusted(status.trusted);
+        setTrainingTrustExpiresAt(
+          status.trusted ? Date.now() + status.expiresInSeconds * 1000 : 0,
+        );
+      }
+    } catch (cause) {
+      const status = cause instanceof ChatbotRequestError ? cause.status : 0;
+      if (status === 403) {
+        setTrainingChatTrusted(false);
+        setTrainingTrustExpiresAt(0);
+        setMessage("Complete the chatbot security check, then run the live test again.");
+      } else if (status === 429) {
+        setMessage("Too many chatbot tests were sent. Wait a moment, then try again.");
+      } else {
+        setMessage(
+          "The chatbot test service is unavailable. Confirm the FastAPI deployment and VITE_CHATBOT_URL.",
+        );
+      }
+      if (trainingCaptchaToken || status === 403) {
+        setTrainingCaptchaGeneration((value) => value + 1);
+      }
     } finally {
+      if (trainingCaptchaToken) setTrainingCaptchaToken("");
       setTrainingTestLoading(false);
     }
   };
@@ -5100,6 +5168,42 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   <button type="button" key={prompt} onClick={() => setTrainingQuestion(prompt)}>{prompt}</button>
                 ))}
               </div>
+              {!PRODUCTION_SECURITY_READY && (
+                <p className="training-security-warning" role="status">
+                  The live chatbot test is paused until the Turnstile site key is configured.
+                </p>
+              )}
+              {TURNSTILE_SITE_KEY && trainingTrustLoading && (
+                <p className="training-security-status" role="status">
+                  Checking secure chatbot session...
+                </p>
+              )}
+              {TURNSTILE_SITE_KEY && !trainingTrustLoading && trainingChatTrusted && (
+                <p className="chat-trust-active training-trust-active" role="status">
+                  <span aria-hidden="true">✓</span>
+                  Protected live test session active
+                </p>
+              )}
+              {trainingCaptchaRequired && (
+                <div className={`turnstile-field training-turnstile${trainingCaptchaToken ? " is-complete" : ""}`}>
+                  <div className="turnstile-widget-shell" aria-hidden={Boolean(trainingCaptchaToken)}>
+                    <Turnstile
+                      key={trainingCaptchaGeneration}
+                      siteKey={TURNSTILE_SITE_KEY}
+                      options={{ theme: "light", size: "flexible", action: "admin_chatbot_test" }}
+                      onSuccess={setTrainingCaptchaToken}
+                      onExpire={() => setTrainingCaptchaToken("")}
+                      onError={() => setTrainingCaptchaToken("")}
+                    />
+                  </div>
+                  {trainingCaptchaToken && (
+                    <p className="turnstile-confirmed" role="status">
+                      <span aria-hidden="true">✓</span>
+                      Security check complete
+                    </p>
+                  )}
+                </div>
+              )}
               <form onSubmit={testTraining}>
                 <label htmlFor="training-test-question">Student test question</label>
                 <div>
@@ -5110,7 +5214,15 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                     placeholder="Ask a realistic student question"
                     maxLength={500}
                   />
-                  <button className="primary" disabled={trainingTestLoading}>
+                  <button
+                    className="primary"
+                    disabled={
+                      trainingTestLoading ||
+                      trainingTrustLoading ||
+                      !PRODUCTION_SECURITY_READY ||
+                      (trainingCaptchaRequired && !trainingCaptchaToken)
+                    }
+                  >
                     {trainingTestLoading ? "Testing…" : "Run test"}
                   </button>
                 </div>
