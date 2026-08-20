@@ -1320,6 +1320,12 @@ body {
 .training-test-prompts { display: flex; flex-wrap: wrap; gap: .35rem; }
 .training-test-prompts button { min-height: 30px; padding: .28rem .48rem; border: 1px solid #ccddd1; border-radius: 999px; color: var(--portal-accent); background: #fff; font-size: .56rem; font-weight: 750; }
 .training-test-prompts button:hover { background: #edf7f0; }
+.training-security-status,
+.training-security-warning { margin: 0; padding: .7rem .8rem; border-radius: 10px; font-size: .64rem; font-weight: 800; line-height: 1.45; }
+.training-security-status { border: 1px solid #d9e5dc; background: #f7faf8; color: var(--figma-muted); }
+.training-security-warning { border: 1px solid #ead99a; background: #fff8dc; color: #715600; }
+.training-turnstile { margin-top: 0; }
+.training-trust-active { justify-self: start; }
 .training-empty-symbol { display: grid; width: 48px; height: 48px; margin: 0 auto .25rem; place-items: center; border-radius: 14px; color: #fff!important; background: var(--portal-accent); font-size: .66rem!important; font-weight: 900; box-shadow: 0 9px 20px rgba(var(--portal-accent-rgb),.18); }
 .training-test-checklist { display: grid; gap: .45rem; padding: .75rem; border: 1px solid #d9e5dc; border-radius: 11px; background: #f7faf8; }
 .training-test-checklist b { font-size: .64rem; }
