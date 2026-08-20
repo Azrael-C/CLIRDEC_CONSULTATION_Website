@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { supabase, configured } from "./supabase";
@@ -54,7 +54,6 @@ import {
   isUpcomingSlot,
   manilaDateKey,
   manilaInstant,
-  overlapsExisting,
   weekDays,
 } from "./scheduling";
 import {
@@ -255,6 +254,44 @@ function SkipLink() {
   );
 }
 
+function PortalLoader({
+  label,
+  detail = "Please keep this page open while we prepare your workspace.",
+  compact = false,
+}: {
+  label: string;
+  detail?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={compact ? "portal-loader compact" : "portal-loader"}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <span className="portal-loader-mark" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="portal-loader-copy">
+        <b>{label}</b>
+        <small>{detail}</small>
+      </span>
+    </div>
+  );
+}
+
+function ButtonLoading({ label }: { label: string }) {
+  return (
+    <span className="button-loading">
+      <i aria-hidden="true" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(configured);
@@ -277,6 +314,7 @@ function App() {
   ]);
   const [question, setQuestion] = useState("");
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const forgotPasswordPath = pathname === "/forgot-password";
   const studentMetadata: Record<View, [string, string]> = {
     home: [
       "Student overview | CLSU FacultyConnect",
@@ -307,6 +345,11 @@ function App() {
           "Privacy Policy | CLSU FacultyConnect",
           "Learn how CLSU FacultyConnect collects, uses, protects, and retains consultation information.",
         ]
+      : forgotPasswordPath
+        ? [
+            "Forgot password | CLSU FacultyConnect",
+            "Request a secure FacultyConnect password recovery link.",
+          ]
       : pathname !== "/"
         ? [
             "Page not found | CLSU FacultyConnect",
@@ -650,25 +693,28 @@ function App() {
       setNotice(
         "Password recovery requires the production Supabase configuration.",
       );
-      return;
+      return false;
     }
     if (!PRODUCTION_SECURITY_READY) {
       setNotice("Security verification is temporarily unavailable. Please contact MISO.");
-      return;
+      return false;
     }
     if (!email || !email.includes("@")) {
       setNotice("Enter your registered email address first.");
-      return;
+      return false;
     }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin,
       captchaToken,
     });
+    if (error) {
+      setNotice(friendlyAuthError(error.message, "reset"));
+      return false;
+    }
     setNotice(
-      error
-        ? friendlyAuthError(error.message, "reset")
-        : "Check your email for the secure password-reset link.",
+      "If a FacultyConnect account uses this address, a secure reset link has been sent.",
     );
+    return true;
   }
   async function updateRecoveredPassword(password: string) {
     setNotice("");
@@ -901,11 +947,22 @@ function App() {
     pathname === "/privacy-policy.html"
   )
     return <PrivacyPolicyPage />;
+  if (forgotPasswordPath)
+    return (
+      <ForgotPasswordPage
+        send={requestPasswordReset}
+        notice={notice}
+        clearNotice={() => setNotice("")}
+      />
+    );
   if (pathname !== "/") return <NotFoundPage />;
   if (authLoading)
     return (
       <main className="auth-loading" id="main-content">
-        <p>Loading FacultyConnect…</p>
+        <PortalLoader
+          label="Opening FacultyConnect"
+          detail="Checking your secure session and portal access."
+        />
       </main>
     );
   if (recoveringPassword)
@@ -915,7 +972,6 @@ function App() {
       <ProductionAuth
         login={login}
         signup={signup}
-        resetPassword={requestPasswordReset}
         clearNotice={() => setNotice("")}
         notice={notice}
       />
@@ -1003,7 +1059,7 @@ function App() {
           />
           <Nav
             active={view === "assistant"}
-            label="Ask Consult AI"
+            label="Consult AI"
             icon="assistant"
             onClick={() => nav("assistant")}
           />
@@ -1159,13 +1215,11 @@ function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
 function ProductionAuth({
   login,
   signup,
-  resetPassword,
   clearNotice,
   notice,
 }: {
   login: (e: FormEvent<HTMLFormElement>) => Promise<void>;
   signup: (e: FormEvent<HTMLFormElement>) => Promise<void>;
-  resetPassword: (email: string, captchaToken?: string) => Promise<void>;
   clearNotice: () => void;
   notice: string;
 }) {
@@ -1514,6 +1568,7 @@ function ProductionAuth({
           )}
           <button
             className="primary"
+            aria-busy={submittingAuth}
             disabled={
               submittingAuth ||
               !PRODUCTION_SECURITY_READY ||
@@ -1522,36 +1577,22 @@ function ProductionAuth({
             }
           >
             {submittingAuth
-              ? creating
-                ? "Creating account…"
-                : "Signing in…"
+              ? <ButtonLoading label={creating ? "Creating account" : "Signing in"} />
               : creating
                 ? "Create student account"
                 : "Log in"}
           </button>
           <div className="auth-options">
             {!creating && (
-              <button
-                type="button"
+              <a
                 className="auth-option"
-                disabled={!PRODUCTION_SECURITY_READY}
-                onClick={(event) => {
-                  const form = event.currentTarget.form;
-                  if (form)
-                    void resetPassword(
-                      String(new FormData(form).get("email") || ""),
-                      captchaToken || undefined,
-                    ).finally(() => {
-                      setCaptchaToken("");
-                      setCaptchaGeneration((value) => value + 1);
-                    });
-                }}
+                href="/forgot-password"
               >
                 <b>Forgot your password?</b>
                 <small>
-                  Enter your email above to receive a secure reset link.
+                  Open the dedicated recovery page to request a secure link.
                 </small>
-              </button>
+              </a>
             )}
             <button type="button" className="auth-option" onClick={changeMode}>
               <b>
@@ -1600,6 +1641,176 @@ function ProductionAuth({
     </main>
   );
 }
+
+function ForgotPasswordPage({
+  send,
+  notice,
+  clearNotice,
+}: {
+  send: (email: string, captchaToken?: string) => Promise<boolean>;
+  notice: string;
+  clearNotice: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [sentTo, setSentTo] = useState("");
+  const [sending, setSending] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaGeneration, setCaptchaGeneration] = useState(0);
+  usePageMetadata(
+    "Forgot password | CLSU FacultyConnect",
+    "Request a secure FacultyConnect password recovery link.",
+  );
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSending(true);
+    const normalizedEmail = email.trim().toLowerCase();
+    try {
+      const sent = await send(normalizedEmail, captchaToken || undefined);
+      if (sent) setSentTo(normalizedEmail);
+    } finally {
+      setSending(false);
+      setCaptchaToken("");
+      setCaptchaGeneration((value) => value + 1);
+    }
+  };
+  const tryAnotherAddress = () => {
+    setSentTo("");
+    setEmail("");
+    setCaptchaToken("");
+    setCaptchaGeneration((value) => value + 1);
+    clearNotice();
+  };
+  return (
+    <main className="auth auth-recovery-request" id="main-content">
+      <SkipLink />
+      <section className="auth-story recovery-story">
+        <div className="public-brand">
+          <BrandLogo tone="light" size="hero" />
+          <span>CLSU FacultyConnect</span>
+        </div>
+        <div>
+          <span className="service-label">SECURE ACCOUNT RECOVERY</span>
+          <h1>Let’s get you back into your portal.</h1>
+          <p>
+            Enter the email address attached to your account. We will send a
+            time-limited link that lets you choose a new password securely.
+          </p>
+          <ol className="recovery-steps" aria-label="Password recovery steps">
+            <li><b>1</b><span>Request a secure link</span></li>
+            <li><b>2</b><span>Check your email</span></li>
+            <li><b>3</b><span>Create a new password</span></li>
+          </ol>
+        </div>
+        <small>
+          FacultyConnect never asks you to send your password by email.
+        </small>
+      </section>
+      <section className="auth-panel recovery-panel">
+        <form className="login recovery-request-card" onSubmit={submit}>
+          <span className="mobile-brand">
+            <BrandLogo />
+            <span>CLSU FacultyConnect</span>
+          </span>
+          <p className="eyebrow">PASSWORD RECOVERY</p>
+          {sentTo ? (
+            <>
+              <div className="recovery-success-symbol" aria-hidden="true">✓</div>
+              <h1>Check your inbox</h1>
+              <p className="muted">
+                If a FacultyConnect account uses <b>{sentTo}</b>, a secure
+                password-reset link is on its way.
+              </p>
+              <div className="recovery-guidance" role="status" aria-live="polite">
+                <b>Link requested successfully</b>
+                <span>The link expires for your protection. Open only the latest recovery email.</span>
+              </div>
+              <div className="recovery-actions">
+                <a className="primary recovery-link-button" href="/">Return to sign in</a>
+                <button type="button" className="outline" onClick={tryAnotherAddress}>
+                  Try another email
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1>Reset your password</h1>
+              <p className="muted">
+                Use your registered Gmail or CLSU email address.
+              </p>
+              {notice && (
+                <div className="form-notice error" role="alert">
+                  <b>We could not send the link</b>
+                  <span>{notice}</span>
+                </div>
+              )}
+              <label htmlFor="recovery-email-request">
+                Registered email address
+                <input
+                  id="recovery-email-request"
+                  name="email"
+                  type="email"
+                  required
+                  maxLength={254}
+                  autoComplete="email"
+                  placeholder="name@clsu2.edu.ph"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+                <small>We show the same response whether or not an account exists.</small>
+              </label>
+              {TURNSTILE_SITE_KEY && (
+                <div className={`turnstile-field${captchaToken ? " is-complete" : ""}`}>
+                  <div className="turnstile-widget-shell" aria-hidden={Boolean(captchaToken)}>
+                    <Turnstile
+                      key={captchaGeneration}
+                      siteKey={TURNSTILE_SITE_KEY}
+                      options={{ theme: "light", size: "flexible", action: "password_recovery" }}
+                      onSuccess={setCaptchaToken}
+                      onExpire={() => setCaptchaToken("")}
+                      onError={() => setCaptchaToken("")}
+                    />
+                  </div>
+                  {captchaToken && (
+                    <p className="turnstile-confirmed" role="status">
+                      <span aria-hidden="true">✓</span>
+                      Security check complete
+                    </p>
+                  )}
+                </div>
+              )}
+              <button
+                className="primary"
+                aria-busy={sending}
+                disabled={
+                  sending ||
+                  !PRODUCTION_SECURITY_READY ||
+                  (Boolean(TURNSTILE_SITE_KEY) && !captchaToken)
+                }
+              >
+                {sending ? <ButtonLoading label="Sending secure link" /> : "Send reset link"}
+              </button>
+              <a className="recovery-back-link" href="/">← Return to secure sign in</a>
+            </>
+          )}
+          <aside className="recovery-fallback" aria-label="Recovery fallback options">
+            <b>Still unable to recover your account?</b>
+            <ul>
+              <li>Check the Spam or Promotions folder.</li>
+              <li>Confirm you entered the address used for FacultyConnect.</li>
+              <li>Ask the authorized MISO administrator to verify your account status.</li>
+            </ul>
+          </aside>
+          <div className="legal-links">
+            <a className="legal-link-button" href="/privacy-policy">Privacy policy</a>
+            <span>·</span>
+            <span>Secure, role-protected recovery</span>
+          </div>
+        </form>
+      </section>
+    </main>
+  );
+}
+
 function PasswordRecovery({
   save,
   notice,
@@ -1650,7 +1861,7 @@ function PasswordRecovery({
       <section className="auth-panel">
         <form className="login" onSubmit={submit}>
           <p className="eyebrow">PASSWORD RECOVERY</p>
-          <h2>Set your new password</h2>
+          <h1>Set your new password</h1>
           <div className="auth-field">
             <label htmlFor="recovery-password">New password</label>
             <span className="password-field">
@@ -1719,8 +1930,12 @@ function PasswordRecovery({
               </button>
             </span>
           </div>
-          <button className="primary" disabled={saving || !valid || !matches}>
-            {saving ? "Updating…" : "Update password"}
+          <button
+            className="primary"
+            aria-busy={saving}
+            disabled={saving || !valid || !matches}
+          >
+            {saving ? <ButtonLoading label="Updating password" /> : "Update password"}
           </button>
           {(localError || notice) && (
             <p className="error" aria-live="polite">
@@ -2045,7 +2260,7 @@ function Dashboard({
           </p>
         </div>
         <button className="primary" onClick={() => go("assistant")}>
-          Ask Consult AI <span>→</span>
+          Consult AI <span>→</span>
         </button>
       </section>
       <section className="overview-grid">
@@ -2102,7 +2317,7 @@ function Dashboard({
           <button onClick={() => go("assistant")}>
             <span className="quick-icon">✦</span>
             <i>
-              <b>Ask Consult AI</b>
+              <b>Consult AI</b>
               <small>FAQs, services, procedures, hours, and contacts</small>
             </i>
             <strong>→</strong>
@@ -2424,8 +2639,8 @@ function Schedule({
         })}
         {!booked.length && (
           <div className="empty-card">
-            You have no consultation requests. Ask Consult AI for the approved
-            procedure or view faculty availability.
+            You have no consultation requests. Use Consult AI for approved
+            guidance, or view faculty availability.
           </div>
         )}
       </div>
@@ -2732,6 +2947,13 @@ function Chat({
   const [chatTrusted, setChatTrusted] = useState(false);
   const [trustExpiresAt, setTrustExpiresAt] = useState(0);
   const [trustLoading, setTrustLoading] = useState(Boolean(TURNSTILE_SITE_KEY));
+  const messagesRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const messages = messagesRef.current;
+    if (!messages) return;
+    messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+  }, [chat]);
 
   useEffect(() => {
     let active = true;
@@ -2795,7 +3017,7 @@ function Chat({
       <section className="page-head compact">
         <div>
           <p className="eyebrow">VERIFIED CONSULTATION GUIDANCE</p>
-          <h1>Ask Consult AI</h1>
+          <h1>Consult AI</h1>
           <p>
             Answers use Product Owner or CLIRDEC-approved information.
             Unsupported and sensitive questions receive a safe referral.
@@ -2821,7 +3043,14 @@ function Chat({
             <small>Online · Approved CLIRDEC knowledge base</small>
           </div>
         </div>
-        <div className="messages">
+        <div
+          className="messages"
+          ref={messagesRef}
+          role="log"
+          aria-label="Consult AI conversation"
+          aria-live="polite"
+          tabIndex={0}
+        >
           {chat.map((m, i) => (
             <div key={i} className={`message-wrap ${m.who}`}>
               <p>{m.text}</p>
@@ -3033,8 +3262,7 @@ type AView =
   | "appointments"
   | "reviews"
   | "knowledge"
-  | "operations"
-  | "reports";
+  | "operations";
 function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   const faculty = user.role === "faculty";
   const [view, setView] = useState<FView | AView>(faculty ? "fhome" : "ahome");
@@ -3051,7 +3279,6 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
     reviews: ["Reviews and insights | CLSU FacultyConnect", "Analyze consultation ratings and comments by year level, college, and course."],
     knowledge: ["Chatbot training | CLSU FacultyConnect", "Train and test the consultation assistant with approved answers, example phrases, and official sources."],
     operations: ["Operations and health | CLSU FacultyConnect", "Monitor email delivery, audit records, application errors, retention, and release evidence."],
-    reports: ["Quality assurance | CLSU FacultyConnect", "Track service acceptance criteria, quality targets, and release evidence."],
   };
   usePageMetadata(portalMetadata[view][0], portalMetadata[view][1]);
   const nav: [FView | AView, string, NavIconName][] = faculty
@@ -3069,7 +3296,6 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         ["appointments", "Consultation logs", "calendar"],
         ["reviews", "Reviews and insights", "report"],
         ["operations", "Operations and health", "report"],
-        ["reports", "Quality assurance", "report"],
       ];
   const navigate = (target: FView | AView) => {
     setView(target);
@@ -3176,7 +3402,6 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
                 ["appointments", "Logs", "calendar"],
                 ["reviews", "Reviews", "report"],
                 ["operations", "Health", "report"],
-                ["reports", "QA", "calendar"],
               ]
         }
       />
@@ -3191,7 +3416,6 @@ function Head({
   label: string;
   title: string;
   copy: string;
-  action?: string;
 }) {
   return (
     <section className="page-head portal-head">
@@ -3235,6 +3459,9 @@ function WeekdayAvailabilityCalendar({
   const firstWeek = initialCalendarWeek();
   const now = new Date();
   const selectedTime = selectedStart?.getTime();
+  const selectedEndTime = selectedStart
+    ? selectedStart.getTime() + duration * 60_000
+    : null;
   const range = `${formatCalendarDay(days[0], { month: "short", day: "numeric" })} – ${formatCalendarDay(days[4], { month: "short", day: "numeric", year: "numeric" })}`;
   return (
     <div className="weekly-calendar">
@@ -3285,7 +3512,12 @@ function WeekdayAvailabilityCalendar({
                 const start = manilaInstant(day, minutes);
                 const end = new Date(start.getTime() + duration * 60_000);
                 const cellEnd = new Date(start.getTime() + 30 * 60_000);
-                const conflict = overlapsExisting(start, cellEnd, slots);
+                const publishedSlot = slots.find((slot) => {
+                  const publishedStart = new Date(slot.starts_at);
+                  const publishedEnd = new Date(slot.ends_at);
+                  return start < publishedEnd && cellEnd > publishedStart;
+                });
+                const conflict = Boolean(publishedSlot);
                 const reason = availabilityValidationMessage(
                   start,
                   end,
@@ -3293,25 +3525,46 @@ function WeekdayAvailabilityCalendar({
                   now,
                 );
                 const selected = selectedTime === start.getTime();
+                const selectedRange = Boolean(
+                  selectedTime !== undefined &&
+                    selectedEndTime !== null &&
+                    start.getTime() < selectedEndTime &&
+                    cellEnd.getTime() > selectedTime,
+                );
+                const publishedStartsHere = Boolean(
+                  publishedSlot &&
+                    new Date(publishedSlot.starts_at).getTime() === start.getTime(),
+                );
+                const publishedDuration = publishedSlot
+                  ? Math.round(
+                      (new Date(publishedSlot.ends_at).getTime() -
+                        new Date(publishedSlot.starts_at).getTime()) /
+                        60_000,
+                    )
+                  : 0;
                 const state = conflict
                   ? "Published"
                   : reason
                     ? "Unavailable"
-                    : selected
+                    : selectedRange
                       ? "Selected"
                       : "Available";
                 return (
                   <button
                     type="button"
                     key={day}
-                    className={`slot-toggle${selected ? " selected" : ""}${conflict ? " occupied" : ""}`}
+                    className={`slot-toggle${selectedRange ? " selected-range" : ""}${selected ? " selected selected-start" : ""}${conflict ? " occupied" : ""}${publishedStartsHere ? " occupied-start" : ""}`}
                     disabled={Boolean(reason)}
                     onClick={() => setSelectedStart(start)}
                     title={reason || `Select ${formatTime(minutes)}`}
                     aria-label={`${formatCalendarDay(day, { weekday: "long", month: "long", day: "numeric" })} at ${formatTime(minutes)} — ${state}`}
                   >
                     <span>
-                      {conflict ? "Busy" : selected ? "Selected" : ""}
+                      {publishedStartsHere
+                        ? `${publishedDuration} min`
+                        : selected
+                          ? `${duration} min`
+                          : ""}
                     </span>
                   </button>
                 );
@@ -3402,6 +3655,9 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   const [calendarWeek, setCalendarWeek] = useState(() => initialCalendarWeek());
   const [selectedStart, setSelectedStart] = useState<Date | null>(null);
   const [duration, setDuration] = useState(30);
+  const [consultationMode, setConsultationMode] = useState<
+    "in_person" | "online"
+  >("in_person");
   const [publishing, setPublishing] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const refresh = async (showLoading = false) => {
@@ -3523,9 +3779,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
         startsAt: selectedStart.toISOString(),
         endsAt: end.toISOString(),
         location: String(form.get("location") || "").trim(),
-        consultationMode: String(form.get("consultation_mode")) as
-          | "in_person"
-          | "online",
+        consultationMode,
       });
       setFacultySlots((current) =>
         [...current.filter((slot) => slot.id !== published.id), published].sort(
@@ -3536,6 +3790,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       formElement.reset();
       setSelectedStart(null);
       setDuration(30);
+      setConsultationMode("in_person");
       setMessage("Availability published for students.");
       await refresh();
       window.dispatchEvent(new Event("facultyconnect:refresh-notifications"));
@@ -3597,7 +3852,13 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
     }
   };
   if (loading)
-    return <div className="empty-card">Loading your faculty workspace…</div>;
+    return (
+      <PortalLoader
+        compact
+        label="Loading faculty workspace"
+        detail="Syncing requests, appointments, and published availability."
+      />
+    );
   const onboarding = !profile.profile_completed && !onboardingDismissed ? (
     <div className="profile-onboarding-backdrop">
       <section className="profile-onboarding" role="dialog" aria-modal="true" aria-labelledby="faculty-onboarding-title">
@@ -3836,24 +4097,55 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
                     value={duration}
                     onChange={(e) => setDuration(Number(e.target.value))}
                   >
+                    <option value="15">15 minutes</option>
+                    <option value="20">20 minutes</option>
                     <option value="30">30 minutes</option>
                     <option value="45">45 minutes</option>
                     <option value="60">60 minutes</option>
+                    <option value="90">90 minutes</option>
+                    <option value="120">2 hours</option>
                   </select>
                 </label>
                 <label>
                   <span>4 · Consultation mode</span>
-                  <select name="consultation_mode" defaultValue="in_person">
+                  <select
+                    name="consultation_mode"
+                    value={consultationMode}
+                    onChange={(event) =>
+                      setConsultationMode(
+                        event.target.value as "in_person" | "online",
+                      )
+                    }
+                  >
                     <option value="in_person">In person</option>
                     <option value="online">Online</option>
                   </select>
                 </label>
+                {consultationMode === "online" && (
+                  <div className="online-meeting-warning" role="note">
+                    <span aria-hidden="true">!</span>
+                    <p>
+                      <b>Create the meeting link before publishing.</b>
+                      FacultyConnect does not generate or host online meeting
+                      links. Use your approved platform, then paste its complete
+                      link or joining instructions below.
+                    </p>
+                  </div>
+                )}
                 <label>
-                  <span>5 · Location or meeting platform</span>
+                  <span>
+                    5 · {consultationMode === "online"
+                      ? "Meeting link or joining instructions"
+                      : "Consultation location"}
+                  </span>
                   <input
                     name="location"
                     required
-                    placeholder="CLIRDEC room or approved online platform"
+                    placeholder={
+                      consultationMode === "online"
+                        ? "Paste the approved meeting link or platform details"
+                        : "CLIRDEC room or faculty office"
+                    }
                   />
                 </label>
                 <button
@@ -4219,6 +4511,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [appointmentFilter, setAppointmentFilter] = useState<
     "all" | AppointmentStatus
   >("all");
+  const [reviewQuery, setReviewQuery] = useState("");
+  const [reviewRatingFilter, setReviewRatingFilter] = useState<
+    "all" | "positive" | "neutral" | "critical"
+  >("all");
   const [editingFaqId, setEditingFaqId] = useState<string | null>(null);
   const [faqDraft, setFaqDraft] = useState({
     question: "",
@@ -4520,7 +4816,11 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   };
   if (loading)
     return (
-      <div className="empty-card">Loading the administration workspace…</div>
+      <PortalLoader
+        compact
+        label="Loading administration workspace"
+        detail="Preparing users, consultation records, and service controls."
+      />
     );
   const feedback = message && (
     <div className="notice" role="status" aria-live="polite">
@@ -4660,6 +4960,89 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const appointmentById = new Map(
     data.appointments.map((appointment) => [appointment.id, appointment]),
   );
+  const completedAppointments = data.appointments.filter(
+    (appointment) => appointment.status === "completed",
+  ).length;
+  const writtenReviewCount = data.reviews.filter((review) =>
+    Boolean(review.comment?.trim()),
+  ).length;
+  const positiveReviewCount = data.reviews.filter(
+    (review) => review.rating >= 4,
+  ).length;
+  const criticalReviewCount = data.reviews.filter(
+    (review) => review.rating <= 2,
+  ).length;
+  const reviewResponseRate = completedAppointments
+    ? Math.min(100, (data.reviews.length / completedAppointments) * 100)
+    : 0;
+  const positiveReviewRate = data.reviews.length
+    ? (positiveReviewCount / data.reviews.length) * 100
+    : 0;
+  const writtenReviewRate = data.reviews.length
+    ? (writtenReviewCount / data.reviews.length) * 100
+    : 0;
+  const ratingDistribution = [5, 4, 3, 2, 1].map((rating) => {
+    const count = data.reviews.filter((review) => review.rating === rating).length;
+    return {
+      rating,
+      count,
+      percentage: data.reviews.length ? (count / data.reviews.length) * 100 : 0,
+    };
+  });
+  const averageForPeriod = (fromDaysAgo: number, toDaysAgo: number) => {
+    const now = Date.now();
+    const periodReviews = data.reviews.filter((review) => {
+      const age = now - new Date(review.created_at).getTime();
+      return age >= fromDaysAgo * 86_400_000 && age < toDaysAgo * 86_400_000;
+    });
+    return periodReviews.length
+      ? periodReviews.reduce((sum, review) => sum + review.rating, 0) /
+          periodReviews.length
+      : null;
+  };
+  const currentReviewAverage = averageForPeriod(0, 30);
+  const previousReviewAverage = averageForPeriod(30, 60);
+  const reviewTrend =
+    currentReviewAverage !== null && previousReviewAverage !== null
+      ? currentReviewAverage - previousReviewAverage
+      : null;
+  const yearReviewGroups = reviewGroups("year_level");
+  const collegeReviewGroups = reviewGroups("college");
+  const programReviewGroups = reviewGroups("program");
+  const statisticallyUsefulGroups = [
+    ...collegeReviewGroups.map((row) => ({ ...row, kind: "College" })),
+    ...programReviewGroups.map((row) => ({ ...row, kind: "Program" })),
+  ].filter((row) => row.count >= 2);
+  const strongestReviewGroup = [...statisticallyUsefulGroups].sort(
+    (a, b) => b.average - a.average || b.count - a.count,
+  )[0];
+  const attentionReviewGroup = [...statisticallyUsefulGroups].sort(
+    (a, b) => a.average - b.average || b.count - a.count,
+  )[0];
+  const normalizedReviewQuery = reviewQuery.trim().toLowerCase();
+  const visibleReviews = data.reviews.filter((review) => {
+    const ratingMatches =
+      reviewRatingFilter === "all" ||
+      (reviewRatingFilter === "positive" && review.rating >= 4) ||
+      (reviewRatingFilter === "neutral" && review.rating === 3) ||
+      (reviewRatingFilter === "critical" && review.rating <= 2);
+    const appointment = appointmentById.get(review.appointment_id);
+    const queryMatches =
+      !normalizedReviewQuery ||
+      [
+        review.comment,
+        review.year_level,
+        review.college,
+        review.program,
+        appointment?.topic,
+        appointment?.faculty_name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedReviewQuery);
+    return ratingMatches && queryMatches;
+  });
   if (view === "ahome")
     return (
       <>
@@ -5390,28 +5773,123 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <Stats
           data={[
             [reviewAverage ? reviewAverage.toFixed(1) : "—", "Average rating"],
-            [String(data.reviews.length), "Submitted reviews"],
-            [
-              String(data.reviews.filter((review) => review.comment).length),
-              "Written comments",
-            ],
-            [
-              String(data.reviews.filter((review) => review.rating >= 4).length),
-              "Positive ratings",
-            ],
+            [`${reviewResponseRate.toFixed(0)}%`, "Review response rate"],
+            [`${positiveReviewRate.toFixed(0)}%`, "Positive ratings"],
+            [String(criticalReviewCount), "Ratings needing attention"],
           ]}
         />
-        <section className="review-breakdowns">
-          <ReviewBreakdown title="By year level" rows={reviewGroups("year_level")} />
-          <ReviewBreakdown title="By college or unit" rows={reviewGroups("college")} />
-          <ReviewBreakdown title="By course or program" rows={reviewGroups("program")} />
+        <section className="review-insight-grid" aria-label="Review summary">
+          <article className="review-analysis-card">
+            <div className="card-title">
+              <div>
+                <p className="eyebrow">RATING MIX</p>
+                <h2>Rating distribution</h2>
+              </div>
+              <b>{data.reviews.length} total</b>
+            </div>
+            <div className="rating-distribution">
+              {ratingDistribution.map((row) => (
+                <div className="rating-distribution-row" key={row.rating}>
+                  <span>{row.rating} ★</span>
+                  <i aria-hidden="true">
+                    <b style={{ width: `${row.percentage}%` }} />
+                  </i>
+                  <strong>{row.count}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+          <article className="review-analysis-card">
+            <div className="card-title">
+              <div>
+                <p className="eyebrow">SERVICE SIGNALS</p>
+                <h2>What needs attention</h2>
+              </div>
+            </div>
+            <div className="review-signal-grid">
+              <div>
+                <span>30-day rating trend</span>
+                <b>
+                  {reviewTrend === null
+                    ? "More data needed"
+                    : `${reviewTrend >= 0 ? "+" : ""}${reviewTrend.toFixed(1)} ★`}
+                </b>
+                <small>Compared with the previous 30 days</small>
+              </div>
+              <div>
+                <span>Written feedback</span>
+                <b>{writtenReviewRate.toFixed(0)}%</b>
+                <small>{writtenReviewCount} reviews include a comment</small>
+              </div>
+              <div>
+                <span>Strongest segment</span>
+                <b>{strongestReviewGroup?.label || "More data needed"}</b>
+                <small>
+                  {strongestReviewGroup
+                    ? `${strongestReviewGroup.kind} · ${strongestReviewGroup.average.toFixed(1)} ★ from ${strongestReviewGroup.count}`
+                    : "At least two reviews per segment are required"}
+                </small>
+              </div>
+              <div className={criticalReviewCount ? "attention" : ""}>
+                <span>Lowest-rated segment</span>
+                <b>{attentionReviewGroup?.label || "No reliable signal yet"}</b>
+                <small>
+                  {attentionReviewGroup
+                    ? `${attentionReviewGroup.kind} · ${attentionReviewGroup.average.toFixed(1)} ★ from ${attentionReviewGroup.count}`
+                    : "At least two reviews per segment are required"}
+                </small>
+              </div>
+            </div>
+          </article>
         </section>
-        <Work title="Written consultation feedback">
+        <section className="review-breakdowns">
+          <ReviewBreakdown title="By year level" rows={yearReviewGroups} />
+          <ReviewBreakdown title="By college or unit" rows={collegeReviewGroups} />
+          <ReviewBreakdown title="By course or program" rows={programReviewGroups} />
+        </section>
+        <Work title="Review records">
+          <div className="review-toolbar">
+            <label>
+              <span className="sr-only">Search review records</span>
+              <input
+                type="search"
+                value={reviewQuery}
+                onChange={(event) => setReviewQuery(event.target.value)}
+                placeholder="Search comments, topic, faculty, year, college, or course"
+              />
+            </label>
+            <div className="filter-tabs" aria-label="Filter reviews by rating">
+              {(
+                [
+                  ["all", "All"],
+                  ["positive", "4–5 stars"],
+                  ["neutral", "3 stars"],
+                  ["critical", "1–2 stars"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={reviewRatingFilter === value ? "active" : ""}
+                  aria-pressed={reviewRatingFilter === value}
+                  onClick={() => setReviewRatingFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="review-result-count" role="status">
+            Showing {visibleReviews.length} of {data.reviews.length} review records
+          </p>
           <div className="admin-review-list">
-            {data.reviews.map((review) => {
+            {visibleReviews.map((review) => {
               const appointment = appointmentById.get(review.appointment_id);
               return (
-                <article key={review.id}>
+                <article
+                  key={review.id}
+                  className={review.rating <= 2 ? "review-critical" : review.rating >= 4 ? "review-positive" : ""}
+                >
                   <div className="admin-review-head">
                     <span aria-label={`${review.rating} out of 5 stars`}>
                       {"★".repeat(review.rating)}
@@ -5433,9 +5911,11 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 </article>
               );
             })}
-            {!data.reviews.length && (
+            {!visibleReviews.length && (
               <div className="empty-card">
-                No completed-consultation reviews have been submitted yet.
+                {data.reviews.length
+                  ? "No review records match the current search and rating filter."
+                  : "No completed-consultation reviews have been submitted yet."}
               </div>
             )}
           </div>
@@ -5458,71 +5938,9 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       {feedback}
       <Head
         label="MISO ADMINISTRATION"
-        title="QA and user-acceptance testing"
-        copy="Track provisional thresholds that still require Product Owner confirmation."
-        action="Export QA evidence"
+        title="Administration workspace"
+        copy="Choose an administration section from the navigation."
       />
-      <Stats
-        data={[
-          ["80%", "FAQ accuracy target"],
-          ["≤3s", "Response-time target"],
-          ["80%", "Task completion target"],
-          ["4/5", "Satisfaction target"],
-        ]}
-      />
-      <div className="report-grid">
-        <Work title="Required service checks">
-          <div className="qa-list">
-            <p>
-              <b>FAQ test set</b>
-              <span>
-                Approved questions, supported paraphrases, and official source
-                traceability.
-              </span>
-            </p>
-            <p>
-              <b>Safe fallback</b>
-              <span>
-                Clarification, suggested topics, and staff referral for
-                unsupported questions.
-              </span>
-            </p>
-            <p>
-              <b>Role separation</b>
-              <span>
-                Student, faculty, and administrator permissions remain distinct.
-              </span>
-            </p>
-            <p>
-              <b>Availability integrity</b>
-              <span>
-                Only faculty-approved schedules are shown; no invented confirmed
-                booking.
-              </span>
-            </p>
-          </div>
-        </Work>
-        <Work title="Acceptance gate">
-          <div className="qa-list">
-            <p>
-              <b>No critical security or privacy defect</b>
-              <i>Required</i>
-            </p>
-            <p>
-              <b>No unresolved high-severity error</b>
-              <i>Required</i>
-            </p>
-            <p>
-              <b>Representative students and faculty tested</b>
-              <i>Pending</i>
-            </p>
-            <p>
-              <b>Product Owner threshold confirmation</b>
-              <i>Open question</i>
-            </p>
-          </div>
-        </Work>
-      </div>
     </>
   );
 }
