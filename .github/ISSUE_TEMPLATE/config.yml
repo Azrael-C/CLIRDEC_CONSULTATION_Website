@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/Azrael-C/CLIRDEC_CONSULTATION_Website/security/advisories/new
+    about: Use a private Security Advisory for vulnerabilities, credentials, or sensitive data exposure.

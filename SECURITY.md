@@ -14,3 +14,19 @@ report, assess severity, and coordinate a fix before public disclosure.
 ## Supported version
 
 Security fixes are applied to the production version deployed from `main`.
+
+## Security expectations
+
+- Never commit Supabase service-role keys, Resend API keys, Turnstile secrets,
+  passwords, or production environment files.
+- Browser code may use only public configuration such as the Supabase URL,
+  publishable key, and Turnstile site key.
+- Faculty and administrator actions must be authorized by server-enforced roles
+  and recorded in the audit log.
+- Database tables must use Row Level Security. Privileged database functions
+  must validate the caller's role internally and expose only the minimum grants.
+- Login, registration, password recovery, and chatbot endpoints are protected
+  with Turnstile and/or server-side rate limits.
+
+If a credential is exposed, revoke or rotate it immediately, update the hosting
+secret, redeploy, and review the audit and delivery logs for misuse.

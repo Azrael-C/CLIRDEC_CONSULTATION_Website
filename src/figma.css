@@ -1902,6 +1902,128 @@ body {
 .operations-detail > summary small { color: var(--figma-muted); font-size: .59rem; line-height: 1.4; }
 .operations-detail > summary em { grid-column: 2; grid-row: 1; justify-self: end; min-width: 28px; padding: .28rem .45rem; border-radius: 999px; color: #52635a; background: #edf1ee; font-size: .56rem; font-style: normal; font-weight: 850; white-space: nowrap; }
 .operations-detail > summary em.healthy { color: #09663b; background: #def3e5; }
+
+/* Accessible light/dark appearance shared by authentication and every portal role. */
+.theme-toggle {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .48rem;
+  padding: .58rem .72rem;
+  border: 1px solid var(--figma-line);
+  border-radius: 10px;
+  background: var(--figma-card);
+  color: var(--figma-ink);
+  font-size: .68rem;
+  font-weight: 800;
+}
+.theme-toggle:hover { border-color: #9db5a6; background: var(--figma-green-soft); }
+.theme-toggle svg { width: 19px; height: 19px; flex: 0 0 auto; }
+.theme-toggle.compact { width: 42px; padding: 0; }
+.auth-panel { position: relative; }
+.auth-theme-control,.public-theme-control { position: absolute; z-index: 40; top: 1.25rem; right: 1.25rem; }
+.public-policy-page,.not-found-page,.mfa-gate { position: relative; }
+.public-policy-header .public-theme-control { position: static; }
+
+html[data-theme="dark"] {
+  --figma-green: #36bf7a;
+  --figma-green-dark: #24965f;
+  --figma-green-soft: #16382a;
+  --figma-yellow: #f2ca39;
+  --figma-canvas: #071510;
+  --figma-card: #10231a;
+  --figma-ink: #edf7f0;
+  --figma-muted: #a8b8ae;
+  --figma-line: #294036;
+  --figma-danger: #ff9288;
+  --ink: #edf7f0;
+  --green: #36bf7a;
+  --teal: #53d493;
+  --cream: #071510;
+  --line: #294036;
+  --muted: #a8b8ae;
+  color-scheme: dark;
+}
+html[data-theme="dark"],html[data-theme="dark"] body { background: var(--figma-canvas); color: var(--figma-ink); }
+html[data-theme="dark"] .app,
+html[data-theme="dark"] .role-preview,
+html[data-theme="dark"] .public-policy-page { background: #071510; }
+html[data-theme="dark"] .student-content,
+html[data-theme="dark"] .faculty-content,
+html[data-theme="dark"] .admin-content { background-color: #091a13; }
+html[data-theme="dark"] .topbar,
+html[data-theme="dark"] .sidebar,
+html[data-theme="dark"] .auth-panel,
+html[data-theme="dark"] .notification-panel,
+html[data-theme="dark"] .mobile-portal-nav,
+html[data-theme="dark"] .mobile-more-menu { background: #0d1f17; }
+html[data-theme="dark"] :where(
+  .next-card,.quick-card,.faculty-card,.schedule-list article,.chatbot,.preview-panel,
+  .work-card,.data-card,.profile-summary,.profile-details,.profile-details-v2,
+  .faculty-profile-editor,.faq-list article,.operations-list article,.retention-grid form,
+  .notification-item,.policy-copy,.policy-layout nav,.modal,.profile-onboarding,
+  .auth-option,.account-type-list,.recovery-request-card,.mfa-card,.turnstile-field,
+  .availability-publisher,.availability-calendar-card,.availability-schedule-card
+) { background-color: var(--figma-card); border-color: var(--figma-line); color: var(--figma-ink); }
+html[data-theme="dark"] :where(input,select,textarea,.search-box,.filter-tabs,.knowledge-form label) {
+  background: #0b1b14;
+  border-color: #365044;
+  color: var(--figma-ink);
+}
+html[data-theme="dark"] :where(input,textarea)::placeholder { color: #819289; opacity: 1; }
+html[data-theme="dark"] :where(.outline,.icon-button,.menu-button,.notification-button,.profile-chip,.theme-toggle,.prompts button,.chat-suggestions button,.filter-tabs button) {
+  border-color: var(--figma-line);
+  background: #10231a;
+  color: var(--figma-ink);
+}
+html[data-theme="dark"] :where(.nav-item:hover,.nav-item.active,.notification-button:hover,.notification-button[aria-expanded="true"],.notification-item:hover,.notification-item.unread) {
+  background: #17372a;
+  color: #73dfa4;
+}
+html[data-theme="dark"] :where(.data-head,.student-note,.mini-week div,.steps article,.slot-toggle,.chatbot .bot,.messages .bot,.scope-note,.notification-panel>footer) {
+  background: #142a20;
+  color: var(--figma-ink);
+}
+html[data-theme="dark"] :where(.data-row:not(.data-head):nth-child(odd),.admin-content .data-row:not(.data-head):hover) { background: rgba(81,190,126,.06); }
+html[data-theme="dark"] :where(.profile-preference-card,.faculty-profile-guidance,.selected-slot-summary,.chatbot-gap-list article,.scope-note.success) {
+  background: linear-gradient(135deg,#132c21,#172b20);
+  border-color: #315044;
+}
+html[data-theme="dark"] :where(.scope-note.warning,.operations-alerts,.admin-review-list article.review-critical) { background: #34201c; }
+html[data-theme="dark"] :where(.form-notice.success,.notice,.recovery-guidance,.operations-all-clear) { background: #123525; border-color: #286d4a; color: #9ee7bd; }
+html[data-theme="dark"] :where(.form-notice.error,.notification-error) { background: #371f1c; border-color: #784139; color: #ffaaa1; }
+html[data-theme="dark"] :where(.auth-loading,.mfa-gate) {
+  background: radial-gradient(circle at 20% 10%,rgba(54,191,122,.12),transparent 28%),linear-gradient(145deg,#071510,#0b2017);
+}
+html[data-theme="dark"] .portal-loader { background: #10231a; border-color: #294036; box-shadow: 18px 18px 42px rgba(0,0,0,.32),-10px -10px 30px rgba(39,72,55,.18); }
+html[data-theme="dark"] .portal-loader-mark { background: #10231a; box-shadow: inset 5px 5px 11px rgba(0,0,0,.35),inset -5px -5px 11px rgba(58,92,72,.2); }
+html[data-theme="dark"] .public-policy-header { background: linear-gradient(145deg,#003922,#075b39); }
+html[data-theme="dark"] .not-found-page { background: radial-gradient(circle at 75% 20%,rgba(243,197,31,.13),transparent 18rem),linear-gradient(145deg,#02110b,#063a25); }
+html[data-theme="dark"] .policy-copy section { border-color: var(--figma-line); }
+html[data-theme="dark"] .notification-panel { box-shadow: 0 24px 55px rgba(0,0,0,.5); }
+html[data-theme="dark"] .admin-review-list article { background: #10231a; }
+html[data-theme="dark"] .admin-review-list article > p { color: #c6d3cb; }
+html[data-theme="dark"] .profile-card-header { border-color: var(--figma-line); }
+html[data-theme="dark"] .profile-information-grid .info { border-color: #22382e; }
+html[data-theme="dark"] .topbar .brand-logo-dark,
+html[data-theme="dark"] .sidebar .brand-logo-dark { filter: invert(1) grayscale(1) brightness(1.8); }
+html[data-theme="dark"] a:focus-visible,
+html[data-theme="dark"] button:focus-visible,
+html[data-theme="dark"] input:focus-visible,
+html[data-theme="dark"] select:focus-visible,
+html[data-theme="dark"] textarea:focus-visible { outline-color: #f2ca39; }
+
+@media(max-width:560px){
+  .auth-theme-control,.public-theme-control { top: .8rem; right: .8rem; }
+  .auth-theme-control .theme-toggle span { display: none; }
+  .auth-theme-control .theme-toggle { width: 42px; padding: 0; }
+  .topbar .theme-toggle.compact { width: 40px; height: 40px; }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .theme-toggle { transition: none; }
+}
 .operations-detail > summary em.attention { color: #825f00; background: #fff0b6; }
 .operations-detail[open] > summary { border-bottom: 1px solid #e0e8e2; background: linear-gradient(90deg,rgba(var(--portal-accent-rgb),.07),transparent); }
 .operations-detail > .operations-list,.operations-detail > .audit-timeline,.operations-detail > .operations-service-copy,.operations-detail > .scope-note,.operations-detail > .retention-grid,.operations-detail > .restore-checklist { margin: .85rem; }
@@ -1960,3 +2082,28 @@ body {
   .retention-grid form { grid-template-columns: 1fr; }
   .retention-grid header,.retention-grid .check-line,.retention-grid button { grid-column: auto; }
 }
+
+/* Keep these final overrides last: later high-fidelity component rules use
+   background shorthand and otherwise repaint light surfaces. */
+html[data-theme="dark"] .auth-panel {
+  background: radial-gradient(circle at 100% 0,rgba(243,197,31,.06),transparent 21rem),radial-gradient(circle at 0 100%,rgba(54,191,122,.08),transparent 26rem),#071510;
+}
+html[data-theme="dark"] .login {
+  border-color: #2c4438;
+  background: #10231a;
+  box-shadow: 22px 22px 52px rgba(0,0,0,.34),-12px -12px 34px rgba(35,67,51,.14),inset 0 1px rgba(255,255,255,.04);
+}
+html[data-theme="dark"] .login input,
+html[data-theme="dark"] .login select,
+html[data-theme="dark"] .login textarea { border-color: #365044; background: #0b1b14; color: #edf7f0; box-shadow: inset 4px 4px 9px rgba(0,0,0,.28),inset -3px -3px 8px rgba(44,77,60,.12); }
+html[data-theme="dark"] .login input:hover,
+html[data-theme="dark"] .login select:hover { border-color: #5d8f74; background: #0e2118; }
+html[data-theme="dark"] .auth-option { border-color: #2d4639; background: #13291f; box-shadow: 5px 5px 12px rgba(0,0,0,.22),-4px -4px 10px rgba(39,71,54,.12); }
+html[data-theme="dark"] .auth-option:hover { background: #193328; border-color: #4b735e; }
+html[data-theme="dark"] .account-type-list { border-color: #554d25; border-left-color: var(--figma-yellow); background: linear-gradient(135deg,#2b2917,#1c251b); box-shadow: 0 7px 18px rgba(0,0,0,.2); }
+html[data-theme="dark"] .account-type-list > p { color: #e9d66e; }
+html[data-theme="dark"] .account-type-list span { color: var(--figma-muted); }
+html[data-theme="dark"] .topbar { background: rgba(13,31,23,.94); box-shadow: 0 7px 24px rgba(0,0,0,.22); }
+html[data-theme="dark"] .sidebar { background: linear-gradient(180deg,#0d1f17,#0a1912); box-shadow: 9px 0 30px rgba(0,0,0,.2); }
+html[data-theme="dark"] .content { background: radial-gradient(circle at 95% 3%,rgba(243,197,31,.04),transparent 20rem),radial-gradient(circle at 3% 95%,rgba(54,191,122,.05),transparent 24rem),#091a13; }
+html[data-theme="dark"] :is(.work-card,.data-card,.faculty-card,.chatbot,.profile-details,.profile-details-v2,.faculty-profile-editor,.notification-panel,.policy-copy,.policy-layout nav,.modal) { background: #10231a; border-color: #294036; }

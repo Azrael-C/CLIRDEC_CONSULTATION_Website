@@ -11,6 +11,7 @@ import asyncio
 from collections import defaultdict, deque
 import hashlib
 import hmac
+from ipaddress import ip_address
 import json
 import os
 import re
@@ -251,6 +252,10 @@ FACULTY_CACHE_TTL_SECONDS = max(30, int(os.getenv("FACULTY_CACHE_SECONDS", "60")
 _chat_requests: dict[str, deque[float]] = defaultdict(deque)
 _chat_rate_lock = asyncio.Lock()
 CHAT_RATE_LIMIT = max(1, int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20")))
+CHAT_BURST_LIMIT = max(1, int(os.getenv("CHAT_BURST_LIMIT_PER_10_SECONDS", "8")))
+CHAT_RATE_WINDOW_SECONDS = 60
+CHAT_BURST_WINDOW_SECONDS = 10
+CHAT_RATE_BUCKET_LIMIT = 10_000
 CHAT_TRUST_COOKIE = "fc_chat_trust"
 CHAT_TRUST_TTL_SECONDS = min(
     3600,
@@ -272,6 +277,30 @@ def _chat_trust_secret() -> str:
 
 def _chat_cookie_secure() -> bool:
     return os.getenv("VERCEL_ENV", "").strip().lower() == "production"
+
+
+def _client_ip(request: FastAPIRequest) -> str:
+    """Resolve the edge-provided client address without retaining raw IPs."""
+    headers = getattr(request, "headers", {})
+    candidates = [
+        headers.get("x-vercel-forwarded-for"),
+        headers.get("cf-connecting-ip"),
+        headers.get("x-forwarded-for"),
+        getattr(getattr(request, "client", None), "host", None),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        for value in str(candidate).split(","):
+            try:
+                return str(ip_address(value.strip()))
+            except ValueError:
+                continue
+    return "unknown"
+
+
+def _client_rate_key(request: FastAPIRequest) -> str:
+    return hashlib.sha256(f"facultyconnect:{_client_ip(request)}".encode("utf-8")).hexdigest()[:24]
 
 
 def _sign_chat_trust(expiry: int, nonce: str, secret: str) -> str:
@@ -407,19 +436,28 @@ def _verify_turnstile_response(secret: str, token: str, remote_ip: str | None) -
 
 async def _protect_chat_request(request: FastAPIRequest, token: str | None) -> bool:
     """Rate-limit every request and return True only after a new CAPTCHA pass."""
-    client_key = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
+    client_key = _client_rate_key(request)
     now = time.monotonic()
     async with _chat_rate_lock:
         attempts = _chat_requests[client_key]
-        while attempts and attempts[0] <= now - 60:
+        while attempts and attempts[0] <= now - CHAT_RATE_WINDOW_SECONDS:
             attempts.popleft()
-        if len(attempts) >= CHAT_RATE_LIMIT:
+        burst_count = sum(timestamp > now - CHAT_BURST_WINDOW_SECONDS for timestamp in attempts)
+        if len(attempts) >= CHAT_RATE_LIMIT or burst_count >= CHAT_BURST_LIMIT:
             raise HTTPException(
                 status_code=429,
                 detail="Too many chatbot requests. Complete a new security check after the cooldown.",
-                headers={"Set-Cookie": _expired_chat_cookie_header()},
+                headers={
+                    "Retry-After": str(CHAT_BURST_WINDOW_SECONDS if burst_count >= CHAT_BURST_LIMIT else CHAT_RATE_WINDOW_SECONDS),
+                    "Set-Cookie": _expired_chat_cookie_header(),
+                },
             )
         attempts.append(now)
+        if len(_chat_requests) > CHAT_RATE_BUCKET_LIMIT:
+            stale_keys = [key for key, bucket in _chat_requests.items() if not bucket or bucket[-1] <= now - CHAT_RATE_WINDOW_SECONDS]
+            for key in stale_keys[: max(1, len(_chat_requests) - CHAT_RATE_BUCKET_LIMIT)]:
+                _chat_requests.pop(key, None)
 
     secret = os.getenv("TURNSTILE_SECRET_KEY", "")
     trust_secret = _chat_trust_secret()
@@ -440,7 +478,7 @@ async def _protect_chat_request(request: FastAPIRequest, token: str | None) -> b
             headers={"Set-Cookie": _expired_chat_cookie_header()},
         )
     try:
-        valid = await asyncio.to_thread(_verify_turnstile_response, secret, token, client_key)
+        valid = await asyncio.to_thread(_verify_turnstile_response, secret, token, client_ip)
     except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
         raise HTTPException(status_code=503, detail="The security check is temporarily unavailable.")
     if not valid:
@@ -944,7 +982,7 @@ def custom_not_found(unknown_path: str) -> HTMLResponse:
   <meta name="theme-color" content="#166534" />
   <title>Page not found | CLSU FacultyConnect</title>
   <style>
-    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #122019; background: #f5f8f5; }
+    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #122019; background: #f5f8f5; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15% 15%, #e3f4e9 0, transparent 34%), #f7faf7; }
     header { display: flex; align-items: center; gap: 12px; min-height: 78px; padding: 16px clamp(24px, 6vw, 92px); background: #fff; border-bottom: 1px solid #dce7df; }
@@ -958,6 +996,15 @@ def custom_not_found(unknown_path: str) -> HTMLResponse:
     p { max-width: 520px; margin: 18px auto 28px; color: #5e6f65; font-size: 1.06rem; line-height: 1.65; }
     a { display: inline-flex; min-height: 50px; align-items: center; justify-content: center; padding: 0 24px; border-radius: 14px; background: #08783f; color: #fff; font-weight: 800; text-decoration: none; box-shadow: 0 10px 24px rgba(8,120,63,.22); }
     a:hover { background: #056334; transform: translateY(-1px); }
+    @media (prefers-color-scheme: dark) {
+      :root { color: #edf7f0; background: #071510; }
+      body { background: radial-gradient(circle at 15% 15%, #133425 0, transparent 34%), #071510; }
+      header { background: #0d1f17; border-color: #294036; }
+      header img { filter: invert(1) grayscale(1) brightness(1.8); }
+      header span, p { color: #a8b8ae; }
+      section { border-color: #294036; background: rgba(16,35,26,.96); box-shadow: 0 24px 60px rgba(0,0,0,.42); }
+      .code { color: #53d493; }
+    }
   </style>
 </head>
 <body>

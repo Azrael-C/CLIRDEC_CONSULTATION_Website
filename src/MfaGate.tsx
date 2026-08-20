@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "./supabase";
+import { ThemeToggle } from "./theme";
 
 type GateState = "checking" | "enroll" | "verify" | "ready" | "error";
 
@@ -92,6 +93,7 @@ export function PrivilegedMfaGate({
 
   return (
     <main className="mfa-gate" id="main-content">
+      <div className="public-theme-control"><ThemeToggle /></div>
       <section className="mfa-card" aria-labelledby="mfa-title">
         <p className="eyebrow">PRIVILEGED ACCOUNT SECURITY</p>
         <h1 id="mfa-title">Two-step verification required</h1>

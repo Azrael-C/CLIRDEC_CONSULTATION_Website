@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible FacultyConnect problem without personal data
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include passwords, tokens, student records, or private consultation details. Report security issues through a private Security Advisory.
+  - type: dropdown
+    id: role
+    attributes:
+      label: Affected role
+      options: [Public or authentication, Student, Faculty, Administrator, Multiple roles]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: Android 15 / Chrome 140, or Windows 11 / Edge 140
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Appearance
+      options: [Light mode, Dark mode, Both, Not applicable]
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Privacy-safe evidence
+      description: Attach a redacted screenshot or console message if useful.

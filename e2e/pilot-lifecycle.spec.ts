@@ -159,3 +159,18 @@ test("@a11y public authentication and policy pages have no serious accessibility
   const policyResults = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
   expect(policyResults.violations.filter((violation) => ["serious", "critical"].includes(violation.impact || ""))).toEqual([]);
 });
+
+test("@a11y dark appearance persists across public pages", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Use dark mode" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  const authResults = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(authResults.violations.filter((violation) => ["serious", "critical"].includes(violation.impact || ""))).toEqual([]);
+
+  await page.goto("/privacy-policy");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeVisible();
+});

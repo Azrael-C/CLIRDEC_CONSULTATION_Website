@@ -19,3 +19,5 @@ test-results/
 .DS_Store
 Thumbs.db
 .e2e-mfa.json
+.vercel/
+supabase/.temp/

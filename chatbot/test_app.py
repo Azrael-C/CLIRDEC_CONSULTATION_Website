@@ -229,7 +229,41 @@ class AssistantTests(unittest.TestCase):
             newly_verified = asyncio.run(app._protect_chat_request(request, None))
         self.assertFalse(newly_verified)
         verify.assert_not_called()
-        self.assertEqual(len(app._chat_requests["203.0.113.12"]), 1)
+        self.assertEqual(len(app._chat_requests[app._client_rate_key(request)]), 1)
+
+    def test_edge_forwarded_client_ip_is_used_and_hashed(self):
+        request = type(
+            "Request",
+            (),
+            {
+                "client": type("Client", (), {"host": "127.0.0.1"})(),
+                "headers": {"x-vercel-forwarded-for": "203.0.113.21, 10.0.0.1"},
+            },
+        )()
+        self.assertEqual(app._client_ip(request), "203.0.113.21")
+        self.assertNotIn("203.0.113.21", app._client_rate_key(request))
+
+    def test_chat_burst_limit_returns_retry_after(self):
+        cookie, _ = app._new_chat_trust_cookie("server-secret")
+        request = type(
+            "Request",
+            (),
+            {
+                "client": type("Client", (), {"host": "203.0.113.22"})(),
+                "cookies": {app.CHAT_TRUST_COOKIE: cookie},
+            },
+        )()
+        app._chat_requests.clear()
+        with patch.dict(os.environ, {"TURNSTILE_SECRET_KEY": "server-secret"}, clear=True), patch.object(
+            app,
+            "CHAT_BURST_LIMIT",
+            1,
+        ):
+            self.assertFalse(asyncio.run(app._protect_chat_request(request, None)))
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(app._protect_chat_request(request, None))
+        self.assertEqual(raised.exception.status_code, 429)
+        self.assertEqual(raised.exception.headers["Retry-After"], str(app.CHAT_BURST_WINDOW_SECONDS))
 
     def test_rate_limit_revokes_trusted_chat_window(self):
         cookie, _ = app._new_chat_trust_cookie("server-secret")
