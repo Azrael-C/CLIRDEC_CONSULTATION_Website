@@ -105,8 +105,11 @@ assertIncludes(app, "PRODUCTION_SECURITY_READY", "Production authentication fail
 assertIncludes(vercel, "Cross-Origin-Opener-Policy", "Cross-origin opener isolation header");
 assertIncludes(resendWebhook, "new Webhook(webhookSecret).verify", "Resend webhook signature verification");
 assertIncludes(resendWebhook, 'eventError?.code === "23505"', "Resend webhook replay protection");
+assertIncludes(resendWebhook, '"email.suppressed"', "Resend suppression event handling");
+assertIncludes(resendWebhook, "event.data.suppressed", "Resend suppression reason storage");
 assertIncludes(deliveryMigration, "provider_email_id", "Email provider identifier storage");
 assertIncludes(deliveryMigration, "email_delivery_events", "Email delivery event evidence");
+assertIncludes(deliveryMigration, "'email.suppressed'", "Email suppression event constraint");
 assertIncludes(styles, "padding-bottom: calc(6.25rem + env(safe-area-inset-bottom))", "Mobile drawer bottom clearance");
 assertIncludes(functionConfig, "verify_jwt = false", "Custom-secret worker configuration");
 assertIncludes(functionConfig, "[auth.email.template.recovery]", "Local recovery email configuration");

@@ -13,6 +13,7 @@ const acceptedEvents = new Set([
   "email.bounced",
   "email.complained",
   "email.failed",
+  "email.suppressed",
 ]);
 
 type ResendEvent = {
@@ -24,6 +25,7 @@ type ResendEvent = {
     subject?: string;
     bounce?: unknown;
     failed?: unknown;
+    suppressed?: unknown;
   };
 };
 
@@ -76,7 +78,7 @@ Deno.serve(async (request) => {
     event_created_at: event.created_at,
     recipient_addresses: event.data.to || [],
     subject: event.data.subject || null,
-    details: event.data.bounce || event.data.failed || {},
+    details: event.data.bounce || event.data.failed || event.data.suppressed || {},
   });
   if (eventError?.code === "23505") return json({ duplicate: true });
   if (eventError) return json({ error: eventError.message }, 500);
