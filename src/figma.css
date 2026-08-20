@@ -1555,17 +1555,19 @@ body {
   }
   .student-content.view-assistant .assistant-safety span { width: 100%; }
   .student-content.view-assistant {
-    height: calc(100dvh - 68px);
+    height: auto;
+    min-height: calc(100dvh - 68px);
+    overflow: visible;
     padding-bottom: calc(5.9rem + env(safe-area-inset-bottom));
   }
   .student-content.view-assistant .chatbot {
-    height: auto;
-    min-height: 0;
-    max-height: none;
+    height: clamp(640px, 78dvh, 760px);
+    min-height: 640px;
+    max-height: 760px;
     border-radius: 14px;
   }
   .student-content.view-assistant .chat-head { padding: .8rem; }
-  .student-content.view-assistant .messages { padding: .85rem; }
+  .student-content.view-assistant .messages { min-height: 260px; padding: .85rem; }
   .student-content.view-assistant .messages p,
   .student-content.view-assistant .message-wrap p { max-width: 92%; font-size: .78rem; }
   .student-content.view-assistant .prompts {
