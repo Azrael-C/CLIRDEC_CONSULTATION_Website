@@ -45,6 +45,40 @@ assert(
   "The overlap rule did not reject an existing slot.",
 );
 
+const shortConsultationEnd = new Date(monday.getTime() + 15 * 60_000);
+assert(
+  availabilityValidationMessage(
+    monday,
+    shortConsultationEnd,
+    [],
+    new Date("2026-08-05T00:00:00Z"),
+  ) === "",
+  "A valid 15-minute consultation was rejected.",
+);
+
+const extendedConsultationEnd = new Date(monday.getTime() + 120 * 60_000);
+assert(
+  availabilityValidationMessage(
+    monday,
+    extendedConsultationEnd,
+    [],
+    new Date("2026-08-05T00:00:00Z"),
+  ) === "",
+  "A valid two-hour consultation was rejected.",
+);
+
+const lateStart = manilaInstant("2026-08-10", 16 * 60);
+const lateExtendedEnd = new Date(lateStart.getTime() + 120 * 60_000);
+assert(
+  availabilityValidationMessage(
+    lateStart,
+    lateExtendedEnd,
+    [],
+    new Date("2026-08-05T00:00:00Z"),
+  ).includes("8:00 AM–5:00 PM"),
+  "A long consultation extending past office hours was accepted.",
+);
+
 const currentTime = new Date("2026-08-09T04:00:00Z");
 assert(
   !isUpcomingSlot({ ends_at: "2026-08-08T09:00:00Z" }, currentTime),
@@ -55,4 +89,4 @@ assert(
   "A future availability entry was incorrectly hidden.",
 );
 
-console.log("Scheduling checks passed: Friday rolls to Monday; weekends, overlaps, and expired slots are handled.");
+console.log("Scheduling checks passed: Friday rolls to Monday; flexible durations, weekends, office hours, overlaps, and expired slots are handled.");
