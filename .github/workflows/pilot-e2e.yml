@@ -31,7 +31,7 @@ jobs:
       EMAIL_CRON_SECRET: ${{ secrets.EMAIL_CRON_SECRET }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
