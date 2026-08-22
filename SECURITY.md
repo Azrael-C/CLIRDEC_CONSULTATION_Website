@@ -30,3 +30,7 @@ Security fixes are applied to the production version deployed from `main`.
 
 If a credential is exposed, revoke or rotate it immediately, update the hosting
 secret, redeploy, and review the audit and delivery logs for misuse.
+
+The current code and infrastructure hardening checklist, severity-ranked
+remediation plan, and self-hosted defense-in-depth examples are maintained in
+[docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md).

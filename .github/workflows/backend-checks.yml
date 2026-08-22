@@ -31,4 +31,6 @@ jobs:
         with:
           deno-version: v2.x
       - name: Type-check Supabase email function
-        run: deno check --no-config supabase/functions/send-email-notifications/index.ts
+        run: |
+          deno check --no-config supabase/functions/send-email-notifications/index.ts
+          deno check --no-config supabase/functions/resend-webhook/index.ts

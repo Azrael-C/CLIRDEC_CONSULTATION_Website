@@ -100,7 +100,7 @@ Configure server-only secrets in Supabase/Vercel, then open a pull request to `m
 - CSP, HSTS, frame denial, content-type protection, strict referrers, and restrictive permissions are returned by Vercel.
 - Administrative changes, client errors, and email delivery events are auditable.
 
-Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/Azrael-C/CLIRDEC_CONSULTATION_Website/security/advisories/new). Never put credentials or student information in a public issue. See [SECURITY.md](SECURITY.md).
+Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/Azrael-C/CLIRDEC_CONSULTATION_Website/security/advisories/new). Never put credentials or student information in a public issue. See [SECURITY.md](SECURITY.md) and the [production hardening audit](docs/SECURITY_HARDENING.md).
 
 ## Verification
 

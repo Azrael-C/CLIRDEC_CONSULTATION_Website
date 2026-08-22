@@ -1,9 +1,13 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.3";
 import { Webhook } from "npm:svix@1.69.0";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
-  headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  headers: {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  },
 });
 
 const acceptedEvents = new Set([
@@ -15,6 +19,31 @@ const acceptedEvents = new Set([
   "email.failed",
   "email.suppressed",
 ]);
+
+async function readTextLimited(request: Request, maximumBytes: number) {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maximumBytes) throw new RangeError("Request payload is too large");
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(body);
+}
 
 type ResendEvent = {
   type: string;
@@ -31,6 +60,9 @@ type ResendEvent = {
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (!Number.isFinite(contentLength) || contentLength > 262_144)
+    return json({ error: "Request payload is too large" }, 413);
   const webhookSecret = Deno.env.get("RESEND_WEBHOOK_SECRET");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   let serviceRoleKey = "";
@@ -56,7 +88,14 @@ Deno.serve(async (request) => {
   }
 
   let event: ResendEvent;
-  const rawBody = await request.text();
+  let rawBody = "";
+  try {
+    rawBody = await readTextLimited(request, 262_144);
+  } catch (cause) {
+    if (cause instanceof RangeError)
+      return json({ error: "Request payload is too large" }, 413);
+    return json({ error: "Unable to read webhook payload" }, 400);
+  }
   try {
     event = new Webhook(webhookSecret).verify(rawBody, {
       "svix-id": webhookId,

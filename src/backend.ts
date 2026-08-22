@@ -823,12 +823,13 @@ export async function recordClientError(
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email removed]")
     .replace(/\b\d{7,}\b/g, "[identifier removed]")
     .slice(0, 500);
-  await supabase.rpc("record_client_error", {
+  const { error } = await supabase.rpc("record_client_error", {
     target_event_type: eventType,
     target_message: privacyFiltered || "Client error without a safe message",
     target_route: window.location.pathname.slice(0, 200),
     target_release: String(import.meta.env.VITE_RELEASE || "unknown").slice(0, 100),
   });
+  if (error) throw new Error(friendlyError(error, "The report could not be submitted."));
 }
 
 export async function resolveChatbotGap(

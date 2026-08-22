@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: facultyconnect-chatbot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: facultyconnect-chatbot
+  template:
+    metadata:
+      labels:
+        app: facultyconnect-chatbot
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: chatbot
+          image: registry.example/facultyconnect-chatbot:REPLACE_WITH_IMMUTABLE_DIGEST
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: facultyconnect-chatbot
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 30
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 3
+      terminationGracePeriodSeconds: 20
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: facultyconnect-chatbot
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: facultyconnect-chatbot

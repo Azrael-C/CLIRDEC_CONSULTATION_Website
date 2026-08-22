@@ -1,0 +1,40 @@
+[Unit]
+Description=CLSU FacultyConnect FastAPI chatbot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=facultyconnect
+Group=facultyconnect
+WorkingDirectory=/opt/facultyconnect/chatbot
+EnvironmentFile=/etc/facultyconnect/chatbot.env
+ExecStart=/opt/facultyconnect/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --workers 2 --limit-concurrency 100 --limit-max-requests 1000 --timeout-keep-alive 5
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=20s
+TasksMax=128
+LimitNOFILE=4096
+LimitNPROC=128
+MemoryMax=768M
+MemorySwapMax=0
+CPUQuota=150%
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

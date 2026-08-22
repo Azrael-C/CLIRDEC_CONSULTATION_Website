@@ -300,15 +300,15 @@ export function AdminOperations({
           </div>
         </details>
         <details id="application-errors" className="work-card operations-detail" open={Boolean(errors24h.length)}>
-          <summary><span><b>Application errors</b><small>Privacy-filtered errors reported by signed-in browsers</small></span><em>{errors24h.length}</em></summary>
+          <summary><span><b>User reports and application errors</b><small>Privacy-filtered feedback and errors reported by signed-in browsers</small></span><em>{errors24h.length}</em></summary>
           <div className="operations-list">
             {data.clientErrors.slice(0, 20).map((item) => (
               <article key={item.id}>
-                <span className="status failed">{item.event_type.replace(/_/g, " ")}</span>
+                <span className={`status ${item.event_type === "user_report" ? "pending" : "failed"}`}>{item.event_type.replace(/_/g, " ")}</span>
                 <div><b>{item.route}</b><p>{item.message}</p><small>{new Date(item.created_at).toLocaleString()} · release {item.release || "unknown"}</small></div>
               </article>
             ))}
-            {!data.clientErrors.length && <div className="empty-card">No authenticated application errors have been recorded.</div>}
+            {!data.clientErrors.length && <div className="empty-card">No authenticated issue reports or application errors have been recorded.</div>}
           </div>
         </details>
         <details id="service-details" className="work-card operations-detail">
