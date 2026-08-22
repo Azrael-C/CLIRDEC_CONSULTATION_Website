@@ -104,6 +104,9 @@ type ChatMessage = {
   suggestions?: string[];
 };
 
+const INITIAL_CHAT_MESSAGE =
+  "Hi! I use approved CLIRDEC information. Ask about services, office hours, consultation procedures, faculty availability, or official contacts.";
+
 type ChatbotReply = {
   answer: string;
   intent: string;
@@ -308,10 +311,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState(false);
   const [chat, setChat] = useState<ChatMessage[]>([
-    {
-      who: "bot",
-      text: "Hi! I use approved CLIRDEC information. Ask about services, office hours, consultation procedures, faculty availability, or official contacts.",
-    },
+    { who: "bot", text: INITIAL_CHAT_MESSAGE },
   ]);
   const [question, setQuestion] = useState("");
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
@@ -942,6 +942,10 @@ function App() {
       return challengeRequired ? "challenge" : "error";
     }
   }
+  function clearChat() {
+    setChat([{ who: "bot", text: INITIAL_CHAT_MESSAGE }]);
+    setQuestion("");
+  }
   if (
     pathname === "/privacy" ||
     pathname === "/privacy-policy" ||
@@ -1131,6 +1135,8 @@ function App() {
             question={question}
             setQuestion={setQuestion}
             ask={ask}
+            clearChat={clearChat}
+            userId={user.id}
           />
         )}{" "}
         {view === "profile" && (
@@ -3018,11 +3024,15 @@ function Chat({
   question,
   setQuestion,
   ask,
+  clearChat,
+  userId,
 }: {
   chat: ChatMessage[];
   question: string;
   setQuestion: (s: string) => void;
   ask: (e: FormEvent, captchaToken?: string) => Promise<ChatAskResult>;
+  clearChat: () => void;
+  userId: string;
 }) {
   const { theme } = useTheme();
   const [captchaToken, setCaptchaToken] = useState("");
@@ -3030,6 +3040,11 @@ function Chat({
   const [chatTrusted, setChatTrusted] = useState(false);
   const [trustExpiresAt, setTrustExpiresAt] = useState(0);
   const [trustLoading, setTrustLoading] = useState(Boolean(TURNSTILE_SITE_KEY));
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportCategory, setReportCategory] = useState("Incorrect or outdated answer");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [chatActionStatus, setChatActionStatus] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -3095,6 +3110,40 @@ function Chat({
       setCaptchaGeneration((value) => value + 1);
     }
   };
+
+  const resetConversation = () => {
+    clearChat();
+    setChatActionStatus("Conversation cleared. You can start a new question.");
+    messagesRef.current?.focus();
+  };
+
+  const submitIssueReport = async (event: FormEvent) => {
+    event.preventDefault();
+    const details = reportDetails.trim();
+    if (details.length < 10) return;
+    setReportSubmitting(true);
+    try {
+      await recordClientError(
+        userId,
+        "user_report",
+        `Consult AI report — ${reportCategory}: ${details}`,
+      );
+      setReportDetails("");
+      setReportOpen(false);
+      setChatActionStatus(
+        "Issue reported. An administrator can review the privacy-filtered report.",
+      );
+    } catch (cause) {
+      setChatActionStatus(
+        cause instanceof Error
+          ? cause.message
+          : "The report could not be submitted. Please try again.",
+      );
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
   return (
     <>
       <section className="page-head compact">
@@ -3121,11 +3170,38 @@ function Chat({
         )}
         <div className="chat-head">
           <span className="ai-mark">✦</span>
-          <div>
+          <div className="chat-head-copy">
             <b>Consult AI</b>
-            <small>Online · Approved CLIRDEC knowledge base</small>
+            <small>
+              Online · Approved CLIRDEC knowledge base · {Math.max(chat.length - 1, 0)} {chat.length === 2 ? "message" : "messages"}
+            </small>
+          </div>
+          <div className="chat-head-actions" aria-label="Conversation actions">
+            <button
+              type="button"
+              className="chat-head-action"
+              onClick={resetConversation}
+              disabled={chat.length <= 1 && !question}
+            >
+              <span aria-hidden="true">↻</span> Clear chat
+            </button>
+            <button
+              type="button"
+              className="chat-head-action"
+              onClick={() => {
+                setReportOpen(true);
+                setChatActionStatus("");
+              }}
+            >
+              <span aria-hidden="true">!</span> Report an issue
+            </button>
           </div>
         </div>
+        {chatActionStatus && (
+          <p className="chat-action-feedback" role="status" aria-live="polite">
+            {chatActionStatus}
+          </p>
+        )}
         <div
           className="messages"
           ref={messagesRef}
@@ -3234,6 +3310,70 @@ function Chat({
           directory, or faculty-maintained schedule.
         </footer>
       </section>
+      {reportOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setReportOpen(false)}>
+          <section
+            className="modal report-issue-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-issue-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="modal-close"
+              aria-label="Close issue report"
+              onClick={() => setReportOpen(false)}
+            >
+              ×
+            </button>
+            <p className="eyebrow">HELP US IMPROVE</p>
+            <h2 id="report-issue-title">Report a Consult AI issue</h2>
+            <p>
+              Tell the administrator what went wrong. Reports are privacy-filtered and
+              do not include the conversation automatically.
+            </p>
+            <form className="topic report-issue-form" onSubmit={submitIssueReport}>
+              <label>
+                <span>Issue type</span>
+                <select
+                  value={reportCategory}
+                  onChange={(event) => setReportCategory(event.target.value)}
+                >
+                  <option>Incorrect or outdated answer</option>
+                  <option>Missing information</option>
+                  <option>Technical problem</option>
+                  <option>Accessibility or usability problem</option>
+                  <option>Other</option>
+                </select>
+              </label>
+              <label>
+                <span>What happened?</span>
+                <textarea
+                  value={reportDetails}
+                  onChange={(event) => setReportDetails(event.target.value)}
+                  placeholder="Describe the question, response, or screen that needs attention."
+                  minLength={10}
+                  maxLength={400}
+                  required
+                />
+                <small>{reportDetails.length}/400 characters</small>
+              </label>
+              <p className="report-privacy-note">
+                Do not include passwords, student numbers, grades, or confidential consultation details.
+              </p>
+              <div className="modal-actions">
+                <button type="button" className="outline" onClick={() => setReportOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary" disabled={reportSubmitting || reportDetails.trim().length < 10}>
+                  {reportSubmitting ? "Sending…" : "Send report"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </>
   );
 }
