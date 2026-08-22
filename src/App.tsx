@@ -213,7 +213,7 @@ function friendlyAuthError(message: string, action: AuthAction) {
     normalized.includes("already been registered") ||
     normalized.includes("user already exists")
   ) {
-    return "An account already exists for this email address. Sign in or reset your password instead.";
+    return "We couldn't create this account. Review the information, or use sign in or password recovery if you may already be registered.";
   }
   if (normalized.includes("rate limit")) {
     return "Too many attempts were made. Wait a few minutes, then try again.";

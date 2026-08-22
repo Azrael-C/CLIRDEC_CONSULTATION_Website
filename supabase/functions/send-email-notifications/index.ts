@@ -1,8 +1,9 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.3";
 
 const headers = {
   "Content-Type": "application/json",
   "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
 };
 
 type NotificationItem = {
@@ -169,6 +170,9 @@ function emailTemplate(options: {
 Deno.serve(async (request) => {
   if (request.method !== "POST")
     return respond({ error: "Method not allowed" }, 405);
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (!Number.isFinite(contentLength) || contentLength > 2048)
+    return respond({ error: "Request payload is too large" }, 413);
 
   const expected = Deno.env.get("EMAIL_CRON_SECRET");
   if (!expected || request.headers.get("authorization") !== `Bearer ${expected}`) {

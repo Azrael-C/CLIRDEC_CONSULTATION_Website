@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 import spacy
 from fastapi import FastAPI, Header, HTTPException, Request as FastAPIRequest, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from spacy.matcher import PhraseMatcher
 
@@ -52,6 +52,14 @@ SUPPORT_CONTACT = os.getenv(
 
 
 API_DOCS_ENABLED = os.getenv("ENABLE_API_DOCS", "").strip().lower() in {"1", "true", "yes"}
+MAX_REQUEST_BODY_BYTES = min(
+    64 * 1024,
+    max(1024, int(os.getenv("MAX_REQUEST_BODY_BYTES", "16384"))),
+)
+REQUEST_TIMEOUT_SECONDS = min(
+    30.0,
+    max(2.0, float(os.getenv("REQUEST_TIMEOUT_SECONDS", "12"))),
+)
 
 app = FastAPI(
     title="CLSU FacultyConnect NLP Assistant",
@@ -72,11 +80,45 @@ app.add_middleware(
 
 @app.middleware("http")
 async def protect_dynamic_responses(request: FastAPIRequest, call_next):
-    """Prevent browsers and intermediary caches from storing API responses."""
-    response = await call_next(request)
+    """Bound request work and prevent caches from storing API responses."""
+    if request.method in {"POST", "PUT", "PATCH"}:
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request payload is too large."},
+                        headers={"Cache-Control": "no-store"},
+                    )
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header."},
+                    headers={"Cache-Control": "no-store"},
+                )
+        body = await request.body()
+        if len(body) > MAX_REQUEST_BODY_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Request payload is too large."},
+                headers={"Cache-Control": "no-store"},
+            )
+    try:
+        response = await asyncio.wait_for(
+            call_next(request),
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "The request exceeded the processing time limit."},
+            headers={"Cache-Control": "no-store", "Retry-After": "5"},
+        )
     if request.url.path.startswith(("/api/", "/chat", "/health", "/knowledge-status")):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response
 
 nlp = spacy.blank("en")

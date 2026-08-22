@@ -24,6 +24,10 @@ jobs:
           cache: pip
           cache-dependency-path: chatbot/requirements.txt
       - run: pip install -r chatbot/requirements.txt
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit==2.10.1
+          pip-audit -r chatbot/requirements.txt
       - run: python -m compileall -q chatbot
       - name: Run chatbot tests
         working-directory: chatbot

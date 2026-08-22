@@ -1,0 +1,28 @@
+services:
+  chatbot:
+    build:
+      context: ../../chatbot
+    user: "10001:10001"
+    read_only: true
+    init: true
+    pids_limit: 128
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1.5
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+      nproc:
+        soft: 128
+        hard: 256
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - /etc/facultyconnect/chatbot.env
+    restart: unless-stopped
