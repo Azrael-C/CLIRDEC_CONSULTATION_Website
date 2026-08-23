@@ -1099,7 +1099,7 @@ function App() {
         <div className="side-foot">
           <span>CLIRDEC</span>
           <small>Official service · Approved content only</small>
-          <PortalFooterActions onLogout={logout} />
+          <PortalFooterActions user={user} onLogout={logout} />
         </div>
       </aside>
       <main id="main-content" className={`content student-content view-${view}`}>
@@ -2201,27 +2201,152 @@ function Nav({
     </button>
   );
 }
-function PortalFooterActions({ onLogout }: { onLogout: () => void }) {
+function PortalFooterActions({
+  user,
+  onLogout,
+}: {
+  user: User;
+  onLogout: () => void;
+}) {
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportCategory, setReportCategory] = useState("Appointment or availability");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportStatus, setReportStatus] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+
+  const submitPortalIssue = async (event: FormEvent) => {
+    event.preventDefault();
+    const details = reportDetails.trim();
+    if (details.length < 10) return;
+    setReportSubmitting(true);
+    try {
+      await recordClientError(
+        user.id,
+        "user_report",
+        `Portal report - ${user.role} - ${reportCategory}: ${details}`,
+      );
+      setReportDetails("");
+      setReportOpen(false);
+      setReportStatus("Report sent to the portal administrator.");
+    } catch (cause) {
+      setReportStatus(
+        cause instanceof Error
+          ? cause.message
+          : "The report could not be submitted. Please try again.",
+      );
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
   return (
-    <div className="side-foot-actions">
-      <a className="side-action side-action-privacy" href="/privacy-policy">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 3 20 6v5c0 5.2-3.3 8.6-8 10-4.7-1.4-8-4.8-8-10V6l8-3Z" />
-          <path d="M9.5 12 11 13.5l3.8-4" />
-        </svg>
-        <span>Privacy policy</span>
-      </a>
-      <button
-        className="side-action side-action-signout"
-        type="button"
-        onClick={onLogout}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10" />
-        </svg>
-        <span>Sign out</span>
-      </button>
-    </div>
+    <>
+      <div className="side-foot-actions">
+        {user.role !== "admin" && (
+          <button
+            className="side-action side-action-report"
+            type="button"
+            onClick={() => {
+              setReportOpen(true);
+              setReportStatus("");
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9Z" />
+              <path d="M12 7v6M12 17h.01" />
+            </svg>
+            <span>Report an issue</span>
+          </button>
+        )}
+        <a className="side-action side-action-privacy" href="/privacy-policy">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3 20 6v5c0 5.2-3.3 8.6-8 10-4.7-1.4-8-4.8-8-10V6l8-3Z" />
+            <path d="M9.5 12 11 13.5l3.8-4" />
+          </svg>
+          <span>Privacy policy</span>
+        </a>
+        <button
+          className="side-action side-action-signout"
+          type="button"
+          onClick={onLogout}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10" />
+          </svg>
+          <span>Sign out</span>
+        </button>
+        {reportStatus && (
+          <p className="side-report-status" role="status" aria-live="polite">
+            {reportStatus}
+          </p>
+        )}
+      </div>
+      {reportOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setReportOpen(false)}>
+          <section
+            className="modal report-issue-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="portal-report-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="modal-close"
+              aria-label="Close issue report"
+              onClick={() => setReportOpen(false)}
+            >
+              ×
+            </button>
+            <p className="eyebrow">PORTAL SUPPORT</p>
+            <h2 id="portal-report-title">Report an issue</h2>
+            <p>
+              Describe the problem you encountered. The report is privacy-filtered
+              and sent to the authorized administrator.
+            </p>
+            <form className="topic report-issue-form" onSubmit={submitPortalIssue}>
+              <label>
+                <span>Issue type</span>
+                <select
+                  value={reportCategory}
+                  onChange={(event) => setReportCategory(event.target.value)}
+                >
+                  <option>Appointment or availability</option>
+                  <option>Consult AI answer</option>
+                  <option>Profile or account</option>
+                  <option>Email or notification</option>
+                  <option>Accessibility or usability</option>
+                  <option>Other</option>
+                </select>
+              </label>
+              <label>
+                <span>What happened?</span>
+                <textarea
+                  value={reportDetails}
+                  onChange={(event) => setReportDetails(event.target.value)}
+                  placeholder="Describe the page, action, and result you expected."
+                  minLength={10}
+                  maxLength={400}
+                  required
+                />
+                <small>{reportDetails.length}/400 characters</small>
+              </label>
+              <p className="report-privacy-note">
+                Do not include passwords, student numbers, grades, or confidential consultation details.
+              </p>
+              <div className="modal-actions">
+                <button type="button" className="outline" onClick={() => setReportOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary" disabled={reportSubmitting || reportDetails.trim().length < 10}>
+                  {reportSubmitting ? "Sending…" : "Send report"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+    </>
   );
 }
 function MobilePortalNav({
@@ -3602,7 +3727,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         <div className="side-foot">
           <span>Central Luzon State University</span>
           <small>Role-restricted administrative service</small>
-          <PortalFooterActions onLogout={logout} />
+          <PortalFooterActions user={user} onLogout={logout} />
         </div>
       </aside>
       <main

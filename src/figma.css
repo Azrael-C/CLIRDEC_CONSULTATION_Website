@@ -386,8 +386,10 @@ a:focus-visible {
 .side-action span { font-size: .68rem; }
 .side-action:hover { border-color: #9dc8ac; background: #f3faf5; box-shadow: 0 6px 16px rgba(18,80,46,.08); transform: translateY(-1px); text-decoration: none; }
 .side-action:focus-visible { outline: 3px solid rgba(243,197,31,.45); outline-offset: 2px; }
+.side-action-report { border-color: #c9ddcf; background: #f4faf6; }
 .side-action-signout { border-color: #ebcbc6; color: var(--figma-danger); }
 .side-action-signout:hover { border-color: #d69a91; background: #fff6f4; }
+.side-report-status { margin: 0; padding: .55rem .65rem; border-radius: 8px; color: #17633a; background: #eaf6ee; font-size: .6rem; font-weight: 700; line-height: 1.4; }
 .content { max-width: 1220px; padding: clamp(2.1rem, 4vw, 3.4rem) clamp(1.5rem, 4vw, 3.5rem); }
 
 /* Shared content */
@@ -1578,13 +1580,13 @@ body {
     padding-bottom: calc(5.9rem + env(safe-area-inset-bottom));
   }
   .student-content.view-assistant .chatbot {
-    height: clamp(640px, 78dvh, 760px);
-    min-height: 640px;
-    max-height: 760px;
+    height: clamp(420px, calc(100dvh - 128px - env(safe-area-inset-bottom)), 620px);
+    min-height: 0;
+    max-height: none;
     border-radius: 14px;
   }
   .student-content.view-assistant .chat-head { padding: .8rem; }
-  .student-content.view-assistant .messages { min-height: 260px; padding: .85rem; }
+  .student-content.view-assistant .messages { min-height: 0; padding: .85rem; }
   .student-content.view-assistant .messages p,
   .student-content.view-assistant .message-wrap p { max-width: 92%; font-size: .78rem; }
   .student-content.view-assistant .prompts {
@@ -1597,13 +1599,17 @@ body {
   .student-content.view-assistant .prompts::-webkit-scrollbar { display: none; }
   .student-content.view-assistant .prompts button { flex: 0 0 auto; min-height: 38px; }
   .student-content.view-assistant .chatbot form {
-    align-items: stretch;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0,1fr) auto;
+    align-items: center;
     gap: .6rem;
     padding: .75rem;
   }
-  .student-content.view-assistant .chatbot form input,
-  .student-content.view-assistant .chatbot form .primary { width: 100%; min-height: 46px; }
+  .student-content.view-assistant .chatbot form input { width: 100%; min-width: 0; min-height: 46px; }
+  .student-content.view-assistant .chatbot form .primary { min-height: 46px; padding-inline: 1rem; }
+  .student-content.view-assistant .chatbot form .chat-turnstile,
+  .student-content.view-assistant .chatbot form .chat-trust-active { grid-column: 1/-1; grid-row: 2; justify-self: stretch; }
+  .student-content.view-assistant .chatbot form .chat-trust-active { justify-content: center; white-space: normal; }
   .student-content.view-assistant .chat-source { padding: .6rem .75rem; font-size: .6rem; }
   .profile-v2-layout,.faculty-profile-v2,.faculty-profile-editor { grid-template-columns: 1fr; }
   .profile-information-grid,.profile-edit-grid { grid-template-columns: 1fr; }
@@ -1779,7 +1785,7 @@ body {
   .training-tester-card { position: static; }
   .training-library-toolbar { grid-template-columns: 1fr; }
   .chat-head { align-items: flex-start; flex-wrap: wrap; }
-  .chat-head-actions { width: 100%; margin-left: 0; }
+  .chat-head-actions { width: 100%; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin-left: 0; }
   .chat-head-action { min-height: 44px; flex: 1; justify-content: center; }
   .profile-onboarding { grid-template-columns: 1fr; overflow-y: auto; }
   .profile-onboarding-intro { padding: 1.4rem; }
@@ -2180,8 +2186,10 @@ html[data-theme="dark"] .side-action {
   box-shadow: 0 7px 18px rgba(0,0,0,.16);
 }
 html[data-theme="dark"] .side-action:hover { border-color: #4e7d63; background: #173526; }
+html[data-theme="dark"] .side-action-report { border-color: #3b674e; background: #143324; }
 html[data-theme="dark"] .side-action-signout { border-color: #643c36; color: #ffaba2; background: #2b1d1a; }
 html[data-theme="dark"] .side-action-signout:hover { border-color: #92554c; background: #3a211e; }
+html[data-theme="dark"] .side-report-status { color: #a9eac5; background: #143324; }
 html[data-theme="dark"] .profile-chip { color: var(--dark-text); }
 html[data-theme="dark"] .profile-chip:hover { background: #153326; }
 html[data-theme="dark"] :is(.student-app,.faculty-app,.admin-app) .profile-chip > span {
