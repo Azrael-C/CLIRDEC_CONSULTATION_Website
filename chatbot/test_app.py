@@ -287,6 +287,22 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 429)
         self.assertIn("Max-Age=0", raised.exception.headers["Set-Cookie"])
 
+    def test_consultation_services_question_uses_services_intent(self):
+        intent, confidence = classify_intent(
+            "What faculty consultation services are available?"
+        )
+    
+        self.assertEqual(intent, "services")
+        self.assertGreaterEqual(confidence, 0.55)
+    
+        response = build_response(
+            "What faculty consultation services are available?",
+            [],
+        )
+    
+        self.assertEqual(response.intent, "services")
+        self.assertEqual(response.source, "FacultyConnect MVP scope")
+        self.assertIn("verified FAQ guidance", response.answer)
 
 if __name__ == "__main__":
     unittest.main()
