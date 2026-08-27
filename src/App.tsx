@@ -35,7 +35,7 @@ import {
   type FacultyRequest,
   type ChatbotGap,
 } from "./backend";
-import { PrivilegedMfaGate } from "./MfaGate";
+import { PrivilegedMfaGate, RecoveryMfaGate } from "./MfaGate";
 import { AdminOperations } from "./AdminOperations";
 import {
   appointmentCalendarDetails,
@@ -971,7 +971,11 @@ function App() {
       </main>
     );
   if (recoveringPassword)
-    return <PasswordRecovery save={updateRecoveredPassword} notice={notice} />;
+    return (
+      <RecoveryMfaGate>
+        <PasswordRecovery save={updateRecoveredPassword} notice={notice} />
+      </RecoveryMfaGate>
+    );
   if (!user)
     return (
       <ProductionAuth

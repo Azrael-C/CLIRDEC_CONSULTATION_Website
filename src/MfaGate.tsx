@@ -4,6 +4,88 @@ import { ThemeToggle } from "./theme";
 
 type GateState = "checking" | "enroll" | "verify" | "ready" | "error";
 
+/**
+ * Recovery links create an AAL1 session. Accounts with a verified MFA factor
+ * must step up to AAL2 before Supabase will allow a password change.
+ */
+export function RecoveryMfaGate({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<GateState>("checking");
+  const [factorId, setFactorId] = useState("");
+  const [code, setCode] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function inspect() {
+      const [{ data: assurance, error: assuranceError }, { data: factors, error: factorsError }] =
+        await Promise.all([
+          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+          supabase.auth.mfa.listFactors(),
+        ]);
+      if (!active) return;
+      if (assuranceError || factorsError) {
+        setMessage(assuranceError?.message || factorsError?.message || "Account security could not be checked.");
+        setState("error");
+        return;
+      }
+      if (assurance.currentLevel === "aal2") {
+        setState("ready");
+        return;
+      }
+      const verified = factors?.totp?.find((factor) => factor.status === "verified");
+      if (!verified) {
+        setMessage("This account requires two-step verification, but no verified authenticator is available. Contact MISO to recover the account.");
+        setState("error");
+        return;
+      }
+      setFactorId(verified.id);
+      setState("verify");
+    }
+    void inspect();
+    return () => { active = false; };
+  }, []);
+
+  async function verify(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!/^\d{6}$/.test(code)) {
+      setMessage("Enter the current six-digit code from your authenticator app.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
+    if (error) {
+      setMessage("That verification code was not accepted. Try the current code again.");
+      setBusy(false);
+      return;
+    }
+    await supabase.auth.refreshSession();
+    setState("ready");
+    setBusy(false);
+  }
+
+  if (state === "ready") return <>{children}</>;
+  return (
+    <main className="mfa-gate" id="main-content">
+      <section className="mfa-card" aria-labelledby="recovery-mfa-title">
+        <p className="eyebrow">PASSWORD RECOVERY</p>
+        <h1 id="recovery-mfa-title">Verify your identity</h1>
+        <p>For this protected account, confirm the six-digit code from your authenticator app before choosing a new password.</p>
+        {state === "checking" && <div className="empty-card">Checking account security…</div>}
+        {state === "verify" && (
+          <form className="mfa-form" onSubmit={verify}>
+            <label htmlFor="recovery-mfa-code">Six-digit verification code</label>
+            <input id="recovery-mfa-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} required />
+            <button className="primary" disabled={busy}>{busy ? "Verifying…" : "Verify and continue"}</button>
+          </form>
+        )}
+        {message && <p className="form-notice error" role="alert">{message}</p>}
+      </section>
+    </main>
+  );
+}
+
 export function PrivilegedMfaGate({
   children,
   onSignOut,
