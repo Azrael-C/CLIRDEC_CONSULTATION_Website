@@ -309,6 +309,7 @@ a:focus-visible {
 .recovery-actions > * { min-height: 48px; }
 .recovery-link-button { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: .76rem; font-weight: 800; text-decoration: none; }
 .recovery-link-button:hover { color: #fff; }
+.recovery-actions .outline { font-size: .76rem; font-weight: 800; font-family: inherit; letter-spacing: inherit; }
 .recovery-back-link { display: block; width: fit-content; margin: .9rem auto 0; color: var(--figma-green-dark); font-size: .72rem; font-weight: 800; text-decoration: none; }
 .recovery-back-link:hover { text-decoration: underline; }
 .recovery-fallback { margin-top: 1.2rem; padding: .9rem 1rem; border: 1px solid #d4e0d7; border-radius: 13px; background: #f5f8f5; box-shadow: inset 3px 3px 8px rgba(48,78,60,.055), inset -4px -4px 9px #fff; }
