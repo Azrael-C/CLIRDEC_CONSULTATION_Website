@@ -21,6 +21,7 @@ export default defineConfig({
         privacyPolicy: resolve(projectRoot, "privacy-policy.html"),
         notFound: resolve(projectRoot, "404.html"),
         forgotPassword: resolve(projectRoot, "forgot-password.html"),
+        createAccount: resolve(projectRoot, "create-account.html"),
       },
     },
   },

@@ -3,8 +3,8 @@
 ## Backup
 
 1. Link the CLI to the production Supabase project.
-2. Run `powershell -File scripts/backup-database.ps1 -OutputDirectory <encrypted-folder>`.
-3. Move both SQL files and their SHA-256 hashes to CLSU-controlled encrypted storage.
+2. Ensure Docker Desktop is running (the Supabase CLI uses a containerized `pg_dump`) and run `powershell -File scripts/backup-database.ps1 -OutputDirectory <encrypted-folder>`.
+3. Move both SQL files and the generated `.sha256` manifest to CLSU-controlled encrypted storage.
 4. Record the operator, date, Supabase project reference, and hash values in the release log.
 
 Do not commit database dumps, place them in a shared public drive, or upload them as GitHub Actions artifacts.
@@ -12,11 +12,12 @@ Do not commit database dumps, place them in a shared public drive, or upload the
 ## Restore drill
 
 1. Create an isolated Supabase project containing no production integrations.
-2. Restore the schema backup, followed by the data-only backup, using the Supabase CLI or `psql`.
-3. point a temporary Preview deployment at the isolated project.
-4. Run `npm run test:e2e` using dedicated `facultyconnect-e2e` accounts.
-5. Confirm authentication, booking, approval, completion, review, reporting, and email queue creation.
-6. Delete the isolated restored data after recording the result.
+2. Install PostgreSQL client tools (`psql`) and set `FACULTYCONNECT_RESTORE_DATABASE_URL` to the isolated project's connection string. Never use the production URL.
+3. Run `powershell -File scripts/verify-backup-restore.ps1 -BackupDirectory <encrypted-folder>`; it verifies the matching `.sha256` manifest when present, restores schema and data, and checks that public tables exist. The verifier accepts `schema.sql`/`data.sql` or the newest matching timestamped pair created by the backup script.
+4. Point a temporary Preview deployment at the isolated project.
+5. Run `npm run test:e2e` using dedicated `facultyconnect-e2e` accounts.
+6. Confirm authentication, booking, approval, completion, review, reporting, and email queue creation.
+7. Delete the isolated restored data after recording the result.
 
 Run the drill before pilot launch and at least once each academic year. A backup is not considered verified until the restore drill succeeds.
 

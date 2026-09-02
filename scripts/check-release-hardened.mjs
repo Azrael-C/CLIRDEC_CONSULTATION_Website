@@ -35,6 +35,7 @@ const operations = read("src/AdminOperations.tsx");
 const calendar = read("src/calendar.ts");
 const lifecycle = read(".github/workflows/pilot-e2e.yml");
 const backupRunbook = read("BACKUP_RETENTION_RUNBOOK.md");
+const backupRestore = read("scripts/verify-backup-restore.ps1");
 
 for (const sql of [schema, migration]) {
   assertIncludes(sql, "gmail\\.com|clsu2\\.edu\\.ph", "Student email-domain registration SQL");
@@ -160,5 +161,8 @@ assertIncludes(calendar, '"CANCELLED" ? "CANCEL"', "Calendar cancellation update
 assertIncludes(chatbot, "review_due_at.gt", "Expired knowledge exclusion");
 assertIncludes(lifecycle, 'cron: "0 18 * * *"', "Nightly lifecycle automation");
 assertIncludes(backupRunbook, "restore drill", "Backup restore procedure");
+assertIncludes(backupRestore, "FACULTYCONNECT_RESTORE_DATABASE_URL", "Isolated restore target");
+assertIncludes(backupRestore, "Refusing to restore into a production-looking database host", "Production restore guard");
+assertIncludes(backupRestore, "ON_ERROR_STOP=1", "Fail-fast restore transaction");
 
 console.log("Release hardening checks passed.");

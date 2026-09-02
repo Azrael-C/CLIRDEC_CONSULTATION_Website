@@ -111,6 +111,12 @@ export function AdminOperations({
   const errors24h = data.clientErrors.filter(
     (event) => new Date(event.created_at).getTime() > now - 24 * 60 * 60_000,
   );
+  const frontendErrors24h = errors24h.filter((event) =>
+    ["render_error", "runtime_error", "unhandled_rejection"].includes(event.event_type),
+  );
+  const chatbotErrors24h = errors24h.filter((event) => event.event_type === "chatbot_error");
+  const bookingErrors24h = errors24h.filter((event) => event.event_type === "booking_error");
+  const userReports24h = errors24h.filter((event) => event.event_type === "user_report");
   const audit24h = data.auditLogs.filter(
     (event) => new Date(event.created_at).getTime() > now - 24 * 60 * 60_000,
   );
@@ -147,6 +153,20 @@ export function AdminOperations({
       detail: "Review the affected page and release before the next pilot session.",
       href: "#application-errors",
       action: "Inspect app errors",
+    }] : []),
+    ...(chatbotErrors24h.length ? [{
+      key: "chatbot-errors",
+      title: `${chatbotErrors24h.length} chatbot ${chatbotErrors24h.length === 1 ? "failure was" : "failures were"} recorded today`,
+      detail: "Review the request route and release before the next pilot session.",
+      href: "#application-errors",
+      action: "Inspect chatbot failures",
+    }] : []),
+    ...(bookingErrors24h.length ? [{
+      key: "booking-errors",
+      title: `${bookingErrors24h.length} booking ${bookingErrors24h.length === 1 ? "failure was" : "failures were"} recorded today`,
+      detail: "Check availability conflicts, expired slots, and request permissions.",
+      href: "#application-errors",
+      action: "Inspect booking failures",
     }] : []),
   ];
 
@@ -235,7 +255,16 @@ export function AdminOperations({
           <span>Delivery problems</span><b>{failed.length + deliveryProblems.length}</b><small>failed, bounced, suppressed, delayed, or complained</small>
         </article>
         <article className={errors24h.length ? "attention" : ""}>
-          <span>Application errors</span><b>{errors24h.length}</b><small>recorded in the last 24 hours</small>
+          <span>Frontend errors</span><b>{frontendErrors24h.length}</b><small>render and runtime errors in 24 hours</small>
+        </article>
+        <article className={chatbotErrors24h.length ? "attention" : ""}>
+          <span>Chatbot failures</span><b>{chatbotErrors24h.length}</b><small>failed assistant requests in 24 hours</small>
+        </article>
+        <article className={bookingErrors24h.length ? "attention" : ""}>
+          <span>Booking failures</span><b>{bookingErrors24h.length}</b><small>failed booking actions in 24 hours</small>
+        </article>
+        <article className={userReports24h.length ? "attention" : ""}>
+          <span>User reports</span><b>{userReports24h.length}</b><small>privacy-filtered reports in 24 hours</small>
         </article>
       </div>
 

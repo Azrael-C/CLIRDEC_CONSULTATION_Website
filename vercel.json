@@ -70,6 +70,12 @@
       }
     },
     {
+      "source": "/create-account",
+      "destination": {
+        "service": "web"
+      }
+    },
+    {
       "source": "/assets/(.*)",
       "destination": {
         "service": "web"

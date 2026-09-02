@@ -35,6 +35,12 @@ if (!privacyBody.includes("Privacy Policy | CLSU FacultyConnect")) {
   throw new Error("Production privacy policy entry point is missing or incorrectly titled.");
 }
 
+const createAccount = await request("/create-account");
+const createAccountBody = await createAccount.text();
+if (!createAccountBody.includes("Create student account | CLSU FacultyConnect")) {
+  throw new Error("Production create-account entry point is missing or incorrectly titled.");
+}
+
 const missing = await fetch(`${baseUrl}/production-smoke-missing-page`, {
   redirect: "follow",
   signal: AbortSignal.timeout(20_000),
