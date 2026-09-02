@@ -209,8 +209,19 @@ INTENT_PHRASES: dict[str, list[str]] = {
         "approved na ba", "confirmed na ba", "status ng request",
     ],
     "services": [
-        "clirdec services", "portal services", "what can you do", "how can clirdec help",
-        "anong serbisyo", "ano ang clirdec",
+        "clirdec services",
+        "portal services",
+        "faculty consultation services",
+        "consultation services",
+        "what consultation services are available",
+        "what faculty consultation services are available",
+        "what services are available",
+        "what services do you offer",
+        "what can you do",
+        "how can clirdec help",
+        "anong serbisyo",
+        "anong mga serbisyo",
+        "ano ang clirdec",
     ],
 }
 
