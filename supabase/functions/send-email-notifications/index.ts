@@ -70,6 +70,12 @@ function respond(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+function logEvent(level: "info" | "error", message: string, fields: Record<string, unknown> = {}) {
+  // Structured logs are visible in Supabase Edge Function logs. Never include
+  // recipient addresses, email bodies, or provider credentials.
+  console.log(JSON.stringify({ level, message, service: "send-email-notifications", ...fields }));
+}
+
 function availabilityFor(appointment?: AppointmentSummary) {
   if (!appointment?.availability) return null;
   return Array.isArray(appointment.availability)
@@ -195,6 +201,7 @@ Deno.serve(async (request) => {
   const portalUrl = Deno.env.get("PORTAL_URL") || "https://www.clsufacultyconnect.com";
   const from = Deno.env.get("EMAIL_FROM") || "CLSU FacultyConnect <notifications@clsufacultyconnect.com>";
   if (!supabaseUrl || !serviceRoleKey || !resendKey) {
+    logEvent("error", "missing_server_configuration");
     return respond({ error: "Required server configuration is missing" }, 500);
   }
 
@@ -217,8 +224,12 @@ Deno.serve(async (request) => {
     "claim_email_notifications",
     { batch_size: 25 },
   );
-  if (claimError) return respond({ error: claimError.message }, 500);
+  if (claimError) {
+    logEvent("error", "claim_notifications_failed", { error: claimError.message });
+    return respond({ error: claimError.message }, 500);
+  }
   if (!claimed?.length) {
+    logEvent("info", "notification_queue_empty", { reminders_queued: remindersQueued ?? 0 });
     return respond({
       processed: 0,
       sent: 0,
@@ -260,6 +271,7 @@ Deno.serve(async (request) => {
 
   if (profileError || appointmentError || availabilityError) {
     const fetchError = profileError ?? appointmentError ?? availabilityError;
+    logEvent("error", "notification_context_failed", { error: fetchError?.message });
     await supabase
       .from("email_notifications")
       .update({
@@ -341,10 +353,21 @@ Deno.serve(async (request) => {
           last_error: errorMessage(cause).slice(0, 1000),
         })
         .eq("id", item.id);
+      logEvent("error", "notification_delivery_failed", {
+        terminal,
+        attempts: item.attempts,
+        error: errorMessage(cause).slice(0, 300),
+      });
       failed += 1;
     }
   }
 
+  logEvent("info", "notification_batch_completed", {
+    processed: typedClaimed.length,
+    sent,
+    failed,
+    reminders_queued: remindersQueued ?? 0,
+  });
   return respond({
     processed: typedClaimed.length,
     sent,

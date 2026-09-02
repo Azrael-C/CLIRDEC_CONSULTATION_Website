@@ -61,6 +61,19 @@ REQUEST_TIMEOUT_SECONDS = min(
     max(2.0, float(os.getenv("REQUEST_TIMEOUT_SECONDS", "12"))),
 )
 
+
+def _log_event(level: str, message: str, request: FastAPIRequest, **fields: Any) -> None:
+    """Emit structured, privacy-safe request telemetry for Vercel logs."""
+    payload: dict[str, Any] = {
+        "level": level,
+        "message": message,
+        "route": request.url.path,
+        "method": request.method,
+        **fields,
+    }
+    # Never include request bodies, authorization headers, or raw client IPs.
+    print(json.dumps(payload, separators=(",", ":"), default=str), flush=True)
+
 app = FastAPI(
     title="CLSU FacultyConnect NLP Assistant",
     description="Source-backed consultation guidance using FastAPI and spaCy.",
@@ -81,6 +94,7 @@ app.add_middleware(
 @app.middleware("http")
 async def protect_dynamic_responses(request: FastAPIRequest, call_next):
     """Bound request work and prevent caches from storing API responses."""
+    started = time.monotonic()
     if request.method in {"POST", "PUT", "PATCH"}:
         content_length = request.headers.get("content-length")
         if content_length:
@@ -110,10 +124,47 @@ async def protect_dynamic_responses(request: FastAPIRequest, call_next):
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
     except TimeoutError:
+        _log_event(
+            "error",
+            "request_timeout",
+            request,
+            status_code=504,
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
         return JSONResponse(
             status_code=504,
             content={"detail": "The request exceeded the processing time limit."},
             headers={"Cache-Control": "no-store", "Retry-After": "5"},
+        )
+    except Exception as cause:
+        _log_event(
+            "error",
+            "request_failed",
+            request,
+            status_code=500,
+            duration_ms=round((time.monotonic() - started) * 1000),
+            error=type(cause).__name__,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "The service could not complete that request."},
+            headers={"Cache-Control": "no-store"},
+        )
+    if response.status_code >= 500:
+        _log_event(
+            "error",
+            "request_error_response",
+            request,
+            status_code=response.status_code,
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
+    elif request.url.path.startswith(("/api/chat", "/chat", "/api/knowledge-status", "/knowledge-status")):
+        _log_event(
+            "info",
+            "request_completed",
+            request,
+            status_code=response.status_code,
+            duration_ms=round((time.monotonic() - started) * 1000),
         )
     if request.url.path.startswith(("/api/", "/chat", "/health", "/knowledge-status")):
         response.headers["Cache-Control"] = "no-store"

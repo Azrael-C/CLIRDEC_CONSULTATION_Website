@@ -2453,3 +2453,56 @@ html[data-theme="dark"] .operations-detail > summary em.attention { background: 
 html[data-theme="dark"] .operations-detail > summary em.healthy { background: #143a28; color: #91e7b5; }
 html[data-theme="dark"] :is(.published-slot-copy > small,.published-slot-lock,.student-identity-card p) { color: var(--dark-text-muted); }
 html[data-theme="dark"] .notification-badge { border-color: #071810; }
+
+/* Shared resilience states and bounded conversation scrolling. */
+.offline-banner {
+  position: fixed;
+  z-index: 120;
+  top: .75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  width: min(92vw, 430px);
+  padding: .7rem .9rem;
+  border: 1px solid #e3b44a;
+  border-radius: 12px;
+  background: #fff8d8;
+  color: #5e4b00;
+  box-shadow: 0 12px 28px rgba(28, 45, 35, .18);
+}
+.offline-banner > span { font-size: 1.2rem; }
+.offline-banner div { display: grid; gap: .1rem; }
+.offline-banner small { color: #756a3d; }
+.portal-state {
+  display: grid;
+  justify-items: center;
+  gap: .45rem;
+  padding: 2.2rem 1.4rem;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,.72);
+  color: var(--ink);
+  text-align: center;
+}
+.portal-state p { max-width: 48ch; margin: 0; color: var(--muted); line-height: 1.5; }
+.portal-state-icon { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: 50%; background: #e7f2e9; color: var(--green); font-weight: 900; }
+.error-state { border-color: #e1b9b2; background: #fff7f5; }
+.error-state .portal-state-icon { background: #f5d9d4; color: #9a352b; }
+.error-state p { color: #70443e; }
+.faculty-grid > .portal-state { grid-column: 1 / -1; }
+.schedule-list > .portal-state { width: 100%; }
+.chatbot { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+.chatbot .messages { min-height: 260px; max-height: min(58vh, 560px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.chatbot .messages:focus-visible { outline: 3px solid #bce8df; outline-offset: -3px; }
+html[data-theme="dark"] .offline-banner { border-color: #8f7a32; background: #302c18; color: #f4df80; }
+html[data-theme="dark"] .offline-banner small { color: #d9ca79; }
+html[data-theme="dark"] .portal-state { border-color: var(--dark-border); background: linear-gradient(145deg,var(--dark-surface-raised),var(--dark-surface)); color: var(--dark-text); }
+html[data-theme="dark"] .portal-state p { color: var(--dark-text-muted); }
+html[data-theme="dark"] .error-state { border-color: #71453e; background: #251b18; }
+html[data-theme="dark"] .error-state p { color: #e8b8ad; }
+@media (max-width: 560px) {
+  .offline-banner { top: .5rem; }
+  .chatbot .messages { min-height: 240px; max-height: 52vh; }
+}

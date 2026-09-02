@@ -154,6 +154,12 @@ test("@a11y public authentication and policy pages have no serious accessibility
   await expect(page.getByRole("heading", { level: 1, name: "Log in to your portal" })).toBeVisible();
   const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact || ""))).toEqual([]);
+
+  await page.goto("/create-account");
+  await expect(page.getByRole("heading", { level: 1, name: "Create a student account" })).toBeVisible();
+  const createAccountResults = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(createAccountResults.violations.filter((violation) => ["serious", "critical"].includes(violation.impact || ""))).toEqual([]);
+
   await page.goto("/privacy-policy");
   await expect(page.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeVisible();
   const policyResults = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();

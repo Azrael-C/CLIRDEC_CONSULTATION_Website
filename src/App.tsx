@@ -61,66 +61,32 @@ import {
   type NotificationAppointment,
 } from "./Notifications";
 import { ThemeToggle, useTheme } from "./theme";
-
-type Role = "student" | "faculty" | "admin";
-type View = "home" | "find" | "schedule" | "assistant" | "profile";
-type User = {
-  id: string;
-  name: string;
-  email: string;
-  role: Role;
-  department?: string;
-  student_number?: string;
-  college?: string;
-  program?: string;
-  year_level?: string;
-  email_notifications: boolean;
-  account_status: "active" | "suspended" | "deactivated";
-};
-type Slot = {
-  id: string;
-  faculty_name: string;
-  initials: string;
-  expertise: string;
-  subjects: string[];
-  consultationTopics: string[];
-  starts_at: string;
-  ends_at: string;
-  location: string;
-  color: string;
-  appointment_id?: string;
-  status?: AppointmentStatus;
-  topic?: string;
-  notes?: string;
-  updated_at?: string;
-  review?: ConsultationReview;
-  booking_open?: boolean;
-};
-type ChatMessage = {
-  who: "you" | "bot";
-  text: string;
-  source?: string;
-  escalation?: boolean;
-  suggestions?: string[];
-};
+import { EmptyState, ErrorState, OfflineBanner, PortalLoader } from "./modules/shared";
+import type {
+  ChatMessage,
+  ChatbotReply,
+  Role,
+  Slot,
+  User,
+  View,
+} from "./modules/shared";
+import {
+  friendlyAuthError,
+  isAllowedStudentEmail,
+  studentPasswordIsValid,
+  studentPasswordRules,
+} from "./modules/auth";
+import { studentMetadata } from "./modules/student";
+import { facultyMetadata } from "./modules/faculty";
+import { adminMetadata } from "./modules/admin";
+import { captureClientError } from "./modules/shared";
+import { PasswordVisibilityIcon } from "./modules/auth";
+import { Head, Stats } from "./modules/shared";
 
 const INITIAL_CHAT_MESSAGE =
   "Hi! I use approved CLIRDEC information. Ask about services, office hours, consultation procedures, faculty availability, or official contacts.";
 
-type ChatbotReply = {
-  answer: string;
-  intent: string;
-  confidence: number;
-  escalation: boolean;
-  source?: string;
-  suggestions?: string[];
-};
-
 type ChatAskResult = "ok" | "challenge" | "error";
-
-type AuthAction = "login" | "signup" | "reset";
-
-const STUDENT_EMAIL_DOMAINS = ["gmail.com", "clsu2.edu.ph"] as const;
 const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
 const PRODUCTION_SECURITY_READY = !import.meta.env.PROD || Boolean(TURNSTILE_SITE_KEY);
 
@@ -194,49 +160,6 @@ async function requestChatbotReply(message: string, captchaToken?: string): Prom
   return response.json() as Promise<ChatbotReply>;
 }
 
-function isAllowedStudentEmail(email: string) {
-  const domain = email.trim().toLowerCase().split("@").at(-1);
-  return STUDENT_EMAIL_DOMAINS.some((allowed) => domain === allowed);
-}
-
-function friendlyAuthError(message: string, action: AuthAction) {
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes("invalid login credentials")) {
-    return "The email address or password is incorrect. Check your details and try again.";
-  }
-  if (normalized.includes("email not confirmed")) {
-    return "Confirm your email address using the link we sent before signing in.";
-  }
-  if (
-    normalized.includes("already registered") ||
-    normalized.includes("already been registered") ||
-    normalized.includes("user already exists")
-  ) {
-    return "We couldn't create this account. Review the information, or use sign in or password recovery if you may already be registered.";
-  }
-  if (normalized.includes("rate limit")) {
-    return "Too many attempts were made. Wait a few minutes, then try again.";
-  }
-  if (normalized.includes("invalid email")) {
-    return "Enter a valid email address.";
-  }
-  if (
-    action === "signup" &&
-    (normalized.includes("database error") ||
-      normalized.includes("student registration requires") ||
-      normalized.includes("saving new user"))
-  ) {
-    return "We couldn't create this account. Use a Gmail or CLSU student email address and confirm that the student number is not already registered.";
-  }
-  if (action === "reset") {
-    return "We couldn't send the reset link right now. Check the email address and try again shortly.";
-  }
-  return action === "signup"
-    ? "We couldn't create the account right now. Review the information and try again."
-    : "We couldn't sign you in right now. Please try again.";
-}
-
 function usePageMetadata(title: string, description: string) {
   useEffect(() => {
     document.title = title;
@@ -258,35 +181,6 @@ function SkipLink() {
   );
 }
 
-function PortalLoader({
-  label,
-  detail = "Please keep this page open while we prepare your workspace.",
-  compact = false,
-}: {
-  label: string;
-  detail?: string;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={compact ? "portal-loader compact" : "portal-loader"}
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-    >
-      <span className="portal-loader-mark" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </span>
-      <span className="portal-loader-copy">
-        <b>{label}</b>
-        <small>{detail}</small>
-      </span>
-    </div>
-  );
-}
-
 function ButtonLoading({ label }: { label: string }) {
   return (
     <span className="button-loading">
@@ -303,6 +197,7 @@ function App() {
   const [view, setView] = useState<View>("home");
   const [slots, setSlots] = useState<Slot[]>([]);
   const [booked, setBooked] = useState<Slot[]>([]);
+  const [studentDataError, setStudentDataError] = useState("");
   const [selected, setSelected] = useState<Slot | null>(null);
   const [bookingTopic, setBookingTopic] = useState("");
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
@@ -316,28 +211,7 @@ function App() {
   const [question, setQuestion] = useState("");
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
   const forgotPasswordPath = pathname === "/forgot-password";
-  const studentMetadata: Record<View, [string, string]> = {
-    home: [
-      "Student overview | CLSU FacultyConnect",
-      "Access approved consultation guidance, requests, and faculty availability.",
-    ],
-    find: [
-      "Faculty availability | CLSU FacultyConnect",
-      "Browse faculty-published consultation schedules and expertise categories.",
-    ],
-    schedule: [
-      "My consultation requests | CLSU FacultyConnect",
-      "Review consultation request status, appointment details, and completed-session feedback.",
-    ],
-    assistant: [
-      "Consult AI | CLSU FacultyConnect",
-      "Ask questions using the approved CLSU consultation knowledge base.",
-    ],
-    profile: [
-      "My profile | CLSU FacultyConnect",
-      "Manage your FacultyConnect student profile and notification preferences.",
-    ],
-  };
+  const createAccountPath = pathname === "/create-account";
   const defaultMetadata: [string, string] =
     pathname === "/privacy" ||
     pathname === "/privacy-policy" ||
@@ -350,6 +224,11 @@ function App() {
         ? [
             "Forgot password | CLSU FacultyConnect",
             "Request a secure FacultyConnect password recovery link.",
+          ]
+      : createAccountPath
+        ? [
+            "Create student account | CLSU FacultyConnect",
+            "Create an approved CLSU FacultyConnect student account.",
           ]
       : pathname !== "/"
         ? [
@@ -491,17 +370,17 @@ function App() {
   useEffect(() => {
     if (!configured || !user?.id) return;
     const runtimeError = (event: ErrorEvent) => {
-      void recordClientError(
+      void captureClientError(
         user.id,
         "runtime_error",
         event.message || "Unknown browser runtime error",
-      ).catch(() => undefined);
+      );
     };
     const rejection = (event: PromiseRejectionEvent) => {
       const message = event.reason instanceof Error
         ? event.reason.message
         : String(event.reason || "Unhandled promise rejection");
-      void recordClientError(user.id, "unhandled_rejection", message).catch(() => undefined);
+      void captureClientError(user.id, "unhandled_rejection", message);
     };
     window.addEventListener("error", runtimeError);
     window.addEventListener("unhandledrejection", rejection);
@@ -513,6 +392,7 @@ function App() {
   async function loadStudentData(studentId: string) {
     try {
       const data = await loadStudentPortal(studentId);
+      setStudentDataError("");
       setSlots(
         data.slots.map((slot, i) => ({
           id: slot.id,
@@ -558,11 +438,10 @@ function App() {
         })),
       );
     } catch (cause) {
-      setNotice(
-        cause instanceof Error
-          ? cause.message
-          : "Student data could not be loaded.",
-      );
+      void captureClientError(studentId, "runtime_error", cause);
+      const detail = "We couldn't refresh your portal data. Check your connection and try again.";
+      setStudentDataError(detail);
+      setNotice(detail);
     }
   }
   const filtered = useMemo(
@@ -836,11 +715,11 @@ function App() {
       setReschedulingId(null);
       setView("schedule");
     } catch (cause) {
-      void recordClientError(
+      void captureClientError(
         user.id,
         "booking_error",
         cause instanceof Error ? cause.message : "Consultation booking failed",
-      ).catch(() => undefined);
+      );
       setNotice(
         cause instanceof Error
           ? cause.message
@@ -860,6 +739,7 @@ function App() {
       );
       await loadStudentData(user.id);
     } catch (cause) {
+      void captureClientError(user.id, "booking_error", cause);
       setNotice(
         cause instanceof Error
           ? cause.message
@@ -882,6 +762,7 @@ function App() {
       await loadStudentData(user.id);
       return true;
     } catch (cause) {
+      void captureClientError(user.id, "booking_error", cause);
       setNotice(
         cause instanceof Error
           ? cause.message
@@ -925,11 +806,11 @@ function App() {
         cause instanceof ChatbotRequestError &&
         (cause.status === 403 || cause.status === 429);
       if (!challengeRequired && user) {
-        void recordClientError(
+        void captureClientError(
           user.id,
           "chatbot_error",
           cause instanceof Error ? cause.message : "Chatbot request failed",
-        ).catch(() => undefined);
+        );
       }
       setChat((c) => [
         ...c,
@@ -960,7 +841,7 @@ function App() {
         clearNotice={() => setNotice("")}
       />
     );
-  if (pathname !== "/") return <NotFoundPage />;
+  if (pathname !== "/" && !createAccountPath) return <NotFoundPage />;
   if (authLoading)
     return (
       <main className="auth-loading" id="main-content">
@@ -983,6 +864,7 @@ function App() {
         signup={signup}
         clearNotice={() => setNotice("")}
         notice={notice}
+        initialCreating={createAccountPath}
       />
     );
   if (user.role !== "student")
@@ -1014,6 +896,7 @@ function App() {
     }));
   return (
     <div className="app student-app">
+      <OfflineBanner />
       <SkipLink />
       <header className="topbar">
         <button type="button" className="brand-button" onClick={() => nav("home")}>
@@ -1114,6 +997,13 @@ function App() {
             <button type="button" aria-label="Dismiss message" onClick={() => setNotice("")}>×</button>
           </div>
         )}
+        {studentDataError && (
+          <ErrorState
+            title="Your portal data could not be refreshed"
+            detail={`${studentDataError} Your existing view is still available; try again when your connection is stable.`}
+            onRetry={() => void loadStudentData(user.id)}
+          />
+        )}
         {view === "home" && <Dashboard user={user} booked={booked} go={nav} />}{" "}
         {view === "find" && (
           <FindFaculty
@@ -1177,74 +1067,21 @@ function App() {
   );
 }
 
-const studentPasswordRules = [
-  {
-    id: "length",
-    label: "At least 8 characters",
-    test: (value: string) => value.length >= 8,
-  },
-  {
-    id: "uppercase",
-    label: "One uppercase letter",
-    test: (value: string) => /[A-Z]/.test(value),
-  },
-  {
-    id: "lowercase",
-    label: "One lowercase letter",
-    test: (value: string) => /[a-z]/.test(value),
-  },
-  {
-    id: "number",
-    label: "One number",
-    test: (value: string) => /\d/.test(value),
-  },
-  {
-    id: "symbol",
-    label: "One symbol (for example: ! @ # $ %)",
-    test: (value: string) => /[^A-Za-z0-9\s]/.test(value),
-  },
-] as const;
-function studentPasswordIsValid(value: string) {
-  return studentPasswordRules.every((rule) => rule.test(value));
-}
-function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {visible ? (
-        <>
-          <path d="M3 3l18 18" />
-          <path d="M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.3A10.8 10.8 0 0 1 12 4c5.2 0 9 4.7 9 8a8.5 8.5 0 0 1-2.1 3.9M6.6 6.6C4.3 8 3 10.3 3 12c0 3.3 3.8 8 9 8 1.1 0 2.2-.2 3.1-.6" />
-        </>
-      ) : (
-        <>
-          <path d="M3 12c0-3.3 3.8-8 9-8s9 4.7 9 8-3.8 8-9 8-9-4.7-9-8Z" />
-          <circle cx="12" cy="12" r="2.5" />
-        </>
-      )}
-    </svg>
-  );
-}
 function ProductionAuth({
   login,
   signup,
   clearNotice,
   notice,
+  initialCreating = false,
 }: {
   login: (e: FormEvent<HTMLFormElement>) => Promise<void>;
   signup: (e: FormEvent<HTMLFormElement>) => Promise<void>;
   clearNotice: () => void;
   notice: string;
+  initialCreating?: boolean;
 }) {
   const { theme } = useTheme();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(initialCreating);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -1267,8 +1104,8 @@ function ProductionAuth({
   const passedRuleCount = studentPasswordRules.filter((rule) =>
     rule.test(password),
   ).length;
-  const changeMode = () => {
-    setCreating((value) => !value);
+  const changeMode = (nextCreating: boolean) => {
+    setCreating(nextCreating);
     setPassword("");
     setConfirmation("");
     setPasswordVisible(false);
@@ -1288,6 +1125,7 @@ function ProductionAuth({
   };
   return (
     <main className="auth" id="main-content">
+      <OfflineBanner />
       <SkipLink />
       <section className="auth-story">
         <div className="public-brand">
@@ -1616,7 +1454,11 @@ function ProductionAuth({
                 </small>
               </a>
             )}
-            <button type="button" className="auth-option" onClick={changeMode}>
+            <a
+              className="auth-option"
+              href={creating ? "/" : "/create-account"}
+              onClick={() => changeMode(!creating)}
+            >
               <b>
                 {creating
                   ? "Already registered? Sign in"
@@ -1627,7 +1469,7 @@ function ProductionAuth({
                   ? "Return to the secure portal login."
                   : "For students who need to request faculty consultations."}
               </small>
-            </button>
+            </a>
           </div>
           {!creating && (
             <aside className="account-type-list" aria-label="Account types">
@@ -1656,9 +1498,9 @@ function ProductionAuth({
         </form>
       </section>
       <div className="mobile-auth-cta">
-        <button type="button" onClick={changeMode}>
+        <a href={creating ? "/" : "/create-account"} onClick={() => changeMode(!creating)}>
           {creating ? "Return to sign in" : "Create a student account"}
-        </button>
+        </a>
       </div>
     </main>
   );
@@ -1705,6 +1547,7 @@ function ForgotPasswordPage({
   };
   return (
     <main className="auth auth-recovery-request" id="main-content">
+      <OfflineBanner />
       <SkipLink />
       <section className="auth-story recovery-story">
         <div className="public-brand">
@@ -1866,7 +1709,8 @@ function PasswordRecovery({
     setSaving(false);
   };
   return (
-    <main className="auth" id="main-content">
+    <main className="auth auth-recovery" id="main-content">
+      <OfflineBanner />
       <SkipLink />
       <section className="auth-story">
         <div className="public-brand">
@@ -2625,9 +2469,10 @@ function FindFaculty({
       </div>
       <section className="faculty-grid">
         {!slots.length && (
-          <div className="empty-card faculty-availability-empty">
-            No future faculty availability is currently published. This list updates automatically when faculty add new times.
-          </div>
+          <EmptyState
+            title="No published times match your search"
+            detail="Faculty schedules update automatically. Clear the search or check again after a faculty member publishes a new time."
+          />
         )}
         {slots.map((s) => (
           <article className={`faculty-card${s.booking_open === false ? " booking-closed" : ""}`} key={s.id}>
@@ -2855,10 +2700,10 @@ function Schedule({
           );
         })}
         {!booked.length && (
-          <div className="empty-card">
-            You have no consultation requests. Use Consult AI for approved
-            guidance, or view faculty availability.
-          </div>
+          <EmptyState
+            title="No consultation requests yet"
+            detail="Use Consult AI for approved guidance, then open Faculty availability to request a published time."
+          />
         )}
       </div>
     </>
@@ -3619,20 +3464,9 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   const faculty = user.role === "faculty";
   const [view, setView] = useState<FView | AView>(faculty ? "fhome" : "ahome");
   const [menu, setMenu] = useState(false);
-  const portalMetadata: Record<FView | AView, [string, string]> = {
-    fhome: ["Faculty overview | CLSU FacultyConnect", "Review consultation activity and published faculty availability."],
-    requests: ["Consultation requests | CLSU FacultyConnect", "Review, approve, decline, and complete student consultation requests."],
-    availability: ["Manage availability | CLSU FacultyConnect", "Publish and manage weekday faculty consultation schedules."],
-    fprofile: ["Faculty profile | CLSU FacultyConnect", "Manage faculty expertise and consultation profile information."],
-    ahome: ["Administration overview | CLSU FacultyConnect", "Monitor FacultyConnect users, consultations, and service performance."],
-    users: ["Users and roles | CLSU FacultyConnect", "Administer audited FacultyConnect roles and review student self-registration rules."],
-    activity: ["Active users | CLSU FacultyConnect", "Monitor recent authenticated portal activity across student, faculty, and administrator roles."],
-    appointments: ["Consultation logs | CLSU FacultyConnect", "Review consultation status, participants, schedules, and service exceptions."],
-    reviews: ["Reviews and insights | CLSU FacultyConnect", "Analyze consultation ratings and comments by year level, college, and course."],
-    knowledge: ["Chatbot training | CLSU FacultyConnect", "Train and test the consultation assistant with approved answers, example phrases, and official sources."],
-    operations: ["Operations and health | CLSU FacultyConnect", "Monitor email delivery, audit records, application errors, retention, and release evidence."],
-  };
-  usePageMetadata(portalMetadata[view][0], portalMetadata[view][1]);
+  const metadata = faculty ? facultyMetadata : adminMetadata;
+  const pageMetadata = metadata[view as keyof typeof metadata];
+  usePageMetadata(pageMetadata[0], pageMetadata[1]);
   const nav: [FView | AView, string, NavIconName][] = faculty
     ? [
         ["fhome", "Overview", "home"],
@@ -3655,6 +3489,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   };
   return (
     <div className={`app role-app ${faculty ? "faculty-app" : "admin-app"}`}>
+      <OfflineBanner />
       <SkipLink />
       <header className="topbar">
         <button
@@ -3766,37 +3601,6 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
               ]
         }
       />
-    </div>
-  );
-}
-function Head({
-  label,
-  title,
-  copy,
-}: {
-  label: string;
-  title: string;
-  copy: string;
-}) {
-  return (
-    <section className="page-head portal-head">
-      <div>
-        <p className="eyebrow">{label}</p>
-        <h1>{title}</h1>
-        <p>{copy}</p>
-      </div>
-    </section>
-  );
-}
-function Stats({ data }: { data: string[][] }) {
-  return (
-    <div className="metrics">
-      {data.map((x) => (
-        <article key={x[1]}>
-          <b>{x[0]}</b>
-          <span>{x[1]}</span>
-        </article>
-      ))}
     </div>
   );
 }
@@ -4009,6 +3813,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
     window.sessionStorage.getItem(`facultyconnect:profile-skip:${user.id}`) === "1",
   );
   const [loading, setLoading] = useState(configured);
+  const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
   const [requestFilter, setRequestFilter] = useState<
     "pending" | "confirmed" | "completed"
@@ -4032,12 +3837,12 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
       setRequests(data.requests);
       setFacultySlots(data.availability);
       setProfile(facultyProfile);
+      setLoadError("");
     } catch (cause) {
-      setMessage(
-        cause instanceof Error
-          ? cause.message
-          : "Faculty data could not be loaded.",
-      );
+      void captureClientError(user.id, "runtime_error", cause);
+      const detail = "We couldn't refresh faculty data. Check your connection and try again.";
+      setLoadError(detail);
+      setMessage(detail);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -4255,6 +4060,13 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
   ) : null;
   const feedback = (
     <>
+      {loadError && (
+        <ErrorState
+          title="Faculty workspace needs a refresh"
+          detail={`${loadError} Existing values are kept on screen while we retry.`}
+          onRetry={() => void refresh(true)}
+        />
+      )}
       {onboarding}
       {message && (
         <div className="notice" role="status" aria-live="polite">
@@ -4865,6 +4677,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     clientErrors: [],
   });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
   const [presenceQuery, setPresenceQuery] = useState("");
@@ -4905,12 +4718,12 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     if (showLoading) setLoading(true);
     try {
       setData(await loadAdminPortal());
+      setLoadError("");
     } catch (cause) {
-      setMessage(
-        cause instanceof Error
-          ? cause.message
-          : "Administration data could not be loaded.",
-      );
+      void captureClientError(user.id, "runtime_error", cause);
+      const detail = "We couldn't refresh administration data. Check your connection and try again.";
+      setLoadError(detail);
+      setMessage(detail);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -5184,12 +4997,24 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         detail="Preparing users, consultation records, and service controls."
       />
     );
-  const feedback = message && (
-    <div className="notice" role="status" aria-live="polite">
-      <b>✓</b>
-      <span>{message}</span>
-      <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
-    </div>
+  const adminLoadFailure = loadError ? (
+    <ErrorState
+      title="Administration data needs a refresh"
+      detail={`${loadError} Existing records are kept on screen while we retry.`}
+      onRetry={() => void refresh(true)}
+    />
+  ) : null;
+  const feedback = (
+    <>
+      {adminLoadFailure}
+      {message && (
+        <div className="notice" role="status" aria-live="polite">
+          <b>✓</b>
+          <span>{message}</span>
+          <button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}>×</button>
+        </div>
+      )}
+    </>
   );
   const pending = data.appointments.filter(
     (item) => item.status === "pending",

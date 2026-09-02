@@ -77,6 +77,15 @@ python -m uvicorn chatbot.app:app --reload --port 8000
 
 The chatbot accepts 2–500 characters, requires Turnstile on the first message in a trusted window, and applies per-client burst and minute limits. Vercel Firewall supplies a second edge layer in production.
 
+### Public routes and resilience
+
+- `/` is the shared sign-in page; `/create-account` is the dedicated student registration entry point.
+- `/forgot-password` handles password recovery and never reveals whether an email is registered.
+- Authenticated workspaces show an offline banner, bounded loading state, retryable data errors, and explicit empty states. The AI transcript scrolls inside its panel so the browser page remains anchored.
+- Frontend render/runtime errors, chatbot failures, and booking failures are privacy-filtered into `client_error_events`. Email queue failures and Resend delivery events are visible in the administrator Operations and system health page.
+
+The frontend is organized around role boundaries under `src/modules/`: authentication helpers and controls live in `auth`, student/faculty/admin metadata and role surfaces live in their respective folders, and shared types, monitoring, portal states, and scaffolding live in `shared`. `App.tsx` composes these boundaries while the remaining legacy page components are migrated incrementally.
+
 ## Backend and deployment
 
 ```powershell
@@ -89,6 +98,15 @@ npx supabase functions deploy resend-webhook --no-verify-jwt
 ```
 
 Configure server-only secrets in Supabase/Vercel, then open a pull request to `main`. GitHub Actions and the Vercel preview must pass before merge. Server secret names and full rollout instructions are in [BACKEND_SETUP.md](BACKEND_SETUP.md); backup and retention drills are in [BACKUP_RETENTION_RUNBOOK.md](BACKUP_RETENTION_RUNBOOK.md).
+
+The backup script requires Docker Desktop because the Supabase CLI runs `pg_dump` in a container. To perform a non-production restore drill, create an isolated Supabase project, install `psql`, set `FACULTYCONNECT_RESTORE_DATABASE_URL` to that project's connection string, and run:
+
+```powershell
+powershell -File scripts/backup-database.ps1 -OutputDirectory C:\Secure\facultyconnect-backups
+powershell -File scripts/verify-backup-restore.ps1 -BackupDirectory C:\Secure\facultyconnect-backups
+```
+
+The backup command also writes a matching `.sha256` manifest; the restore script verifies it when present, refuses production-looking hosts, and never deletes data. After the restore, point a temporary Preview deployment at the isolated project and run the lifecycle E2E suite before removing the temporary project.
 
 ## Security model
 
