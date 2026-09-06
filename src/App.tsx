@@ -1104,15 +1104,6 @@ function ProductionAuth({
   const passedRuleCount = studentPasswordRules.filter((rule) =>
     rule.test(password),
   ).length;
-  const changeMode = (nextCreating: boolean) => {
-    setCreating(nextCreating);
-    setPassword("");
-    setConfirmation("");
-    setPasswordVisible(false);
-    setCaptchaToken("");
-    setCaptchaGeneration((value) => value + 1);
-    clearNotice();
-  };
   const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
     setSubmittingAuth(true);
     try {
@@ -1457,7 +1448,6 @@ function ProductionAuth({
             <a
               className="auth-option"
               href={creating ? "/" : "/create-account"}
-              onClick={() => changeMode(!creating)}
             >
               <b>
                 {creating
@@ -1498,7 +1488,7 @@ function ProductionAuth({
         </form>
       </section>
       <div className="mobile-auth-cta">
-        <a href={creating ? "/" : "/create-account"} onClick={() => changeMode(!creating)}>
+        <a href={creating ? "/" : "/create-account"}>
           {creating ? "Return to sign in" : "Create a student account"}
         </a>
       </div>
