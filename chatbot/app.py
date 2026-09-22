@@ -623,16 +623,16 @@ def _rank_knowledge(message: str, items: list[KnowledgeItem]) -> tuple[Knowledge
     best_score = 0.0
     normalized = " ".join(message.lower().split())
     for item in items:
-        example_phrases = " ".join(item.training_phrases)
-        candidate = f"{item.question} {item.category} {example_phrases}"
-        candidate_tokens = _tokens(candidate)
-        overlap = len(query_tokens & candidate_tokens) / max(1, len(query_tokens | candidate_tokens))
-        phrase_candidates = (item.question, *item.training_phrases)
-        sequence = max(
-            SequenceMatcher(None, normalized, phrase.lower()).ratio()
-            for phrase in phrase_candidates
+        fields = (item.question, item.category, *item.training_phrases)
+        best_overlap = max(
+            len(query_tokens & _tokens(field)) / max(1, len(query_tokens | _tokens(field)))
+            for field in fields
         )
-        score = overlap * 0.72 + sequence * 0.28
+        best_sequence = max(
+            SequenceMatcher(None, normalized, field.lower()).ratio()
+            for field in fields
+        )
+        score = best_overlap * 0.72 + best_sequence * 0.28
         if score > best_score:
             best, best_score = item, score
     return best, best_score
@@ -877,18 +877,10 @@ def _live_faculty_response(
     matches = _faculty_matches(message, faculty)
     if intent == "availability":
         matches = [item for item in matches if item.next_slots]
-    if not matches:
-        return ChatResponse(
-            answer=(
-                "I could not find a verified faculty profile or open time matching that subject. "
-                "Try the subject name, course title, consultation topic, or faculty surname, then check Faculty availability."
-            ),
-            intent=intent,
-            confidence=0.78,
-            escalation=False,
-            source="Live CLSU faculty profiles and published availability",
-            suggestions=["Show faculty with open times", "How do I request a consultation?"],
-        )
+        
+       if not matches:
+        return None
+           
     lines: list[str] = []
     for item in matches[:4]:
         labels = list(item.subjects[:2] or item.expertise[:2] or item.consultation_topics[:2])
@@ -943,6 +935,19 @@ def build_response(
     knowledge: list[KnowledgeItem],
     faculty: list[FacultyDirectoryItem] | None = None,
 ) -> ChatResponse:
+    
+     intent, intent_confidence = classify_intent(message)
+
+    matched_item, faq_score = _rank_knowledge(message, knowledge)
+    if matched_item and faq_score >= 0.27:
+        return ChatResponse(
+            answer=matched_item.answer,
+            intent=intent if intent != "fallback" else "approved_faq",
+            confidence=min(0.98, 0.62 + faq_score * 0.36),
+            escalation=False,
+            source=matched_item.source_reference,
+        )
+
     if is_sensitive(message):
         return ChatResponse(
             answer=(
@@ -956,20 +961,10 @@ def build_response(
             suggestions=["Ask about consultation booking", "View faculty availability"],
         )
 
-    intent, intent_confidence = classify_intent(message)
     intent = _infer_discovery_intent(message, intent, faculty or [])
     live_response = _live_faculty_response(message, intent, faculty or [])
     if live_response:
         return live_response
-    matched_item, faq_score = _rank_knowledge(message, knowledge)
-    if matched_item and faq_score >= 0.27:
-        return ChatResponse(
-            answer=matched_item.answer,
-            intent=intent if intent != "fallback" else "approved_faq",
-            confidence=min(0.98, 0.62 + faq_score * 0.36),
-            escalation=False,
-            source=matched_item.source_reference,
-        )
 
     if intent == "office_hours":
         return ChatResponse(
