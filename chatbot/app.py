@@ -877,10 +877,10 @@ def _live_faculty_response(
     matches = _faculty_matches(message, faculty)
     if intent == "availability":
         matches = [item for item in matches if item.next_slots]
-        
-       if not matches:
+
+    if not matches:
         return None
-           
+
     lines: list[str] = []
     for item in matches[:4]:
         labels = list(item.subjects[:2] or item.expertise[:2] or item.consultation_topics[:2])
@@ -935,8 +935,7 @@ def build_response(
     knowledge: list[KnowledgeItem],
     faculty: list[FacultyDirectoryItem] | None = None,
 ) -> ChatResponse:
-    
-     intent, intent_confidence = classify_intent(message)
+    intent, intent_confidence = classify_intent(message)
 
     matched_item, faq_score = _rank_knowledge(message, knowledge)
     if matched_item and faq_score >= 0.27:

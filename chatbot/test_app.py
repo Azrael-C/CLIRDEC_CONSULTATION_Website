@@ -5,7 +5,14 @@ from unittest.mock import patch
 
 import app
 from fastapi import HTTPException
-from app import FacultyDirectoryItem, KnowledgeItem, build_response, classify_intent, is_sensitive
+from app import (
+    FacultyDirectoryItem,
+    KnowledgeItem,
+    _rank_knowledge,
+    build_response,
+    classify_intent,
+    is_sensitive,
+)
 
 
 class AssistantTests(unittest.TestCase):
@@ -50,6 +57,53 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(response.source, "FacultyConnect consultation procedure")
         self.assertIn("confirmed request", response.answer)
 
+    def test_faq_with_broad_sensitive_term_wins_before_sensitive_referral(self):
+        cases = (
+            (
+                "How do I file a complaint about a consultation?",
+                "Consultation complaints",
+                "Use the approved consultation review process.",
+                "CLIRDEC consultation review procedure",
+            ),
+            (
+                "How can I view my grades in the portal?",
+                "Academic records guidance",
+                "Use the approved academic-records guidance.",
+                "CLIRDEC academic records procedure",
+            ),
+        )
+        for question, category, answer, source in cases:
+            with self.subTest(question=question):
+                response = build_response(
+                    question,
+                    [KnowledgeItem(
+                        question=question,
+                        answer=answer,
+                        category=category,
+                        source_reference=source,
+                    )],
+                )
+                self.assertFalse(response.escalation)
+                self.assertEqual(response.answer, answer)
+                self.assertEqual(response.source, source)
+
+    def test_training_phrase_score_is_not_diluted_by_other_phrases(self):
+        target = KnowledgeItem(
+            question="Online consultation information",
+            answer="Open the confirmed request to view the approved meeting link.",
+            category="Consultation location",
+            source_reference="FacultyConnect consultation procedure",
+            training_phrases=(
+                "Where is my online meeting link?",
+                "How do I update my profile?",
+                "How do I cancel a request?",
+                "Where can I see faculty availability?",
+            ),
+        )
+        matched, score = _rank_knowledge("Where is my online meeting link?", [target])
+        self.assertIs(matched, target)
+        self.assertGreater(score, 0.9)
+
     def test_live_faculty_subject_match_uses_verified_database_fields(self):
         response = build_response(
             "Who can help me with database management?",
@@ -70,7 +124,7 @@ class AssistantTests(unittest.TestCase):
         self.assertIn("Database Management", response.answer)
         self.assertEqual(response.source, "Live CLSU faculty profiles and published availability")
 
-    def test_live_availability_never_invents_an_open_time(self):
+    def test_live_availability_without_matches_falls_through_to_default_answer(self):
         response = build_response(
             "When is Dr. Maria Santos available?",
             [],
@@ -87,7 +141,9 @@ class AssistantTests(unittest.TestCase):
             )],
         )
         self.assertEqual(response.intent, "availability")
-        self.assertIn("could not find", response.answer)
+        self.assertFalse(response.escalation)
+        self.assertIn("portal shows future Monday-to-Friday times", response.answer)
+        self.assertEqual(response.source, "Faculty-maintained availability schedule")
 
     def test_subject_only_question_can_trigger_faculty_discovery(self):
         response = build_response(
