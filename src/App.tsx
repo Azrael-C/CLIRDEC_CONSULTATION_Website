@@ -1309,8 +1309,8 @@ function ProductionAuth({
               <div
                 className={
                   passwordVisible
-                    ? "password-privacy visible"
-                    : "password-privacy"
+                    ? "password-privacy password-guidance visible"
+                    : "password-privacy password-guidance"
                 }
                 role="status"
               >
@@ -1561,7 +1561,7 @@ function ForgotPasswordPage({
           FacultyConnect never asks you to send your password by email.
         </small>
       </section>
-      <section className="auth-panel recovery-panel">
+      <section className="auth-panel recovery-panel recovery-screen">
         <div className="auth-theme-control"><ThemeToggle /></div>
         <form className="login recovery-request-card" onSubmit={submit}>
           <span className="mobile-brand">

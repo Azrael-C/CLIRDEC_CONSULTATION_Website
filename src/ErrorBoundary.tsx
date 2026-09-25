@@ -25,7 +25,7 @@ export class ErrorBoundary extends Component<
   render() {
     if (!this.state.failed) return this.props.children;
     return (
-      <main className="fatal-error" id="main-content">
+      <main className="fatal-error error-boundary" id="main-content">
         <section>
           <p className="eyebrow">PORTAL RECOVERY</p>
           <h1>FacultyConnect could not display this page.</h1>

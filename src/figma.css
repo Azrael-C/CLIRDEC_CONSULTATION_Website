@@ -1,3 +1,48 @@
+/* Dark-mode coverage for recovery, error, status, and calendar surfaces. */
+html[data-theme="dark"] .error-boundary {
+  background: radial-gradient(circle at 15% 15%,rgba(54,191,122,.12),transparent 34%),#071510;
+  color: #f2faf5;
+}
+html[data-theme="dark"] .error-boundary section {
+  border-color: #294036;
+  background: #10231a;
+  box-shadow: 0 24px 60px rgba(0,0,0,.42);
+}
+html[data-theme="dark"] .error-boundary section p:not(.eyebrow) { color: #b4c7bb; }
+html[data-theme="dark"] .booking-status.closed {
+  border-color: #6b3d36;
+  background: #432824;
+  color: #ffc1b8;
+}
+html[data-theme="dark"] .password-guidance { color: #f2faf5; }
+html[data-theme="dark"] .password-guidance small,
+html[data-theme="dark"] .password-rules li,
+html[data-theme="dark"] .login .privacy-confirmation { color: #b4c7bb; }
+html[data-theme="dark"] .password-visibility { color: #9fe8bb; }
+html[data-theme="dark"] .password-visibility:hover { background: #173a2a; }
+html[data-theme="dark"] .password-rules li span { border-color: #3c6650; color: #b4c7bb; }
+html[data-theme="dark"] .password-rules li.passed { color: #9fe8bb; }
+html[data-theme="dark"] .recovery-screen .recovery-success-symbol {
+  background: #173a2a;
+  color: #9fe8bb;
+  box-shadow: inset 4px 4px 9px rgba(0,0,0,.24),inset -5px -5px 10px rgba(63,112,83,.18);
+}
+html[data-theme="dark"] .recovery-screen .recovery-back-link { color: #9fe8bb; }
+html[data-theme="dark"] .recovery-screen .legal-link-button {
+  border-color: #3c6650;
+  background: #132b20;
+  color: #b4c7bb;
+}
+html[data-theme="dark"] .recovery-screen .legal-link-button:hover {
+  border-color: #5b9674;
+  background: #193a2a;
+}
+html[data-theme="dark"] :where(.calendar-corner,.calendar-day,.calendar-time) {
+  background: #132b20;
+  color: #b4c7bb;
+}
+html[data-theme="dark"] .calendar-day b { color: #9fe8bb; }
+html[data-theme="dark"] .calendar-day small { color: #b4c7bb; }
 /* High-fidelity CLSU FacultyConnect interface derived from the approved Figma prototype. */
 :root {
   --figma-green: #087a49;
