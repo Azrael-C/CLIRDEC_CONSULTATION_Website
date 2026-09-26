@@ -4661,6 +4661,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     auditLogs: [],
     retentionPolicies: [],
     clientErrors: [],
+    warnings: [],
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -5023,6 +5024,15 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         </button>
       </div>
       {adminLoadFailure}
+      {!loadError && data.warnings.length > 0 && (
+        <div className="notice warning" role="status" aria-live="polite">
+          <b>Some panels need attention</b>
+          <span>
+            Core administration data is available, but these service panels could not be refreshed: {data.warnings.join(", ")}.
+          </span>
+          <button type="button" aria-label="Dismiss message" onClick={() => setData((current) => ({ ...current, warnings: [] }))}>×</button>
+        </div>
+      )}
       {message && (
         <div className="notice" role="status" aria-live="polite">
           <b>✓</b>
