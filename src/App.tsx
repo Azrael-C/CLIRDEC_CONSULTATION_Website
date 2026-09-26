@@ -4663,6 +4663,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     clientErrors: [],
   });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
@@ -4700,19 +4702,29 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [trainingLibraryStatus, setTrainingLibraryStatus] = useState<
     "all" | FaqStatus
   >("all");
-  const refresh = async (showLoading = false) => {
-    if (showLoading) setLoading(true);
-    try {
-      setData(await loadAdminPortal());
-      setLoadError("");
-    } catch (cause) {
-      void captureClientError(user.id, "runtime_error", cause);
-      const detail = "We couldn't refresh administration data. Check your connection and try again.";
-      setLoadError(detail);
-      setMessage(detail);
-    } finally {
-      if (showLoading) setLoading(false);
-    }
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+  const refresh = (showLoading = false) => {
+    if (refreshInFlight.current) return refreshInFlight.current;
+    const request = (async () => {
+      if (showLoading) setLoading(true);
+      setRefreshing(true);
+      try {
+        setData(await loadAdminPortal());
+        setLoadError("");
+        setLastUpdatedAt(new Date());
+      } catch (cause) {
+        void captureClientError(user.id, "runtime_error", cause);
+        const detail = "We couldn't refresh administration data. Check your connection and try again.";
+        setLoadError(detail);
+        setMessage(detail);
+      } finally {
+        setRefreshing(false);
+        if (showLoading) setLoading(false);
+        refreshInFlight.current = null;
+      }
+    })();
+    refreshInFlight.current = request;
+    return request;
   };
   useEffect(() => {
     const backgroundRefresh = () => void refresh(false);
@@ -4992,6 +5004,24 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   ) : null;
   const feedback = (
     <>
+      <div className="admin-data-toolbar" aria-label="Administration data refresh">
+        <span>
+          <b>Live administration data</b>
+          <small>
+            {lastUpdatedAt
+              ? `Last refreshed ${formatManilaDateTime(lastUpdatedAt, { hour: "numeric", minute: "2-digit", second: "2-digit" })}`
+              : "Refreshing users, consultations, reviews, and service records"}
+          </small>
+        </span>
+        <button
+          type="button"
+          className="outline"
+          onClick={() => void refresh(false)}
+          disabled={refreshing}
+        >
+          {refreshing ? "Refreshing…" : "Refresh data"}
+        </button>
+      </div>
       {adminLoadFailure}
       {message && (
         <div className="notice" role="status" aria-live="polite">
