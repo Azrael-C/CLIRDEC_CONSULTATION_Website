@@ -2187,6 +2187,49 @@ html[data-theme="dark"] .sidebar { background: linear-gradient(180deg,#0d1f17,#0
 html[data-theme="dark"] .content { background: radial-gradient(circle at 95% 3%,rgba(243,197,31,.04),transparent 20rem),radial-gradient(circle at 3% 95%,rgba(54,191,122,.05),transparent 24rem),#091a13; }
 html[data-theme="dark"] :is(.work-card,.data-card,.faculty-card,.chatbot,.profile-details,.profile-details-v2,.faculty-profile-editor,.notification-panel,.policy-copy,.policy-layout nav,.modal) { background: #10231a; border-color: #294036; }
 
+/* Recovery page polish: keep the three-step guide readable at desktop widths.
+   The shared auth-story checkmark pseudo-element used to become a third grid
+   item, leaving the step copy in a 30px column and wrapping every word. */
+.recovery-story > div:nth-child(2) { max-width: 760px; }
+.recovery-story h1 { max-width: 660px; font-size: clamp(3rem, 5vw, 5.1rem); line-height: .99; text-wrap: balance; }
+.recovery-steps { max-width: 760px; gap: .85rem; }
+.auth-story .recovery-steps li {
+  grid-template-columns: 30px 30px;
+  grid-template-rows: auto auto;
+  align-items: start;
+  min-width: 0;
+  min-height: 112px;
+  padding: .85rem;
+}
+.auth-story .recovery-steps li::before {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--figma-yellow);
+  color: #183d29;
+  line-height: 1;
+}
+.auth-story .recovery-steps li > b {
+  grid-column: 2;
+  grid-row: 1;
+  width: 30px;
+  height: 30px;
+}
+.auth-story .recovery-steps li > span {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  overflow-wrap: normal;
+}
+@media (max-width: 900px) {
+  .auth-story .recovery-steps li { min-height: 0; }
+}
+
 /* Dark role portals use opaque surfaces instead of retaining the translucent
    white gradients from the light high-fidelity theme. */
 html[data-theme="dark"] {
