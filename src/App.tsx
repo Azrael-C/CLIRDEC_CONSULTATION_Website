@@ -4664,7 +4664,6 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     warnings: [],
   });
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
@@ -4708,7 +4707,6 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     if (refreshInFlight.current) return refreshInFlight.current;
     const request = (async () => {
       if (showLoading) setLoading(true);
-      setRefreshing(true);
       try {
         setData(await loadAdminPortal());
         setLoadError("");
@@ -4719,7 +4717,6 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         setLoadError(detail);
         setMessage(detail);
       } finally {
-        setRefreshing(false);
         if (showLoading) setLoading(false);
         refreshInFlight.current = null;
       }
@@ -5011,17 +5008,9 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           <small>
             {lastUpdatedAt
               ? `Last refreshed ${formatManilaDateTime(lastUpdatedAt, { hour: "numeric", minute: "2-digit", second: "2-digit" })}`
-              : "Refreshing users, consultations, reviews, and service records"}
+            : "Refreshing users, consultations, reviews, and service records"}
           </small>
         </span>
-        <button
-          type="button"
-          className="outline"
-          onClick={() => void refresh(false)}
-          disabled={refreshing}
-        >
-          {refreshing ? "Refreshing…" : "Refresh data"}
-        </button>
       </div>
       {adminLoadFailure}
       {!loadError && data.warnings.length > 0 && (
