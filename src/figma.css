@@ -2358,11 +2358,13 @@ html[data-theme="dark"] .student-content .faculty-card {
   background: linear-gradient(145deg,#122b20,#0d2218);
   box-shadow: 0 13px 34px rgba(0,0,0,.22);
 }
+html[data-theme="dark"] .student-content .scope-note :is(b,span) { color: #bfd1c5; }
 html[data-theme="dark"] .student-content .search-box:focus-within { border-color: #55d995; box-shadow: 0 0 0 4px rgba(69,208,137,.12),0 14px 34px rgba(0,0,0,.25); }
 html[data-theme="dark"] .student-content .chat-head { background: linear-gradient(90deg,rgba(69,208,137,.13),rgba(244,205,63,.06)); }
 html[data-theme="dark"] .student-content .message-wrap.bot p { border-color: #345642; background: #142f22; box-shadow: 0 7px 18px rgba(0,0,0,.18); }
 html[data-theme="dark"] .assistant-safety span,
 html[data-theme="dark"] .chat-trust-active { border-color: #355d47; background: #133024; color: #8ce8b7; }
+html[data-theme="dark"] .student-content.view-assistant .chat-source { background: #142a20; color: #bfd1c5; }
 
 html[data-theme="dark"] :is(.faculty-content,.admin-content) .metrics article,
 html[data-theme="dark"] :is(.faculty-content,.admin-content) .work-card,
