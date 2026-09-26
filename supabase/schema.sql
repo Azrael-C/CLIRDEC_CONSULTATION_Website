@@ -220,6 +220,26 @@ create unique index one_availability_email_event_per_recipient
   on public.email_notifications(availability_id,recipient_id,event_type)
   where availability_id is not null and appointment_id is null;
 
+-- Resend webhook evidence is part of the canonical bootstrap schema. The
+-- matching ordered migration is idempotent for existing pilot projects.
+create table if not exists public.email_delivery_events (
+  webhook_id text primary key,
+  provider_email_id text not null,
+  event_type text not null check (event_type in (
+    'email.sent','email.delivered','email.delivery_delayed',
+    'email.bounced','email.complained','email.failed','email.suppressed'
+  )),
+  event_created_at timestamptz not null,
+  recipient_addresses text[] not null default '{}',
+  subject text,
+  details jsonb not null default '{}'::jsonb,
+  received_at timestamptz not null default now()
+);
+create index if not exists email_delivery_events_provider_email_id_idx
+  on public.email_delivery_events(provider_email_id, received_at desc);
+create index if not exists email_delivery_events_received_at_idx
+  on public.email_delivery_events(received_at desc);
+
 -- Product Owner-approved knowledge used by the NLP service. Draft and review
 -- entries remain invisible to students until an administrator approves them.
 create table public.faq_entries (
@@ -282,6 +302,7 @@ alter table public.faculty_profiles enable row level security;
 alter table public.availability enable row level security;
 alter table public.appointments enable row level security;
 alter table public.email_notifications enable row level security;
+alter table public.email_delivery_events enable row level security;
 alter table public.faq_entries enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.registration_allowlist enable row level security;
@@ -415,6 +436,7 @@ create policy "faculty and admin decide appointments" on public.appointments for
 using (exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin')
 with check (exists(select 1 from availability a where a.id=availability_id and a.faculty_id=auth.uid()) or public.current_role()='admin');
 create policy "users read own email history" on public.email_notifications for select to authenticated using (recipient_id=auth.uid() or public.current_role()='admin');
+create policy "admins read delivery events" on public.email_delivery_events for select to authenticated using (public.current_role()='admin');
 create policy "users read approved FAQ entries" on public.faq_entries for select to authenticated using (status='approved' or public.current_role()='admin');
 create policy "admins create FAQ entries" on public.faq_entries for insert to authenticated with check (public.current_role()='admin' and created_by=auth.uid());
 create policy "admins update FAQ entries" on public.faq_entries for update to authenticated using (public.current_role()='admin') with check (public.current_role()='admin');
@@ -464,6 +486,7 @@ revoke all on table public.faculty_profiles from anon,authenticated;
 revoke all on table public.availability from anon,authenticated;
 revoke all on table public.appointments from anon,authenticated;
 revoke all on table public.email_notifications from anon,authenticated;
+revoke all on table public.email_delivery_events from public,anon,authenticated;
 revoke all on table public.faq_entries from anon,authenticated;
 revoke all on table public.audit_logs from anon,authenticated;
 revoke all on table public.registration_allowlist from anon,authenticated;
@@ -476,6 +499,8 @@ grant update (expertise,bio,subjects,consultation_topics,research_interests,offi
 grant select,insert on public.availability to authenticated;
 grant select on public.appointments to authenticated;
 grant select on public.email_notifications to authenticated;
+grant select on public.email_delivery_events to authenticated;
+grant select,insert on public.email_delivery_events to service_role;
 grant select,insert,update,delete on public.faq_entries to authenticated;
 grant select on public.audit_logs to authenticated;
 grant select,insert,update,delete on public.registration_allowlist to authenticated;
