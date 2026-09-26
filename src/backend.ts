@@ -186,6 +186,7 @@ export type AdminPortal = {
   auditLogs: AuditEntry[];
   retentionPolicies: RetentionPolicy[];
   clientErrors: ClientErrorEvent[];
+  warnings: string[];
 };
 
 export type AdminNotificationSummary = {
@@ -752,13 +753,34 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       .order("created_at", { ascending: false })
       .limit(100),
   ]);
-  if (userError || appointmentError || faqError || reviewError || chatbotGapError || emailNotificationError || deliveryEventError || auditError || retentionError || retentionPreviewError || clientError) {
+  // Users, appointments, FAQs, and reviews power the core admin views. Keep
+  // those strict so a permission or schema problem cannot quietly show false
+  // counts. Operational telemetry is supplementary, however: a single
+  // missing/temporarily restricted table should not blank the entire portal.
+  if (userError || appointmentError || faqError || reviewError) {
     throw new Error(
       friendlyError(
         userError || appointmentError || faqError || reviewError || chatbotGapError || emailNotificationError || deliveryEventError || auditError || retentionError || retentionPreviewError || clientError,
         "The administration workspace could not be loaded.",
       ),
     );
+  }
+
+  const warnings = [
+    ["chatbot unanswered questions", chatbotGapError],
+    ["email notifications", emailNotificationError],
+    ["email delivery events", deliveryEventError],
+    ["audit logs", auditError],
+    ["retention policies", retentionError],
+    ["retention preview", retentionPreviewError],
+    ["client error events", clientError],
+  ]
+    .filter(([, error]) => Boolean(error))
+    .map(([label]) => label as string);
+  if (warnings.length) {
+    // Keep database details out of the UI, but leave a useful diagnostic in
+    // the browser console for an administrator or support engineer.
+    console.warn("Some administration panels could not be refreshed:", warnings);
   }
 
   const profileMap = new Map(
@@ -810,6 +832,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       eligible_records: Number((retentionPreview || []).find((item: any) => item.record_type === policy.record_type)?.eligible_records || 0),
     })) as RetentionPolicy[],
     clientErrors: (clientErrors || []) as ClientErrorEvent[],
+    warnings,
   };
 }
 
