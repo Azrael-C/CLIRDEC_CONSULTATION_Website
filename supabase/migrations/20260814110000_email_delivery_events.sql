@@ -1,8 +1,7 @@
--- LEGACY COMPATIBILITY FILE.
--- New rollouts must use the ordered migration
--- 20260814110000_email_delivery_events.sql instead. This idempotent copy is
--- retained only for older pilot environments that still follow the original
--- standalone rollout instructions.
+-- Canonical email delivery evidence schema.
+-- This migration must run before operations_hardening and the Resend event-type
+-- migrations because those migrations create policies and retention previews
+-- against public.email_delivery_events.
 begin;
 
 alter table public.email_notifications
@@ -27,6 +26,11 @@ create table if not exists public.email_delivery_events (
   details jsonb not null default '{}'::jsonb,
   received_at timestamptz not null default now()
 );
+
+create index if not exists email_delivery_events_provider_email_id_idx
+  on public.email_delivery_events(provider_email_id, received_at desc);
+create index if not exists email_delivery_events_received_at_idx
+  on public.email_delivery_events(received_at desc);
 
 alter table public.email_delivery_events enable row level security;
 revoke all on public.email_delivery_events from public,anon,authenticated;

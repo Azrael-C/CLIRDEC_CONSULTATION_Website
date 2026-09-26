@@ -8,9 +8,11 @@ verify_jwt = false
 # Authentication -> Email Templates -> Reset password in the Supabase dashboard.
 [auth.email.template.recovery]
 subject = "Reset your CLSU FacultyConnect password"
+# Authentication templates use a project-root-relative path.
 content_path = "./supabase/templates/recovery.html"
 
 [auth.email.notification.password_changed]
 enabled = true
 subject = "Your CLSU FacultyConnect password was changed"
+# Security notification templates resolve relative to the supabase directory.
 content_path = "./templates/password-changed.html"

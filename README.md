@@ -29,7 +29,7 @@ Cloudflare
   └─ Worker Cron draining the email queue every five minutes
 ```
 
-Production deploys from `main` to Vercel. Database changes live in `supabase/migrations`. Follow [BACKEND_SETUP.md](BACKEND_SETUP.md) for the required rollout order.
+Production deploys from `main` to Vercel. `supabase/schema.sql` is the canonical bootstrap and includes email delivery evidence; incremental database changes live in the ordered `supabase/migrations` directory. The idempotent `20260814110000_email_delivery_events.sql` migration protects existing pilot projects before the operations and Resend event-type migrations. Follow [BACKEND_SETUP.md](BACKEND_SETUP.md) for the required rollout order.
 
 | Area | Technology |
 | --- | --- |
@@ -82,7 +82,7 @@ The chatbot accepts 2–500 characters, requires Turnstile on the first message 
 - `/` is the shared sign-in page; `/create-account` is the dedicated student registration entry point.
 - `/forgot-password` handles password recovery and never reveals whether an email is registered.
 - Authenticated workspaces show an offline banner, bounded loading state, retryable data errors, and explicit empty states. The AI transcript scrolls inside its panel so the browser page remains anchored.
-- Frontend render/runtime errors, chatbot failures, and booking failures are privacy-filtered into `client_error_events`. Email queue failures and Resend delivery events are visible in the administrator Operations and system health page.
+- Frontend render/runtime errors, chatbot failures, booking failures, and user reports are privacy-filtered into `client_error_events`. Reports accept variable-length context; the server redacts emails/identifiers and applies a 5,000-character safety bound. Email queue failures and Resend delivery events are visible in the administrator Operations and system health page.
 
 The frontend is organized around role boundaries under `src/modules/`: authentication helpers and controls live in `auth`, student/faculty/admin metadata and role surfaces live in their respective folders, and shared types, monitoring, portal states, and scaffolding live in `shared`. `App.tsx` composes these boundaries while the remaining legacy page components are migrated incrementally.
 

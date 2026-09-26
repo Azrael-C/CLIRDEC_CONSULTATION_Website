@@ -2055,7 +2055,7 @@ function PortalFooterActions({
   const submitPortalIssue = async (event: FormEvent) => {
     event.preventDefault();
     const details = reportDetails.trim();
-    if (details.length < 10) return;
+    if (!details) return;
     setReportSubmitting(true);
     try {
       await recordClientError(
@@ -2163,11 +2163,9 @@ function PortalFooterActions({
                   value={reportDetails}
                   onChange={(event) => setReportDetails(event.target.value)}
                   placeholder="Describe the page, action, and result you expected."
-                  minLength={10}
-                  maxLength={400}
                   required
                 />
-                <small>{reportDetails.length}/400 characters</small>
+                <small>Include as much context as needed. Do not include confidential information.</small>
               </label>
               <p className="report-privacy-note">
                 Do not include passwords, student numbers, grades, or confidential consultation details.
@@ -2176,7 +2174,7 @@ function PortalFooterActions({
                 <button type="button" className="outline" onClick={() => setReportOpen(false)}>
                   Cancel
                 </button>
-                <button className="primary" disabled={reportSubmitting || reportDetails.trim().length < 10}>
+                <button className="primary" disabled={reportSubmitting || !reportDetails.trim()}>
                   {reportSubmitting ? "Sending…" : "Send report"}
                 </button>
               </div>
@@ -3084,7 +3082,7 @@ function Chat({
   const submitIssueReport = async (event: FormEvent) => {
     event.preventDefault();
     const details = reportDetails.trim();
-    if (details.length < 10) return;
+    if (!details) return;
     setReportSubmitting(true);
     try {
       await recordClientError(
@@ -3317,11 +3315,9 @@ function Chat({
                   value={reportDetails}
                   onChange={(event) => setReportDetails(event.target.value)}
                   placeholder="Describe the question, response, or screen that needs attention."
-                  minLength={10}
-                  maxLength={400}
                   required
                 />
-                <small>{reportDetails.length}/400 characters</small>
+                <small>Include as much context as needed. Do not include confidential information.</small>
               </label>
               <p className="report-privacy-note">
                 Do not include passwords, student numbers, grades, or confidential consultation details.
@@ -3330,7 +3326,7 @@ function Chat({
                 <button type="button" className="outline" onClick={() => setReportOpen(false)}>
                   Cancel
                 </button>
-                <button className="primary" disabled={reportSubmitting || reportDetails.trim().length < 10}>
+                <button className="primary" disabled={reportSubmitting || !reportDetails.trim()}>
                   {reportSubmitting ? "Sending…" : "Send report"}
                 </button>
               </div>
