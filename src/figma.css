@@ -1941,6 +1941,14 @@ body {
 .operations-overview.attention .operations-state { color: #8a6500; }
 .operations-overview.checking .operations-state { color: #65736a; }
 .operations-refresh { flex: 0 0 auto; min-width: 132px; background: rgba(255,255,255,.78); }
+.admin-data-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .9rem; padding: .65rem .8rem; border: 1px solid #d8e5dc; border-radius: 11px; background: rgba(255,255,255,.72); }
+.admin-data-toolbar > span { display: grid; gap: .12rem; min-width: 0; }
+.admin-data-toolbar b { color: var(--portal-accent); font-size: .68rem; }
+.admin-data-toolbar small { color: var(--figma-muted); font-size: .6rem; line-height: 1.35; }
+.admin-data-toolbar button { flex: 0 0 auto; min-height: 36px; padding: .5rem .75rem; font-size: .65rem; }
+html[data-theme="dark"] .admin-data-toolbar { border-color: #294b3b; background: rgba(17,43,31,.82); }
+html[data-theme="dark"] .admin-data-toolbar small { color: #a8bdb0; }
+html[data-theme="dark"] .admin-data-toolbar button { border-color: #3c6650; background: #173a2a; color: #d6f3df; }
 .operations-summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .7rem; margin-bottom: .9rem; }
 .operations-summary-grid article { position: relative; display: grid; gap: .23rem; min-width: 0; min-height: 112px; align-content: center; padding: .9rem; overflow: hidden; border: 1px solid #d8e3db; border-radius: 13px; background: #fff; box-shadow: 0 7px 20px rgba(25,64,43,.04); }
 .operations-summary-grid article::after { content: ""; position: absolute; width: 55px; height: 55px; right: -25px; top: -25px; border-radius: 50%; background: rgba(var(--portal-accent-rgb),.06); }
@@ -2135,6 +2143,8 @@ html[data-theme="dark"] textarea:focus-visible { outline-color: #f2ca39; }
 @media (max-width: 760px) {
   .training-form-columns,.training-governance-section .training-governance-fields { grid-template-columns: 1fr; }
   .training-entry-form textarea[name="answer"],.training-entry-form textarea[name="trainingPhrases"] { min-height: 102px; }
+  .admin-data-toolbar { align-items: stretch; flex-direction: column; }
+  .admin-data-toolbar button { width: 100%; }
   .operations-overview { align-items: stretch; flex-direction: column; }
   .operations-refresh { width: 100%; }
   .operations-issue-list article { grid-template-columns: 32px minmax(0,1fr); }
