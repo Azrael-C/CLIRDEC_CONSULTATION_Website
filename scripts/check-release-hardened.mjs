@@ -129,6 +129,9 @@ assertIncludes(deliveryMigration, "email_delivery_events", "Email delivery event
 assertIncludes(deliveryMigration, "'email.suppressed'", "Email suppression event constraint");
 assertIncludes(deliveryEventTypeMigration, "email.suppressed", "Ordered email suppression event migration");
 assertIncludes(schema, "create table if not exists public.email_delivery_events", "Canonical email delivery bootstrap schema");
+assertIncludes(schema, "provider_email_id text", "Canonical email provider identifier column");
+assertIncludes(schema, "provider_status_at timestamptz", "Canonical email provider status timestamp column");
+assertIncludes(schema, "email_notifications_provider_email_id", "Canonical email provider identifier index");
 assertIncludes(styles, "padding-bottom: calc(6.25rem + env(safe-area-inset-bottom))", "Mobile drawer bottom clearance");
 assertIncludes(functionConfig, "verify_jwt = false", "Custom-secret worker configuration");
 assertIncludes(functionConfig, "[auth.email.template.recovery]", "Local recovery email configuration");

@@ -34,6 +34,9 @@ const schema = readFileSync(resolve(root, "supabase", "schema.sql"), "utf8");
 if (!schema.includes("create table if not exists public.email_delivery_events")) {
   throw new Error("The canonical bootstrap schema is missing email_delivery_events.");
 }
+for (const expected of ["provider_email_id text", "provider_status text", "provider_status_at timestamptz", "email_notifications_provider_email_id"]) {
+  if (!schema.includes(expected)) throw new Error(`The canonical bootstrap schema is missing: ${expected}`);
+}
 
 const legacySql = readFileSync(resolve(root, "supabase", "resend_delivery_webhooks_migration.sql"), "utf8");
 if (!legacySql.includes("LEGACY COMPATIBILITY FILE")) {

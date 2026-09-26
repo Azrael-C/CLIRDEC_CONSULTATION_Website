@@ -99,7 +99,10 @@ create table public.email_notifications (
   last_error text,
   scheduled_for timestamptz not null default now(),
   sent_at timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  provider_email_id text,
+  provider_status text,
+  provider_status_at timestamptz
 );
 
 -- Complete notification coverage: availability confirmations, both
@@ -213,12 +216,18 @@ create table if not exists public.email_notifications (
   last_error text,
   scheduled_for timestamptz not null default now(),
   sent_at timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  provider_email_id text,
+  provider_status text,
+  provider_status_at timestamptz
 );
 create unique index one_email_event_per_recipient on public.email_notifications(appointment_id,recipient_id,event_type);
 create unique index one_availability_email_event_per_recipient
   on public.email_notifications(availability_id,recipient_id,event_type)
   where availability_id is not null and appointment_id is null;
+create unique index if not exists email_notifications_provider_email_id
+  on public.email_notifications(provider_email_id)
+  where provider_email_id is not null;
 
 -- Resend webhook evidence is part of the canonical bootstrap schema. The
 -- matching ordered migration is idempotent for existing pilot projects.
