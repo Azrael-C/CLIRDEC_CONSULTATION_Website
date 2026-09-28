@@ -190,8 +190,131 @@ function ButtonLoading({ label }: { label: string }) {
   );
 }
 
+const USER_MANUAL_COPY = {
+  student: {
+    label: "STUDENT PORTAL",
+    title: "Welcome to your consultation portal",
+    intro: "Here is a quick guide to help you find a faculty member, ask Consult AI, and keep track of every request.",
+    steps: [
+      ["Find a faculty member", "Open Faculty availability, search by subject or name, then choose a published time that works for you."],
+      ["Send a consultation request", "Add a clear topic and context. A request is pending until the faculty member reviews and confirms it."],
+      ["Stay updated", "Check My requests for status changes, reminders, rescheduling, and the review form after a completed consultation."],
+    ],
+    tip: "Consult AI answers from approved CLIRDEC information. If it cannot verify an answer, use Faculty availability or report the issue.",
+  },
+  faculty: {
+    label: "FACULTY PORTAL",
+    title: "Welcome to your faculty workspace",
+    intro: "A complete profile and clear availability help students find the right subject expert and request useful consultations.",
+    steps: [
+      ["Complete your profile", "Add your subjects, expertise, consultation topics, research interests, bio, and office location so students can find you."],
+      ["Publish availability", "Choose a date, duration, location, and consultation mode. Online sessions do not automatically include a meeting link."],
+      ["Manage requests", "Review the student’s topic, approve or decline requests, then mark completed consultations so students can leave feedback."],
+    ],
+    tip: "Keep your published times accurate. Removing a slot closes it for new requests but does not erase consultation records.",
+  },
+  admin: {
+    label: "ADMINISTRATION PORTAL",
+    title: "Welcome to FacultyConnect administration",
+    intro: "Use this workspace to keep the directory, approved chatbot guidance, consultation records, and service health reliable.",
+    steps: [
+      ["Monitor the service", "Service overview and Active users show account activity, requests, appointments, and current portal health."],
+      ["Maintain approved guidance", "Use Chatbot training to draft source-backed answers, verify wording, approve entries, and test the live assistant."],
+      ["Review outcomes", "Reviews and insights, Consultation logs, and Operations and health help you spot delivery, booking, and data-quality issues."],
+    ],
+    tip: "Administrative changes are audited. Only publish information that has an official CLIRDEC source and avoid placing confidential student data in chatbot answers.",
+  },
+} as const;
+
+function useUserManual(user: User | null) {
+  const key = user
+    ? `facultyconnect:user-manual:v1:${user.id}:${user.role}`
+    : "facultyconnect:user-manual:v1:anonymous";
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setOpen(false);
+      return;
+    }
+    try {
+      setOpen(window.localStorage.getItem(key) !== "seen");
+    } catch {
+      // If storage is unavailable, still show the guide for this session.
+      setOpen(true);
+    }
+  }, [key, user]);
+
+  const dismiss = () => {
+    try {
+      window.localStorage.setItem(key, "seen");
+    } catch {
+      // The guide can still be dismissed for the current render.
+    }
+    setOpen(false);
+  };
+
+  return { open, setOpen, dismiss };
+}
+
+function UserManualModal({
+  role,
+  onClose,
+}: {
+  role: User["role"];
+  onClose: () => void;
+}) {
+  const copy = USER_MANUAL_COPY[role];
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop user-manual-backdrop" onMouseDown={onClose}>
+      <section
+        className="modal user-manual-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="user-manual-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button type="button" className="modal-close" onClick={onClose} aria-label="Close user manual">
+          ×
+        </button>
+        <p className="eyebrow">{copy.label}</p>
+        <h2 id="user-manual-title">{copy.title}</h2>
+        <p className="user-manual-intro">{copy.intro}</p>
+        <ol className="user-manual-steps">
+          {copy.steps.map(([title, detail], index) => (
+            <li key={title}>
+              <span aria-hidden="true">{index + 1}</span>
+              <div>
+                <b>{title}</b>
+                <p>{detail}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <div className="user-manual-tip">
+          <b>Good to know</b>
+          <p>{copy.tip}</p>
+        </div>
+        <div className="modal-actions user-manual-actions">
+          <button type="button" className="primary" onClick={onClose}>Got it</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const userManual = useUserManual(user);
   const [authLoading, setAuthLoading] = useState(configured);
   const [recoveringPassword, setRecoveringPassword] = useState(false);
   const [view, setView] = useState<View>("home");
@@ -986,7 +1109,7 @@ function App() {
         <div className="side-foot">
           <span>CLIRDEC</span>
           <small>Official service · Approved content only</small>
-          <PortalFooterActions user={user} onLogout={logout} />
+          <PortalFooterActions user={user} onLogout={logout} onOpenManual={() => userManual.setOpen(true)} />
         </div>
       </aside>
       <main id="main-content" className={`content student-content view-${view}`}>
@@ -1048,6 +1171,9 @@ function App() {
           ["profile", "Profile", "profile"],
         ]}
       />
+      {userManual.open && (
+        <UserManualModal role={user.role} onClose={userManual.dismiss} />
+      )}
       {selected && (
         <BookingModal
           slot={selected}
@@ -2042,9 +2168,11 @@ function Nav({
 function PortalFooterActions({
   user,
   onLogout,
+  onOpenManual,
 }: {
   user: User;
   onLogout: () => void;
+  onOpenManual: () => void;
 }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportCategory, setReportCategory] = useState("Appointment or availability");
@@ -2080,6 +2208,13 @@ function PortalFooterActions({
   return (
     <>
       <div className="side-foot-actions">
+        <button className="side-action side-action-manual" type="button" onClick={onOpenManual}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v17H7.5A2.5 2.5 0 0 0 5 21.5Z" />
+            <path d="M5 4.5v17M9 6h7M9 10h7" />
+          </svg>
+          <span>User manual</span>
+        </button>
         {user.role !== "admin" && (
           <button
             className="side-action side-action-report"
@@ -3448,6 +3583,7 @@ type AView =
   | "operations";
 function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   const faculty = user.role === "faculty";
+  const userManual = useUserManual(user);
   const [view, setView] = useState<FView | AView>(faculty ? "fhome" : "ahome");
   const [menu, setMenu] = useState(false);
   const metadata = faculty ? facultyMetadata : adminMetadata;
@@ -3552,7 +3688,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         <div className="side-foot">
           <span>Central Luzon State University</span>
           <small>Role-restricted administrative service</small>
-          <PortalFooterActions user={user} onLogout={logout} />
+          <PortalFooterActions user={user} onLogout={logout} onOpenManual={() => userManual.setOpen(true)} />
         </div>
       </aside>
       <main
@@ -3587,6 +3723,9 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
               ]
         }
       />
+      {userManual.open && (
+        <UserManualModal role={user.role} onClose={userManual.dismiss} />
+      )}
     </div>
   );
 }
