@@ -77,11 +77,10 @@ async function dismissUserManual(page: Page) {
   // The first sign-in for each dedicated E2E identity opens the role-specific
   // user manual. Wait briefly for its animation before dismissing it; otherwise
   // its backdrop can intercept the next portal navigation click.
-  const manualDone = page.getByRole("button", { name: "Got it", exact: true });
-  if (!(await manualDone.count())) return;
+  const manual = page.locator(".user-manual-backdrop");
   try {
-    await manualDone.waitFor({ state: "visible", timeout: 5_000 });
-    await manualDone.click();
+    await manual.waitFor({ state: "visible", timeout: 5_000 });
+    await manual.getByRole("button", { name: "Got it", exact: true }).click({ timeout: 5_000 });
   } catch {
     // The manual may already have been dismissed by a previous test session.
   }
