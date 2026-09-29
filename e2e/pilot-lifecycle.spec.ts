@@ -57,6 +57,12 @@ async function signIn(page: Page, admin: SupabaseClient, email: string) {
     await page.getByRole("button", { name: "Verify and continue" }).click();
   }
   await expect(page.getByRole("button", { name: /Sign out/i })).toBeVisible();
+
+  // The first sign-in for each dedicated E2E identity opens the role-specific
+  // user manual. Dismiss it before interacting with the underlying portal;
+  // otherwise its backdrop intentionally intercepts navigation clicks.
+  const manualDone = page.getByRole("button", { name: "Got it", exact: true });
+  if (await manualDone.count()) await manualDone.click();
 }
 
 async function signOut(page: Page) {
