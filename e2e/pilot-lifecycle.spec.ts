@@ -57,12 +57,7 @@ async function signIn(page: Page, admin: SupabaseClient, email: string) {
     await page.getByRole("button", { name: "Verify and continue" }).click();
   }
   await expect(page.getByRole("button", { name: /Sign out/i })).toBeVisible();
-
-  // The first sign-in for each dedicated E2E identity opens the role-specific
-  // user manual. Dismiss it before interacting with the underlying portal;
-  // otherwise its backdrop intentionally intercepts navigation clicks.
-  const manualDone = page.getByRole("button", { name: "Got it", exact: true });
-  if (await manualDone.count()) await manualDone.click();
+  await dismissUserManual(page);
 }
 
 async function signOut(page: Page) {
@@ -71,10 +66,25 @@ async function signOut(page: Page) {
 }
 
 async function dismissFacultyOnboarding(page: Page) {
+  await dismissUserManual(page);
   const skipButton = page.getByRole("button", { name: "Skip for now" });
   await skipButton.waitFor({ state: "visible", timeout: 10_000 });
   await skipButton.click();
   await expect(skipButton).toBeHidden();
+}
+
+async function dismissUserManual(page: Page) {
+  // The first sign-in for each dedicated E2E identity opens the role-specific
+  // user manual. Wait briefly for its animation before dismissing it; otherwise
+  // its backdrop can intercept the next portal navigation click.
+  const manualDone = page.getByRole("button", { name: "Got it", exact: true });
+  if (!(await manualDone.count())) return;
+  try {
+    await manualDone.waitFor({ state: "visible", timeout: 5_000 });
+    await manualDone.click();
+  } catch {
+    // The manual may already have been dismissed by a previous test session.
+  }
 }
 
 test("student to admin consultation lifecycle queues and sends email", async ({ page }) => {
