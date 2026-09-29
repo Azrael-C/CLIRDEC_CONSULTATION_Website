@@ -738,6 +738,28 @@ begin
   return created_id;
 end $$;
 
+-- Only the dedicated facultyconnect-e2e student/faculty pair is confirmed
+-- immediately. All ordinary student requests remain pending for approval.
+create or replace function public.auto_confirm_new_consultation()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare student_email text; faculty_email text;
+begin
+  select email into student_email from profiles where id=new.student_id;
+  select p.email into faculty_email
+  from availability a join profiles p on p.id=a.faculty_id
+  where a.id=new.availability_id;
+  if new.status='pending'
+    and lower(coalesce(student_email,'')) like '%facultyconnect-e2e%'
+    and lower(coalesce(faculty_email,'')) like '%facultyconnect-e2e%' then
+    new.status='confirmed';
+  end if;
+  return new;
+end $$;
+create trigger auto_confirm_consultation_before_insert
+before insert on public.appointments for each row
+execute function public.auto_confirm_new_consultation();
+revoke all on function public.auto_confirm_new_consultation() from public,anon,authenticated;
+
 create or replace function public.close_slot_after_booking()
 returns trigger language plpgsql security definer set search_path=public
 as $$
@@ -927,3 +949,53 @@ begin
   end if;
   return new;
 end $$;
+
+-- Replace the legacy pending-request email emitted by the earlier bootstrap
+-- trigger with the automatic confirmation and reminder messages.
+create or replace function public.queue_auto_confirmed_insert_email()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare faculty_user uuid; slot_start timestamptz; recipient uuid;
+begin
+  if new.status='confirmed' then
+    select faculty_id,starts_at into faculty_user,slot_start
+    from availability where id=new.availability_id;
+    delete from email_notifications
+    where appointment_id=new.id and event_type='request_submitted' and status='queued';
+    insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body)
+    select new.id,new.availability_id,new.student_id,'request_approved',
+      'Consultation confirmed',
+      'Your consultation request was automatically confirmed. Open FacultyConnect to review the approved time and location.'
+    where exists(select 1 from profiles where id=new.student_id and email_notifications)
+    on conflict do nothing;
+    insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body)
+    select new.id,new.availability_id,faculty_user,'request_approved',
+      'Consultation automatically confirmed',
+      'A student consultation request was automatically confirmed. Open FacultyConnect to review the appointment details.'
+    where exists(select 1 from profiles where id=faculty_user and email_notifications)
+    on conflict do nothing;
+    foreach recipient in array array[new.student_id,faculty_user] loop
+      insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body,scheduled_for)
+      select new.id,new.availability_id,recipient,'reminder_60_minutes',
+        'Consultation in 1 hour',
+        'Your confirmed faculty consultation begins in approximately one hour. Open FacultyConnect to review the time and location.',
+        slot_start-interval '1 hour'
+      where slot_start>now()+interval '1 hour'
+        and exists(select 1 from profiles where id=recipient and email_notifications)
+      on conflict do nothing;
+      insert into email_notifications(appointment_id,availability_id,recipient_id,event_type,subject,body,scheduled_for)
+      select new.id,new.availability_id,recipient,'reminder_30_minutes',
+        'Consultation in 30 minutes',
+        'Your confirmed faculty consultation begins in approximately 30 minutes. Please prepare and open FacultyConnect for the approved details.',
+        slot_start-interval '30 minutes'
+      where slot_start>now()+interval '30 minutes'
+        and exists(select 1 from profiles where id=recipient and email_notifications)
+      on conflict do nothing;
+    end loop;
+  end if;
+  return new;
+end $$;
+drop trigger if exists zzz_auto_confirmed_insert_email on public.appointments;
+create trigger zzz_auto_confirmed_insert_email
+after insert on public.appointments for each row
+execute function public.queue_auto_confirmed_insert_email();
+revoke all on function public.queue_auto_confirmed_insert_email() from public,anon,authenticated;

@@ -824,7 +824,7 @@ function App() {
       if (reschedulingId) {
         await rescheduleAppointment(reschedulingId, slot.id);
         setNotice(
-          `Your request was moved to ${slot.faculty_name}'s published time and is pending approval.`,
+          `Your request was moved to ${slot.faculty_name}'s published time and is pending approval. Email updates will be sent to ${user.email}.`,
         );
       } else {
         await bookAppointment({ slotId: slot.id, topic, notes: topic });
@@ -3566,7 +3566,7 @@ function BookingModal({
         <small className="modal-note">
           {rescheduling
             ? "The previous request is cancelled only after the new time is reserved successfully."
-            : "Submitting does not confirm an appointment. The faculty member must review and approve the request."}
+            : "Submitting sends a request to the faculty member for approval. You and the faculty member will receive an email update."}
         </small>
       </section>
     </div>

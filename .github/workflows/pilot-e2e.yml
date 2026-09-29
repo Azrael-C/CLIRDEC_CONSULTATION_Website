@@ -40,7 +40,11 @@ jobs:
       - name: Reset and seed dedicated test identities
         run: npm run seed:test
       - name: Verify the complete consultation lifecycle
-        run: npm run test:e2e
+        run: npm run test:e2e:pilot
+      - name: Reset dedicated identities before deep role coverage
+        run: npm run seed:test
+      - name: Verify complete student and faculty role coverage
+        run: npm run test:e2e:roles
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

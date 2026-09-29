@@ -7,9 +7,9 @@
 - Student self-registration for verified Gmail and `@clsu2.edu.ph` addresses
 - Shared secure sign-in with student, faculty, and administrator workspaces
 - Faculty expertise profiles and weekday availability publishing
-- Database-enforced booking, rescheduling, cancellation, and double-booking protection
+- Database-enforced booking, faculty approval, rescheduling, cancellation, and double-booking protection
 - FastAPI + spaCy assistant using approved FAQs and live faculty data
-- Resend confirmations, decisions, cancellations, and 60/30-minute reminders
+- Resend request/decision confirmations, cancellations, and 60/30-minute reminders to both participants
 - Consultation ratings and insights by year level, college, and program
 - TOTP multi-factor authentication for faculty and administrators
 - Responsive light and dark themes with accessible public workflows
@@ -126,6 +126,8 @@ Report vulnerabilities privately through [GitHub Security Advisories](https://gi
 npm run check
 npm run test:a11y
 npm run test:e2e
+npm run test:e2e:pilot
+npm run test:e2e:roles
 npm run test:production
 python -m unittest -v chatbot/test_app.py
 npm audit --omit=dev --audit-level=high
@@ -136,6 +138,32 @@ The scheduled E2E workflow verifies:
 ```text
 student books → faculty approves → faculty completes → student reviews → admin sees report
 ```
+
+For a controlled live schedule check, use only the guarded test seeder. It
+creates five `facultyconnect-e2e` faculty identities, two future slots per
+identity, and verified test MFA factors. It removes and recreates schedules
+only for those test identities; it never targets ordinary faculty records.
+
+```powershell
+$env:ALLOW_LIVE_FACULTY_TEST_SEED = "true"
+$env:CONFIRM_LIVE_TEST_DATA = "CREATE_FIVE_FACULTY_TEST_ACCOUNTS"
+$env:CONFIGURE_FACULTY_TEST_MFA = "true"
+npm run seed:live-faculty
+```
+
+The command requires server-side `SUPABASE_URL` and `SUPABASE_SECRET_KEY`,
+rejects any project other than the linked pilot project, and writes credentials
+and TOTP secrets only to ignored local files. The schedules are labeled `LIVE
+TEST`; remove or deactivate them after the test window.
+
+`test:e2e:roles` is the deeper protected suite for the student and faculty
+roles. It covers role navigation, profile updates, faculty discovery, booking,
+cancellation, rescheduling, faculty onboarding, availability publishing and
+removal, online-meeting warnings, approval/decline/completion, calendar
+exports, chatbot controls, support reports, and role isolation. It requires the
+dedicated `facultyconnect-e2e` identities described in
+[`docs/Student_Faculty_Complete_Test_Matrix.md`](docs/Student_Faculty_Complete_Test_Matrix.md);
+it is intentionally skipped when those protected variables are absent.
 
 ## Team workflow
 

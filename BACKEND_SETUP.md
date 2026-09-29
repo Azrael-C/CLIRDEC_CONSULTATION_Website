@@ -7,7 +7,7 @@ Use a dedicated Supabase development or pilot project. Do not seed test users in
 1. Create a Supabase project.
 2. Open SQL Editor.
 3. Run `supabase/schema.sql` once on a new project. For the existing pilot project, apply the versioned SQL files that have not yet run, including `supabase/chatbot_training_migration.sql` for administrator-managed example phrases, `supabase/active_user_presence_migration.sql` for the active-user monitor, and `supabase/migrations/20260814120000_operations_hardening.sql` for account lifecycle controls, retention previews, and operational monitoring. Deploy the matching frontend before applying the separate MFA enforcement migration described below.
-4. Confirm that Row-Level Security is enabled on every public table.
+4. Apply the ordered migrations, including `supabase/migrations/20260929100000_auto_confirm_consultations.sql` for the guarded E2E-only confirmation path and participant email queueing. Real pilot accounts retain faculty approval. Confirm that Row-Level Security is enabled on every public table.
 5. Before a new student registers, approve the exact email in **MISO Administration → Manage users**. Approvals are single-use. Existing accounts are unaffected; faculty and administrator roles are assigned only by an administrator after registration.
 
 ## 2. Configure the frontend
@@ -56,7 +56,7 @@ $env:TEST_USER_PASSWORD="a-strong-temporary-password"
 npm run seed:test
 ```
 
-The seeder is rerunnable. It creates or updates three accounts, one faculty profile, three future availability slots, and one pending appointment. The appointment trigger also queues test email notifications.
+The seeder is rerunnable. It creates or updates three accounts, one faculty profile, and three future availability slots. The dedicated `facultyconnect-e2e` identities use the guarded automatic-confirmation path; ordinary accounts still create pending requests for faculty approval.
 
 ## 5. Configure Resend
 
@@ -104,7 +104,7 @@ Before pilot testing, inspect Cloudflare Cron Events and confirm successful invo
 
 ## 7. Dedicated lifecycle test
 
-The manual `Pilot end-to-end lifecycle` GitHub workflow resets three dedicated test identities, books through the student UI, approves and completes through the faculty UI, submits a review, verifies the administrator report, invokes the protected email worker, and confirms the related outbox rows were sent. Configure the `pilot-e2e` GitHub environment with the secrets named in `.github/workflows/pilot-e2e.yml`. Every test email must contain `facultyconnect-e2e` so the guarded seeder cannot be pointed at genuine pilot users.
+The manual `Pilot end-to-end lifecycle` GitHub workflow resets three dedicated test identities, books through the student UI, verifies the E2E-only automatic confirmation and participant emails, completes through the faculty UI, submits a review, verifies the administrator report, invokes the protected email worker, and confirms the related outbox rows were sent. Configure the `pilot-e2e` GitHub environment with the secrets named in `.github/workflows/pilot-e2e.yml`. Every test email must contain `facultyconnect-e2e`; the database guard requires both student and faculty addresses to carry that marker and cannot be pointed at genuine pilot users.
 
 ## 8. Resend delivery monitoring
 
