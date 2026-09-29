@@ -101,23 +101,24 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
     await page.getByRole("button", { name: /Review and request/ }).first().click();
     await page.getByLabel("Consultation topic and concern").fill(topic);
     await page.getByRole("button", { name: /Submit request/ }).click();
-    await expect(page.getByText(/request (?:was submitted|sent to)/i)).toBeVisible();
+    await expect(page.getByText(/(?:appointment confirmed|request (?:was submitted|sent to))/i)).toBeVisible();
     await signOut(page);
   });
 
   let appointmentId = "";
-  await test.step("faculty approves the request", async () => {
+  await test.step("faculty sees the automatically confirmed request", async () => {
     await signIn(page, admin, env.TEST_FACULTY_EMAIL);
     await dismissFacultyOnboarding(page);
     await page.getByRole("button", { name: "Requests", exact: true }).click();
     const request = page.locator("article").filter({ hasText: topic });
     await expect(request).toBeVisible();
-    await request.getByRole("button", { name: /Accept \+ email/ }).click();
-    await page.getByRole("button", { name: /Approved/ }).click();
-    await expect(page.locator("article").filter({ hasText: topic })).toBeVisible();
     const { data, error } = await admin.from("appointments").select("id,availability_id").eq("topic", topic).single();
     if (error || !data) throw error || new Error("The E2E appointment was not stored.");
     appointmentId = data.id;
+    const { data: statusRow, error: statusError } = await admin.from("appointments").select("status").eq("id", appointmentId).single();
+    if (statusError || !statusRow) throw statusError || new Error("The E2E appointment status was not stored.");
+    expect(statusRow.status).toBe("confirmed");
+    await expect(request.getByText("CONFIRMED")).toBeVisible();
   });
 
   await test.step("queued appointment emails are delivered", async () => {
@@ -126,10 +127,12 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
     if (!functionUrl || !cronSecret) throw new Error("SUPABASE_EMAIL_FUNCTION_URL and EMAIL_CRON_SECRET are required to verify delivery.");
     const response = await fetch(functionUrl, { method: "POST", headers: { Authorization: `Bearer ${cronSecret}` } });
     expect(response.ok, await response.text()).toBeTruthy();
-    const { data, error } = await admin.from("email_notifications").select("event_type,status").eq("appointment_id", appointmentId).in("event_type", ["request_submitted", "request_approved"]);
+    const { data, error } = await admin.from("email_notifications").select("recipient_id,event_type,status").eq("appointment_id", appointmentId).in("event_type", ["request_submitted", "request_approved"]);
     if (error) throw error;
-    expect(data?.length).toBeGreaterThanOrEqual(4);
-    expect(data?.every((item) => item.status === "sent")).toBeTruthy();
+    const confirmations = (data || []).filter((item) => item.event_type === "request_approved");
+    expect(confirmations.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(confirmations.map((item) => item.recipient_id)).size).toBeGreaterThanOrEqual(2);
+    expect(confirmations.every((item) => item.status === "sent")).toBeTruthy();
   });
 
   await test.step("completed consultation appears in the faculty portal", async () => {
