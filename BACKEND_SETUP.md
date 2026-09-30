@@ -124,7 +124,7 @@ After enabling captcha, verify all three authentication actions and one chatbot 
 
 The version-controlled reset template is `supabase/templates/recovery.html`. Local Supabase reads it through `[auth.email.template.recovery]` in `supabase/config.toml`.
 
-For the hosted project, open **Authentication -> Email Templates -> Reset password**, set the subject to `Reset your CLSU FacultyConnect password`, and paste the complete HTML template. Keep `{{ .ConfirmationURL }}` unchanged because Supabase replaces it with the signed, single-use recovery link. Confirm the production Site URL is `https://www.clsufacultyconnect.com` and that the same origin is in the redirect allow list. Disable link tracking in the SMTP provider because rewritten authentication links can fail verification.
+For the hosted project, open **Authentication -> Email Templates -> Reset password**, set the subject to `Reset your CLSU FacultyConnect password`, and paste the complete HTML template. Keep `{{ .ConfirmationURL }}` unchanged because Supabase replaces it with the signed, single-use recovery link. Confirm the production Site URL is `https://www.clsufacultyconnect.com` and that the same origin is in the redirect allow list. Student signup also returns to that origin after email confirmation so Supabase can establish the authenticated session; add the exact production origin (plus any explicitly used preview/test origins) under **Authentication -> URL Configuration -> Redirect URLs**. Disable link tracking in the SMTP provider because rewritten authentication links can fail verification.
 
 Send a reset to a dedicated test account and verify the email design, link destination, password update, and subsequent login before publishing the template to pilot users.
 
