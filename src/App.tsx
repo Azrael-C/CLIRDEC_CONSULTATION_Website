@@ -671,6 +671,10 @@ function App() {
       password,
       options: {
         captchaToken: captchaToken || undefined,
+        // Return the confirmation link to the portal origin. Supabase exchanges
+        // the confirmation code for a session there, so a verified student is
+        // signed in automatically instead of being sent through login again.
+        emailRedirectTo: window.location.origin,
         data: {
           full_name,
           student_number,
@@ -687,7 +691,7 @@ function App() {
     setNotice(
       data.session
         ? "Your student account is ready."
-        : "Account created. Check your email and select the confirmation link before signing in.",
+        : "Account created. Confirm your email; you will be signed in automatically when you return to FacultyConnect.",
     );
   }
   async function requestPasswordReset(email: string, captchaToken?: string) {
@@ -1388,8 +1392,8 @@ function ProductionAuth({
                   aria-describedby="student-email-guidance"
                 />
                 <small id="student-email-guidance">
-                  Accepted domains: @gmail.com and @clsu2.edu.ph. You must
-                  confirm the address before signing in.
+                   Accepted domains: @gmail.com and @clsu2.edu.ph. Confirm the
+                   address and you will be signed in automatically.
                 </small>
               </label>
             </div>
