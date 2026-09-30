@@ -89,6 +89,7 @@ if (app.includes("Approve a student registration") || app.includes("Approve emai
 }
 assertIncludes(app, 'table: "availability"', "Student availability realtime subscription");
 assertIncludes(app, "slot.booking_open", "Student booking-window display state");
+assertIncludes(app, "emailRedirectTo: window.location.origin", "Automatic sign-in after email confirmation");
 assertIncludes(backend, '.gt("starts_at", now)', "Future availability visibility");
 assertIncludes(backend, "Date.now() + MINIMUM_NOTICE_MS", "Minimum-notice booking gate");
 assertIncludes(schema, "training_phrases text[]", "Chatbot training phrase storage");
