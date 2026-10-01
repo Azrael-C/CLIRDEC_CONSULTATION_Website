@@ -70,6 +70,41 @@ html[data-theme="dark"] .calendar-day small { color: #b4c7bb; }
 @media print{.sidebar,.topbar,.mobile-portal-nav,.notice,.export-actions,.operations-alerts{display:none!important}.app,.content{padding:0!important;margin:0!important}.content{max-width:none!important}.work-card{break-inside:avoid;box-shadow:none}.operations-list,.audit-timeline{max-height:none;overflow:visible}}
 
 html { background: var(--figma-canvas); }
+
+/* Academic-unit configuration (PB-02) */
+.academic-unit-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1rem;margin-bottom:1rem}
+.academic-unit-scope-note{display:grid;grid-template-columns:minmax(170px,.32fr) minmax(0,1fr);gap:1rem;align-items:center;margin-bottom:1rem}
+.academic-unit-form{display:grid;gap:.8rem}
+.academic-unit-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+.academic-unit-form label{display:grid;gap:.32rem}
+.academic-unit-form label>span{font-size:.7rem;font-weight:800;color:var(--figma-ink)}
+.academic-unit-form label>span small{font-size:.62rem;font-weight:600;color:var(--figma-muted)}
+.academic-unit-form textarea{min-height:105px;resize:vertical}
+.academic-unit-active-toggle{display:flex!important;grid-template-columns:none!important;align-items:center;gap:.55rem!important;padding:.65rem .75rem!important}
+.academic-unit-active-toggle input{width:auto!important}
+.academic-unit-list{display:grid;gap:.7rem;max-height:520px;overflow:auto;padding-right:.2rem}
+.academic-unit-card{display:grid;gap:.6rem;padding:1rem;border:1px solid #dce5de;border-left:4px solid var(--portal-accent);border-radius:12px;background:rgba(255,255,255,.82)}
+.academic-unit-card.is-inactive{border-left-color:#a23d31;opacity:.8}
+.academic-unit-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.7rem}
+.academic-unit-card h3{margin:.25rem 0 0;font-size:1rem;line-height:1.25}
+.academic-unit-card p{margin:0;color:var(--figma-muted);font-size:.75rem;line-height:1.45}
+.academic-unit-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;margin:0}
+.academic-unit-card dl div{display:grid;gap:.15rem}
+.academic-unit-card dt{color:var(--figma-muted);font-size:.62rem;text-transform:uppercase;letter-spacing:.08em}
+.academic-unit-card dd{margin:0;font-size:.72rem;overflow-wrap:anywhere}
+.academic-unit-card footer{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding-top:.55rem;border-top:1px solid #e5ece7}
+.academic-unit-card footer small{color:var(--figma-muted);font-size:.62rem}
+.unit-code{display:inline-flex;padding:.25rem .5rem;border:1px solid rgba(var(--portal-accent-rgb),.2);border-radius:999px;background:rgba(var(--portal-accent-rgb),.08);color:var(--portal-accent);font-size:.62rem;font-weight:900;letter-spacing:.1em}
+.academic-unit-next-step{display:grid;grid-template-columns:minmax(170px,.32fr) minmax(0,1fr);gap:1rem;align-items:center}
+.academic-unit-next-step b{color:var(--portal-accent)}
+@media(max-width:900px){.academic-unit-layout{grid-template-columns:1fr}.academic-unit-scope-note,.academic-unit-next-step{grid-template-columns:1fr}}
+@media(max-width:600px){.academic-unit-form-grid{grid-template-columns:1fr}.academic-unit-card dl{grid-template-columns:1fr}.academic-unit-card footer{align-items:flex-start;flex-direction:column}.academic-unit-card footer button{width:100%}}
+html[data-theme="dark"] .academic-unit-card{border-color:var(--dark-border);background:#10231a}
+html[data-theme="dark"] .academic-unit-card footer{border-top-color:var(--dark-border)}
+html[data-theme="dark"] .academic-unit-form label{border-color:var(--dark-border);background:rgba(16,35,26,.8)}
+html[data-theme="dark"] .academic-unit-form label>span{color:#f2faf4}
+html[data-theme="dark"] .academic-unit-form label>span small,.academic-unit-card p,.academic-unit-card footer small,.academic-unit-card dt{color:#a8bdb0}
+
 body { min-width: 320px; background: var(--figma-canvas); color: var(--figma-ink); }
 button, input, select, textarea { font-family: "Libre Franklin", Arial, sans-serif; }
 button { transition: background-color .16s ease, border-color .16s ease, color .16s ease, transform .16s ease; }
