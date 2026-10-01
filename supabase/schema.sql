@@ -439,10 +439,11 @@ as $$
   select p.id,p.full_name,p.department,fp.expertise,fp.subjects,
     fp.consultation_topics,fp.research_interests,coalesce(fp.bio,''),
     coalesce(fp.office_location,''),fp.profile_completed_at is not null
-  from profiles p
-  join faculty_profiles fp on fp.user_id=p.id
+  from public.profiles p
+  join public.faculty_profiles fp on fp.user_id=p.id
   where p.role='faculty'
     and fp.active
+    and (public.current_role()='admin' or p.academic_unit_id=public.current_academic_unit_id())
     and (target_ids is null or p.id=any(target_ids))
   order by p.full_name
 $$;
