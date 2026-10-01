@@ -218,13 +218,34 @@ class AssistantTests(unittest.TestCase):
         }
         with patch.dict(os.environ, environment, clear=True), patch.object(app, "_fetch_json", return_value=rows) as fetch:
             first = asyncio.run(app._load_approved_knowledge(None))
-            second = asyncio.run(app._load_approved_knowledge("Bearer ignored-browser-token"))
+            second = asyncio.run(app._load_approved_knowledge(None))
         self.assertEqual(first[1], "Supabase approved FAQ entries")
         self.assertEqual(second[0][0].question, "How do I book?")
         self.assertEqual(fetch.call_count, 1)
         headers = fetch.call_args.args[1]
         self.assertEqual(headers["apikey"], "server-secret")
         self.assertEqual(headers["Authorization"], "Bearer server-secret")
+
+    def test_authenticated_knowledge_load_is_scoped_to_user_unit(self):
+        app._cache = (0.0, [], "bundled")
+        rows = [{
+            "question": "How do I book?",
+            "answer": "Choose an available time.",
+            "category": "Booking",
+            "source_reference": "Approved workflow",
+            "training_phrases": ["Schedule a consultation"],
+        }]
+        environment = {
+            "SUPABASE_URL": "https://project.supabase.co",
+            "SUPABASE_SECRET_KEY": "server-secret",
+        }
+        with patch.dict(os.environ, environment, clear=True), \
+            patch.object(app, "_load_user_academic_unit_id", return_value="unit-1"), \
+            patch.object(app, "_fetch_json", return_value=rows) as fetch:
+            items, source = asyncio.run(app._load_approved_knowledge("Bearer browser-token"))
+        self.assertEqual(source, "Supabase approved FAQ entries")
+        self.assertEqual(items[0].question, "How do I book?")
+        self.assertEqual(fetch.call_args.args[2]["academic_unit_id"], "eq.unit-1")
 
     def test_knowledge_fetch_rejects_unapproved_hosts(self):
         with self.assertRaises(ValueError):
