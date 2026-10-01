@@ -175,6 +175,19 @@ export type ClientErrorEvent = {
   created_at: string;
 };
 
+export type AcademicUnit = {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  contact_email: string | null;
+  office_location: string | null;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AdminPortal = {
   users: AdminUser[];
   appointments: PortalAppointment[];
@@ -186,6 +199,7 @@ export type AdminPortal = {
   auditLogs: AuditEntry[];
   retentionPolicies: RetentionPolicy[];
   clientErrors: ClientErrorEvent[];
+  academicUnits: AcademicUnit[];
   warnings: string[];
 };
 
@@ -425,6 +439,8 @@ export async function cancelAppointment(appointmentId: string) {
   const { error } = await supabase.rpc("cancel_consultation", {
     target_appointment: appointmentId,
   });
+  if (error?.code === "23505")
+    throw new Error("An academic unit with this code or name already exists.");
   if (error)
     throw new Error(
       friendlyError(error, "The consultation could not be cancelled."),
@@ -699,6 +715,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     { data: retentionPolicies, error: retentionError },
     { data: retentionPreview, error: retentionPreviewError },
     { data: clientErrors, error: clientError },
+    { data: academicUnits, error: academicUnitError },
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -752,6 +769,11 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       .select("id,reporter_id,event_type,message,route,release,created_at")
       .order("created_at", { ascending: false })
       .limit(100),
+    supabase
+      .from("academic_units")
+      .select("id,code,name,description,contact_email,office_location,active,created_by,created_at,updated_at")
+      .order("active", { ascending: false })
+      .order("name"),
   ]);
   // Users, appointments, FAQs, and reviews power the core admin views. Keep
   // those strict so a permission or schema problem cannot quietly show false
@@ -774,6 +796,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     ["retention policies", retentionError],
     ["retention preview", retentionPreviewError],
     ["client error events", clientError],
+    ["academic units", academicUnitError],
   ]
     .filter(([, error]) => Boolean(error))
     .map(([label]) => label as string);
@@ -832,6 +855,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       eligible_records: Number((retentionPreview || []).find((item: any) => item.record_type === policy.record_type)?.eligible_records || 0),
     })) as RetentionPolicy[],
     clientErrors: (clientErrors || []) as ClientErrorEvent[],
+    academicUnits: (academicUnits || []) as AcademicUnit[],
     warnings,
   };
 }
@@ -978,6 +1002,58 @@ export async function adminSetAccountStatus(
   });
   if (error)
     throw new Error(friendlyError(error, "The account status could not be updated."));
+}
+
+export async function adminCreateAcademicUnit(input: {
+  userId: string;
+  code: string;
+  name: string;
+  description: string;
+  contactEmail: string;
+  officeLocation: string;
+}) {
+  const { error } = await supabase.from("academic_units").insert({
+    code: input.code.trim().toUpperCase(),
+    name: input.name.trim(),
+    description: input.description.trim(),
+    contact_email: input.contactEmail.trim() || null,
+    office_location: input.officeLocation.trim() || null,
+    created_by: input.userId,
+  });
+  if (error?.code === "23505")
+    throw new Error("An academic unit with this code or name already exists.");
+  if (error)
+    throw new Error(
+      friendlyError(error, "The academic unit could not be created."),
+    );
+}
+
+export async function adminUpdateAcademicUnit(input: {
+  unitId: string;
+  code: string;
+  name: string;
+  description: string;
+  contactEmail: string;
+  officeLocation: string;
+  active: boolean;
+}) {
+  const { error } = await supabase
+    .from("academic_units")
+    .update({
+      code: input.code.trim().toUpperCase(),
+      name: input.name.trim(),
+      description: input.description.trim(),
+      contact_email: input.contactEmail.trim() || null,
+      office_location: input.officeLocation.trim() || null,
+      active: input.active,
+    })
+    .eq("id", input.unitId);
+  if (error?.code === "23505")
+    throw new Error("An academic unit with this code or name already exists.");
+  if (error)
+    throw new Error(
+      friendlyError(error, "The academic unit could not be updated."),
+    );
 }
 
 export async function updateRetentionPolicy(input: {

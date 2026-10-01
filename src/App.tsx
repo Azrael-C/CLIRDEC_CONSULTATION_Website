@@ -5,6 +5,8 @@ import { supabase, configured } from "./supabase";
 import {
   adminSetRole,
   adminSetAccountStatus,
+  adminCreateAcademicUnit,
+  adminUpdateAcademicUnit,
   approveFaqEntry,
   archiveFaqEntry,
   bookAppointment,
@@ -34,6 +36,7 @@ import {
   type FacultyProfile,
   type FacultyRequest,
   type ChatbotGap,
+  type AcademicUnit,
 } from "./backend";
 import { PrivilegedMfaGate, RecoveryMfaGate } from "./MfaGate";
 import { AdminOperations } from "./AdminOperations";
@@ -2081,6 +2084,7 @@ type NavIconName =
   | "calendar"
   | "profile"
   | "users"
+  | "building"
   | "report";
 function NavIcon({ name }: { name: NavIconName }) {
   const paths: Record<NavIconName, ReactNode> = {
@@ -2125,6 +2129,12 @@ function NavIcon({ name }: { name: NavIconName }) {
         <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
         <circle cx="9" cy="7" r="4" />
         <path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" />
+      </>
+    ),
+    building: (
+      <>
+        <path d="M4 21V6.5L12 3l8 3.5V21" />
+        <path d="M2 21h20M8 9h2M14 9h2M8 13h2M14 13h2M8 17h2M14 17h2" />
       </>
     ),
     report: (
@@ -3584,6 +3594,7 @@ type AView =
   | "appointments"
   | "reviews"
   | "knowledge"
+  | "units"
   | "operations";
 function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
   const faculty = user.role === "faculty";
@@ -3604,6 +3615,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
         ["ahome", "Service overview", "home"],
         ["knowledge", "Chatbot training", "assistant"],
         ["users", "Users and roles", "users"],
+        ["units", "Academic units", "building"],
         ["activity", "Active users", "users"],
         ["appointments", "Consultation logs", "calendar"],
         ["reviews", "Reviews and insights", "report"],
@@ -3720,6 +3732,7 @@ function RoleWorkspace({ user, logout }: { user: User; logout: () => void }) {
                 ["ahome", "Overview", "home"],
                 ["knowledge", "Train AI", "assistant"],
                 ["users", "Users", "users"],
+                ["units", "Units", "building"],
                 ["activity", "Active", "users"],
                 ["appointments", "Logs", "calendar"],
                 ["reviews", "Reviews", "report"],
@@ -4804,6 +4817,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     auditLogs: [],
     retentionPolicies: [],
     clientErrors: [],
+    academicUnits: [],
     warnings: [],
   });
   const [loading, setLoading] = useState(true);
@@ -4845,6 +4859,15 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [trainingLibraryStatus, setTrainingLibraryStatus] = useState<
     "all" | FaqStatus
   >("all");
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
+  const [unitDraft, setUnitDraft] = useState({
+    code: "",
+    name: "",
+    description: "",
+    contactEmail: "",
+    officeLocation: "",
+    active: true,
+  });
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const refresh = (showLoading = false) => {
     if (refreshInFlight.current) return refreshInFlight.current;
@@ -4943,6 +4966,69 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       await refresh();
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "The account status could not be updated.");
+    }
+  };
+  const resetUnitDraft = () => {
+    setEditingUnitId(null);
+    setUnitDraft({
+      code: "",
+      name: "",
+      description: "",
+      contactEmail: "",
+      officeLocation: "",
+      active: true,
+    });
+  };
+  const editAcademicUnit = (unit: AcademicUnit) => {
+    setEditingUnitId(unit.id);
+    setUnitDraft({
+      code: unit.code,
+      name: unit.name,
+      description: unit.description,
+      contactEmail: unit.contact_email || "",
+      officeLocation: unit.office_location || "",
+      active: unit.active,
+    });
+  };
+  const saveAcademicUnit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const code = unitDraft.code.trim().toUpperCase();
+    const name = unitDraft.name.trim();
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(code)) {
+      setMessage("Use an uppercase unit code with 2–32 letters, numbers, hyphens, or underscores.");
+      return;
+    }
+    if (name.length < 2) {
+      setMessage("Enter the academic unit's full name.");
+      return;
+    }
+    try {
+      if (editingUnitId) {
+        await adminUpdateAcademicUnit({
+          unitId: editingUnitId,
+          code,
+          name,
+          description: unitDraft.description,
+          contactEmail: unitDraft.contactEmail,
+          officeLocation: unitDraft.officeLocation,
+          active: unitDraft.active,
+        });
+        setMessage("Academic unit updated and recorded in the audit trail.");
+      } else {
+        await adminCreateAcademicUnit({
+          userId: user.id,
+          code,
+          name,
+          description: unitDraft.description,
+          contactEmail: unitDraft.contactEmail,
+          officeLocation: unitDraft.officeLocation,
+        });
+        setMessage("Academic unit added to the controlled catalog.");
+      }
+      resetUnitDraft();
+      await refresh();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "The academic unit could not be saved.");
     }
   };
   const saveFaq = async (e: FormEvent<HTMLFormElement>) => {
@@ -5623,6 +5709,144 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             );
           })}
         </Data>
+      </>
+    );
+  if (view === "units")
+    return (
+      <>
+        {feedback}
+        <Head
+          label="MISO ADMINISTRATION"
+          title="Academic units"
+          copy="Configure the units served by FacultyConnect and keep their accountable contact details in one controlled catalog."
+        />
+        <div className="scope-note academic-unit-scope-note">
+          <b>PB-02 · Unit configuration</b>
+          <span>
+            Add a reusable unit once, then use its code and owner details when
+            the portal's faculty, schedules, FAQs, and reports are assigned to
+            a unit. Deactivating a unit keeps its history intact.
+          </span>
+        </div>
+        <div className="academic-unit-layout">
+          <Work title={editingUnitId ? "Edit academic unit" : "Add academic unit"}>
+            <form className="knowledge-form academic-unit-form" onSubmit={saveAcademicUnit}>
+              <div className="academic-unit-form-grid">
+                <label>
+                  <span>Unit code</span>
+                  <input
+                    required
+                    value={unitDraft.code}
+                    onChange={(event) => setUnitDraft((draft) => ({ ...draft, code: event.target.value.toUpperCase() }))}
+                    placeholder="CLIRDEC"
+                    maxLength={32}
+                    pattern="[A-Z0-9][A-Z0-9_-]{1,31}"
+                  />
+                  <small>Short uppercase identifier used in reports and integrations.</small>
+                </label>
+                <label>
+                  <span>Unit name</span>
+                  <input
+                    required
+                    value={unitDraft.name}
+                    onChange={(event) => setUnitDraft((draft) => ({ ...draft, name: event.target.value }))}
+                    placeholder="Central Luzon Interdisciplinary Research and Extension Center"
+                    maxLength={160}
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Description</span>
+                <textarea
+                  value={unitDraft.description}
+                  onChange={(event) => setUnitDraft((draft) => ({ ...draft, description: event.target.value }))}
+                  placeholder="What this unit provides through FacultyConnect"
+                  maxLength={600}
+                />
+              </label>
+              <div className="academic-unit-form-grid">
+                <label>
+                  <span>Accountable contact email <small>(optional)</small></span>
+                  <input
+                    type="email"
+                    value={unitDraft.contactEmail}
+                    onChange={(event) => setUnitDraft((draft) => ({ ...draft, contactEmail: event.target.value }))}
+                    placeholder="unit-owner@clsu2.edu.ph"
+                    maxLength={254}
+                  />
+                </label>
+                <label>
+                  <span>Office or service location <small>(optional)</small></span>
+                  <input
+                    value={unitDraft.officeLocation}
+                    onChange={(event) => setUnitDraft((draft) => ({ ...draft, officeLocation: event.target.value }))}
+                    placeholder="CLSU · CLIRDEC office"
+                    maxLength={160}
+                  />
+                </label>
+              </div>
+              {editingUnitId && (
+                <label className="check-line academic-unit-active-toggle">
+                  <input
+                    type="checkbox"
+                    checked={unitDraft.active}
+                    onChange={(event) => setUnitDraft((draft) => ({ ...draft, active: event.target.checked }))}
+                  />
+                  <span>Unit is active and available for new configuration</span>
+                </label>
+              )}
+              <div className="training-form-actions">
+                <button className="primary" type="submit">
+                  {editingUnitId ? "Save unit changes" : "Add academic unit"}
+                </button>
+                {editingUnitId && (
+                  <button className="outline" type="button" onClick={resetUnitDraft}>
+                    Cancel edit
+                  </button>
+                )}
+              </div>
+            </form>
+          </Work>
+          <Work title="Configured units">
+            <div className="academic-unit-list">
+              {data.academicUnits.map((unit) => (
+                <article className={`academic-unit-card ${unit.active ? "" : "is-inactive"}`} key={unit.id}>
+                  <div className="academic-unit-card-head">
+                    <div>
+                      <span className="unit-code">{unit.code}</span>
+                      <h3>{unit.name}</h3>
+                    </div>
+                    <span className={`account-status-pill ${unit.active ? "active" : "deactivated"}`}>
+                      {unit.active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <p>{unit.description || "No unit description provided."}</p>
+                  <dl>
+                    <div><dt>Contact</dt><dd>{unit.contact_email || "Not provided"}</dd></div>
+                    <div><dt>Location</dt><dd>{unit.office_location || "Not provided"}</dd></div>
+                  </dl>
+                  <footer>
+                    <small>Updated {formatManilaDateTime(new Date(unit.updated_at), { month: "short", day: "numeric", year: "numeric" })}</small>
+                    <button className="outline" type="button" onClick={() => editAcademicUnit(unit)}>Edit unit</button>
+                  </footer>
+                </article>
+              ))}
+              {!data.academicUnits.length && (
+                <div className="empty-card">
+                  No academic units are configured yet. Add the first unit to start the catalog.
+                </div>
+              )}
+            </div>
+          </Work>
+        </div>
+        <section className="scope-note academic-unit-next-step">
+          <b>Next scoping step</b>
+          <span>
+            The catalog is now protected and ready for assignment. The next
+            migration can add the unit foreign key to profiles, faculty
+            schedules, FAQs, and reporting records without changing this page.
+          </span>
+        </section>
       </>
     );
   if (view === "appointments")

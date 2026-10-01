@@ -23,6 +23,34 @@ create table public.profiles (
   last_seen_at timestamptz,
   created_at timestamptz not null default now()
 );
+create table public.academic_units (
+  id uuid primary key default gen_random_uuid(),
+  code text not null,
+  name text not null,
+  description text not null default '',
+  contact_email text,
+  office_location text,
+  active boolean not null default true,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint academic_units_code_format check (code = upper(trim(code)) and code ~ '^[A-Z0-9][A-Z0-9_-]{1,31}$'),
+  constraint academic_units_name_not_blank check (length(trim(name)) between 2 and 160),
+  constraint academic_units_contact_email check (
+    contact_email is null or contact_email ~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+  )
+);
+create unique index academic_units_code_unique on public.academic_units (code);
+create unique index academic_units_name_unique on public.academic_units (lower(name));
+create index academic_units_active_idx on public.academic_units (active, name);
+create or replace function public.set_academic_unit_updated_at()
+returns trigger language plpgsql set search_path=public as $$
+begin new.updated_at=now(); return new; end $$;
+create trigger academic_units_updated_at
+before update on public.academic_units
+for each row execute function public.set_academic_unit_updated_at();
+insert into public.academic_units (code,name,description,office_location)
+values ('CLIRDEC','Central Luzon Interdisciplinary Research and Extension Center','Pilot academic unit for FacultyConnect consultation services.','CLSU · CLIRDEC office');
 create unique index profiles_student_number_unique
 on public.profiles (upper(student_number))
 where student_number is not null;
@@ -283,6 +311,21 @@ create table public.audit_logs (
   created_at timestamptz not null default now()
 );
 
+create or replace function public.audit_academic_unit_change()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  insert into public.audit_logs(actor_id,action,resource_type,resource_id,old_data,new_data)
+  values(auth.uid(),lower(tg_op),'academic_unit',
+    (case when tg_op='DELETE' then old.id else new.id end)::text,
+    case when tg_op in ('UPDATE','DELETE') then to_jsonb(old) else null end,
+    case when tg_op in ('INSERT','UPDATE') then to_jsonb(new) else null end);
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end $$;
+create trigger audit_academic_unit_changes
+after insert or update on public.academic_units
+for each row execute function public.audit_academic_unit_change();
+
 -- Retained for backward compatibility with early pilot records. New student
 -- registration is domain-based and no longer reads this legacy table.
 create table public.registration_allowlist (
@@ -307,6 +350,7 @@ create table public.chatbot_unanswered_questions (
 );
 
 alter table public.profiles enable row level security;
+alter table public.academic_units enable row level security;
 alter table public.faculty_profiles enable row level security;
 alter table public.availability enable row level security;
 alter table public.appointments enable row level security;
@@ -427,6 +471,9 @@ revoke all on function public.record_chatbot_gap(text,text,numeric) from public,
 grant execute on function public.record_chatbot_gap(text,text,numeric) to service_role;
 
 create policy "read permitted profiles" on public.profiles for select to authenticated using (public.can_read_profile(id));
+create policy "administrators read academic units" on public.academic_units for select to authenticated using (public.current_role()='admin');
+create policy "administrators create academic units" on public.academic_units for insert to authenticated with check (public.current_role()='admin' and (created_by is null or created_by=auth.uid()));
+create policy "administrators update academic units" on public.academic_units for update to authenticated using (public.current_role()='admin') with check (public.current_role()='admin');
 create policy "update own profile" on public.profiles for update to authenticated using (id=auth.uid()) with check (id=auth.uid());
 create policy "public faculty information" on public.faculty_profiles for select to authenticated using (true);
 create policy "faculty update own information" on public.faculty_profiles for update to authenticated
@@ -491,6 +538,7 @@ for each row execute function public.validate_availability_schedule();
 -- Browser roles receive only the operations used by the portal. RLS remains
 -- the row-level ownership boundary for every granted operation.
 revoke all on table public.profiles from anon,authenticated;
+revoke all on table public.academic_units from anon,authenticated;
 revoke all on table public.faculty_profiles from anon,authenticated;
 revoke all on table public.availability from anon,authenticated;
 revoke all on table public.appointments from anon,authenticated;
@@ -502,6 +550,9 @@ revoke all on table public.registration_allowlist from anon,authenticated;
 revoke all on table public.chatbot_unanswered_questions from anon,authenticated;
 
 grant update (full_name,department,email_notifications,college,program,year_level,last_seen_at) on public.profiles to authenticated;
+grant select on public.academic_units to authenticated;
+grant insert (code,name,description,contact_email,office_location,created_by) on public.academic_units to authenticated;
+grant update (code,name,description,contact_email,office_location,active) on public.academic_units to authenticated;
 grant select (id,full_name,email,role,department,email_notifications,student_number,college,program,year_level,last_seen_at,created_at) on public.profiles to authenticated;
 grant select on public.faculty_profiles to authenticated;
 grant update (expertise,bio,subjects,consultation_topics,research_interests,office_location,profile_completed_at) on public.faculty_profiles to authenticated;
@@ -667,6 +718,7 @@ revoke all on function public.close_slot_after_booking() from public,anon,authen
 revoke all on function public.create_profile() from public,anon,authenticated;
 revoke all on function public.queue_appointment_email() from public,anon,authenticated;
 revoke all on function public.audit_faq_change() from public,anon,authenticated;
+revoke all on function public.audit_academic_unit_change() from public,anon,authenticated;
 
 -- Post-consultation reviews are available only after a faculty member marks a
 -- consultation completed. Demographic snapshots support historical reports.
