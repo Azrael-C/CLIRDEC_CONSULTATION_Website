@@ -5277,7 +5277,11 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         {data.academicUnits.length > 0 && (
           <label className="admin-unit-filter">
             <span>Data scope</span>
-            <select value={adminUnitFilter} onChange={(event) => setAdminUnitFilter(event.target.value)}>
+            <select
+              aria-label="Filter administration data by academic unit"
+              value={adminUnitFilter}
+              onChange={(event) => setAdminUnitFilter(event.target.value)}
+            >
               <option value="all">All academic units</option>
               {data.academicUnits
                 .filter((unit) => unit.active || unit.id === adminUnitFilter)
