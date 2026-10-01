@@ -6,6 +6,7 @@ import {
   adminSetRole,
   adminSetAccountStatus,
   adminCreateAcademicUnit,
+  adminAssignUserUnit,
   adminUpdateAcademicUnit,
   approveFaqEntry,
   archiveFaqEntry,
@@ -4828,6 +4829,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [presenceQuery, setPresenceQuery] = useState("");
   const [presenceFilter, setPresenceFilter] = useState<"all" | PresenceStatus>("all");
   const [presenceRole, setPresenceRole] = useState<"all" | Role>("all");
+  const [adminUnitFilter, setAdminUnitFilter] = useState("all");
   const [appointmentFilter, setAppointmentFilter] = useState<
     "all" | AppointmentStatus
   >("all");
@@ -4842,6 +4844,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     answer: "",
     category: "Consultation procedure",
     trainingPhrases: "",
+    academicUnitId: "",
     contentOwnerId: user.id,
     reviewIntervalDays: 180,
   });
@@ -4930,6 +4933,14 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     }, remaining);
     return () => window.clearTimeout(timer);
   }, [trainingChatTrusted, trainingTrustExpiresAt]);
+  useEffect(() => {
+    if (!faqDraft.academicUnitId && data.academicUnits.length) {
+      const firstActiveUnit = data.academicUnits.find((unit) => unit.active);
+      if (firstActiveUnit) {
+        setFaqDraft((draft) => ({ ...draft, academicUnitId: firstActiveUnit.id }));
+      }
+    }
+  }, [data.academicUnits, faqDraft.academicUnitId]);
   const trainingCaptchaRequired =
     Boolean(TURNSTILE_SITE_KEY) && !trainingTrustLoading && !trainingChatTrusted;
   const changeRole = async (id: string, role: Role) => {
@@ -4966,6 +4977,15 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       await refresh();
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "The account status could not be updated.");
+    }
+  };
+  const assignUserUnit = async (id: string, unitId: string) => {
+    try {
+      await adminAssignUserUnit(id, unitId);
+      setMessage("Academic unit updated and recorded in the audit log.");
+      await refresh();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "The academic unit could not be updated.");
     }
   };
   const resetUnitDraft = () => {
@@ -5046,6 +5066,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           sourceReference: faqDraft.source,
           category: faqDraft.category,
           trainingPhrases,
+          academicUnitId: faqDraft.academicUnitId,
           contentOwnerId: faqDraft.contentOwnerId,
           reviewIntervalDays: faqDraft.reviewIntervalDays,
         });
@@ -5057,6 +5078,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           sourceReference: faqDraft.source,
           category: faqDraft.category,
           trainingPhrases,
+          academicUnitId: faqDraft.academicUnitId,
           contentOwnerId: faqDraft.contentOwnerId,
           reviewIntervalDays: faqDraft.reviewIntervalDays,
         });
@@ -5067,6 +5089,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         answer: "",
         category: "Consultation procedure",
         trainingPhrases: "",
+        academicUnitId: faqDraft.academicUnitId,
         contentOwnerId: user.id,
         reviewIntervalDays: 180,
       });
@@ -5093,6 +5116,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       answer: faq.answer,
       category: faq.category,
       trainingPhrases: (faq.training_phrases || []).join("\n"),
+      academicUnitId: faq.academic_unit_id || data.academicUnits.find((unit) => unit.active)?.id || "",
       contentOwnerId: faq.content_owner_id || faq.created_by,
       reviewIntervalDays: faq.review_interval_days || 180,
     });
@@ -5106,6 +5130,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       answer: "",
       category: "Consultation procedure",
       trainingPhrases: "",
+      academicUnitId: data.academicUnits.find((unit) => unit.active)?.id || "",
       contentOwnerId: user.id,
       reviewIntervalDays: 180,
     });
@@ -5128,6 +5153,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       answer: "",
       category: categoryByIntent[gap.detected_intent] || "Consultation procedure",
       trainingPhrases: `${gap.sample_question}\nPlease help me with: ${gap.sample_question}`,
+      academicUnitId: data.academicUnits.find((unit) => unit.active)?.id || "",
       contentOwnerId: user.id,
       reviewIntervalDays: 180,
     });
@@ -5229,6 +5255,14 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       onRetry={() => void refresh(true)}
     />
   ) : null;
+  const unitFilterMatches = (unitId?: string | null) =>
+    adminUnitFilter === "all" || unitId === adminUnitFilter;
+  const scopedUsers = data.users.filter((item) => unitFilterMatches(item.academic_unit_id));
+  const scopedAppointments = data.appointments.filter((item) => unitFilterMatches(item.academic_unit_id));
+  const scopedFaqs = data.faqs.filter((item) => unitFilterMatches(item.academic_unit_id));
+  const scopedReviews = data.reviews.filter((item) => unitFilterMatches(item.academic_unit_id));
+  const academicUnitLabel = (unitId?: string | null) =>
+    data.academicUnits.find((unit) => unit.id === unitId)?.code || "Unassigned";
   const feedback = (
     <>
       <div className="admin-data-toolbar" aria-label="Administration data refresh">
@@ -5240,6 +5274,21 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             : "Refreshing users, consultations, reviews, and service records"}
           </small>
         </span>
+        {data.academicUnits.length > 0 && (
+          <label className="admin-unit-filter">
+            <span>Data scope</span>
+            <select
+              aria-label="Filter administration data by academic unit"
+              value={adminUnitFilter}
+              onChange={(event) => setAdminUnitFilter(event.target.value)}
+            >
+              <option value="all">All academic units</option>
+              {data.academicUnits
+                .filter((unit) => unit.active || unit.id === adminUnitFilter)
+                .map((unit) => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}
+            </select>
+          </label>
+        )}
       </div>
       {adminLoadFailure}
       {!loadError && data.warnings.length > 0 && (
@@ -5260,22 +5309,22 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       )}
     </>
   );
-  const pending = data.appointments.filter(
+  const pending = scopedAppointments.filter(
     (item) => item.status === "pending",
   ).length;
-  const confirmed = data.appointments.filter(
+  const confirmed = scopedAppointments.filter(
     (item) => item.status === "confirmed",
   ).length;
-  const completed = data.appointments.filter(
+  const completed = scopedAppointments.filter(
     (item) => item.status === "completed",
   ).length;
-  const filteredUsers = data.users.filter((item) =>
+  const filteredUsers = scopedUsers.filter((item) =>
     (item.full_name + " " + item.email + " " + item.department + " " + item.role)
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
   const presenceNow = Date.now();
-  const presenceUsers = data.users.map((item) => ({
+  const presenceUsers = scopedUsers.map((item) => ({
     ...item,
     presence: presenceStatus(item.last_seen_at, presenceNow),
   }));
@@ -5306,10 +5355,10 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     });
   const filteredAppointments =
     appointmentFilter === "all"
-      ? data.appointments
-      : data.appointments.filter((item) => item.status === appointmentFilter);
+      ? scopedAppointments
+      : scopedAppointments.filter((item) => item.status === appointmentFilter);
   const normalizedTrainingQuery = trainingLibraryQuery.trim().toLowerCase();
-  const filteredTrainingEntries = data.faqs.filter((faq) => {
+  const filteredTrainingEntries = scopedFaqs.filter((faq) => {
     const statusMatches =
       trainingLibraryStatus === "all" || faq.status === trainingLibraryStatus;
     const queryMatches =
@@ -5326,9 +5375,9 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         .includes(normalizedTrainingQuery);
     return statusMatches && queryMatches;
   });
-  const activeFaqs = data.faqs.filter((faq) => faq.status !== "archived");
-  const approvedFaqs = data.faqs.filter((faq) => faq.status === "approved");
-  const approvalQueue = data.faqs.filter(
+  const activeFaqs = scopedFaqs.filter((faq) => faq.status !== "archived");
+  const approvedFaqs = scopedFaqs.filter((faq) => faq.status === "approved");
+  const approvalQueue = scopedFaqs.filter(
     (faq) => faq.status === "draft" || faq.status === "review",
   );
   const trainingPhraseCount = activeFaqs.reduce(
@@ -5336,7 +5385,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     0,
   );
   const coveredCategories = new Set(activeFaqs.map((faq) => faq.category)).size;
-  const facultyDirectoryCount = data.users.filter(
+  const facultyDirectoryCount = scopedUsers.filter(
     (portalUser) => portalUser.role === "faculty",
   ).length;
   const sourceReadyCount = approvedFaqs.filter(
@@ -5353,12 +5402,12 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   ];
   const readinessPassed = readinessChecks.filter(Boolean).length;
   const todayKey = manilaDateKey(new Date());
-  const todaysAppointments = data.appointments.filter(
+  const todaysAppointments = scopedAppointments.filter(
     (item) =>
       item.status === "confirmed" &&
       manilaDateKey(new Date(item.starts_at)) === todayKey,
   );
-  const activeAppointments = data.appointments.filter(
+  const activeAppointments = scopedAppointments.filter(
     (item) => item.status === "pending" || item.status === "confirmed",
   );
   const doubleBookings = Math.max(
@@ -5366,13 +5415,13 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     activeAppointments.length -
       new Set(activeAppointments.map((item) => item.availability_id)).size,
   );
-  const reviewAverage = data.reviews.length
-    ? data.reviews.reduce((sum, review) => sum + review.rating, 0) /
-      data.reviews.length
+  const reviewAverage = scopedReviews.length
+    ? scopedReviews.reduce((sum, review) => sum + review.rating, 0) /
+      scopedReviews.length
     : 0;
   const reviewGroups = (field: "college" | "program" | "year_level") => {
     const groups = new Map<string, { count: number; total: number }>();
-    data.reviews.forEach((review) => {
+    scopedReviews.forEach((review) => {
       const label = review[field]?.trim() || "Not provided";
       const current = groups.get(label) || { count: 0, total: 0 };
       groups.set(label, {
@@ -5389,40 +5438,40 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   };
   const appointmentById = new Map(
-    data.appointments.map((appointment) => [appointment.id, appointment]),
+    scopedAppointments.map((appointment) => [appointment.id, appointment]),
   );
-  const completedAppointments = data.appointments.filter(
+  const completedAppointments = scopedAppointments.filter(
     (appointment) => appointment.status === "completed",
   ).length;
-  const writtenReviewCount = data.reviews.filter((review) =>
+  const writtenReviewCount = scopedReviews.filter((review) =>
     Boolean(review.comment?.trim()),
   ).length;
-  const positiveReviewCount = data.reviews.filter(
+  const positiveReviewCount = scopedReviews.filter(
     (review) => review.rating >= 4,
   ).length;
-  const criticalReviewCount = data.reviews.filter(
+  const criticalReviewCount = scopedReviews.filter(
     (review) => review.rating <= 2,
   ).length;
   const reviewResponseRate = completedAppointments
-    ? Math.min(100, (data.reviews.length / completedAppointments) * 100)
+    ? Math.min(100, (scopedReviews.length / completedAppointments) * 100)
     : 0;
-  const positiveReviewRate = data.reviews.length
-    ? (positiveReviewCount / data.reviews.length) * 100
+  const positiveReviewRate = scopedReviews.length
+    ? (positiveReviewCount / scopedReviews.length) * 100
     : 0;
-  const writtenReviewRate = data.reviews.length
-    ? (writtenReviewCount / data.reviews.length) * 100
+  const writtenReviewRate = scopedReviews.length
+    ? (writtenReviewCount / scopedReviews.length) * 100
     : 0;
   const ratingDistribution = [5, 4, 3, 2, 1].map((rating) => {
-    const count = data.reviews.filter((review) => review.rating === rating).length;
+    const count = scopedReviews.filter((review) => review.rating === rating).length;
     return {
       rating,
       count,
-      percentage: data.reviews.length ? (count / data.reviews.length) * 100 : 0,
+      percentage: scopedReviews.length ? (count / scopedReviews.length) * 100 : 0,
     };
   });
   const averageForPeriod = (fromDaysAgo: number, toDaysAgo: number) => {
     const now = Date.now();
-    const periodReviews = data.reviews.filter((review) => {
+    const periodReviews = scopedReviews.filter((review) => {
       const age = now - new Date(review.created_at).getTime();
       return age >= fromDaysAgo * 86_400_000 && age < toDaysAgo * 86_400_000;
     });
@@ -5451,7 +5500,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
     (a, b) => a.average - b.average || b.count - a.count,
   )[0];
   const normalizedReviewQuery = reviewQuery.trim().toLowerCase();
-  const visibleReviews = data.reviews.filter((review) => {
+  const visibleReviews = scopedReviews.filter((review) => {
     const ratingMatches =
       reviewRatingFilter === "all" ||
       (reviewRatingFilter === "positive" && review.rating >= 4) ||
@@ -5485,8 +5534,8 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         />
         <Stats
           data={[
-            [String(data.users.length), "Registered users"],
-            [String(data.appointments.length), "Consultations"],
+            [String(scopedUsers.length), "Registered users"],
+            [String(scopedAppointments.length), "Consultations"],
             [String(pending), "Pending requests"],
             [String(doubleBookings), "Active double bookings"],
           ]}
@@ -5514,7 +5563,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             <Line a="Now" b="Service data refreshed" c="Live Supabase records" />
             <Line
               a={String(
-                data.faqs.filter((item) => item.status === "approved").length,
+                scopedFaqs.filter((item) => item.status === "approved").length,
               )}
               b="Approved FAQ entries"
               c="Available to students"
@@ -5542,7 +5591,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             [String(presenceCounts.active), "Active now"],
             [String(presenceCounts.recent), "Recently active"],
             [String(presenceCounts.offline), "Offline"],
-            [String(data.users.length), "Registered users"],
+            [String(scopedUsers.length), "Registered users"],
           ]}
         />
         <div className="scope-note presence-scope-note">
@@ -5578,7 +5627,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         </section>
         <div className="filter-tabs presence-filter-tabs" aria-label="Activity status filters">
           {([
-            ["all", "All", data.users.length],
+            ["all", "All", scopedUsers.length],
             ["active", "Active now", presenceCounts.active],
             ["recent", "Recently active", presenceCounts.recent],
             ["offline", "Offline", presenceCounts.offline],
@@ -5661,7 +5710,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             placeholder="Search by name or CLSU ID"
           />
         </div>
-        <Data headings={["User", "Department", "Role", "Status", "Account action"]}>
+        <Data headings={["User", "Department", "Academic unit", "Role", "Status", "Account action"]} cls="users-table">
           {filteredUsers.map((item) => {
             const itemPresence = presenceStatus(item.last_seen_at, presenceNow);
             return (
@@ -5672,6 +5721,20 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
               </span>
               <span data-label="Department">
                 {item.department || "Not set"}
+              </span>
+              <span data-label="Academic unit">
+                <select
+                  className="unit-select"
+                  value={item.academic_unit_id || ""}
+                  disabled={!data.academicUnits.some((unit) => unit.active)}
+                  onChange={(event) => void assignUserUnit(item.id, event.target.value)}
+                  aria-label={`Academic unit for ${item.full_name}`}
+                >
+                  <option value="" disabled>Select a unit</option>
+                  {data.academicUnits.filter((unit) => unit.active || unit.id === item.academic_unit_id).map((unit) => (
+                    <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+                  ))}
+                </select>
               </span>
               <span data-label="Role">
                 <select
@@ -5842,9 +5905,9 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <section className="scope-note academic-unit-next-step">
           <b>Next scoping step</b>
           <span>
-            The catalog is now protected and ready for assignment. The next
-            migration can add the unit foreign key to profiles, faculty
-            schedules, FAQs, and reporting records without changing this page.
+            Profiles, faculty schedules, appointments, FAQs, and review reports
+            inherit this unit boundary. Use the selector on admin pages to
+            inspect one unit or the full service.
           </span>
         </section>
       </>
@@ -5865,7 +5928,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             aria-pressed={appointmentFilter === "all"}
             onClick={() => setAppointmentFilter("all")}
           >
-            All {data.appointments.length}
+            All {scopedAppointments.length}
           </button>
           <button
             type="button"
@@ -5891,7 +5954,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           >
             Cancelled{" "}
             {
-              data.appointments.filter((item) => item.status === "cancelled")
+              scopedAppointments.filter((item) => item.status === "cancelled")
                 .length
             }
           </button>
@@ -5987,7 +6050,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
           <a href="#training-editor">Create answer</a>
           <a href="#training-tester">Test response</a>
           <a href="#training-gaps">Review gaps <b>{data.chatbotGaps.length}</b></a>
-          <a href="#training-library">Training library <b>{data.faqs.length}</b></a>
+          <a href="#training-library">Training library <b>{scopedFaqs.length}</b></a>
         </nav>
         <div className="knowledge-layout chatbot-training-layout training-studio">
           <div id="training-editor" className="training-editor-card">
@@ -6087,9 +6150,24 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                     <small>Groups related student needs in the library.</small>
                   </label>
                   <label>
+                    <span>Academic unit</span>
+                    <select
+                      name="academicUnitId"
+                      required
+                      value={faqDraft.academicUnitId}
+                      onChange={(event) => setFaqDraft((draft) => ({ ...draft, academicUnitId: event.target.value }))}
+                    >
+                      <option value="" disabled>Select a unit</option>
+                      {data.academicUnits.filter((unit) => unit.active).map((unit) => (
+                        <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+                      ))}
+                    </select>
+                    <small>Students only receive approved answers from their academic unit.</small>
+                  </label>
+                  <label>
                     <span>Content owner</span>
                     <select value={faqDraft.contentOwnerId} onChange={(event) => setFaqDraft((draft) => ({ ...draft, contentOwnerId: event.target.value }))}>
-                      {data.users.filter((entry) => entry.role !== "student" && entry.account_status === "active").map((entry) => (
+                      {scopedUsers.filter((entry) => entry.role !== "student" && entry.account_status === "active").map((entry) => (
                         <option key={entry.id} value={entry.id}>{entry.full_name} · {entry.role}</option>
                       ))}
                     </select>
@@ -6256,7 +6334,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <Work title="Training library and approval queue">
           <div className="training-library-note">
             <span>Editing an approved entry returns it to draft so a second source check is required.</span>
-            <b>{filteredTrainingEntries.length} of {data.faqs.length} entries</b>
+            <b>{filteredTrainingEntries.length} of {scopedFaqs.length} entries</b>
           </div>
           <div className="training-library-toolbar">
             <label>
@@ -6294,7 +6372,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                   <span className={`faq-status ${faq.status}`}>{faq.status === "approved" ? "live" : faq.status}</span>
                   <div className="faq-copy">
                     <b>{faq.question}</b>
-                    <small>{faq.category} · {faq.source_reference}</small>
+                    <small>{academicUnitLabel(faq.academic_unit_id)} · {faq.category} · {faq.source_reference}</small>
                     <p>{faq.answer}</p>
                     <small className={faq.review_due_at && new Date(faq.review_due_at).getTime() < Date.now() ? "freshness overdue" : "freshness"}>
                       {faq.status === "approved"
@@ -6331,7 +6409,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
               ))}
               {!filteredTrainingEntries.length && (
                 <div className="empty-card">
-                  {data.faqs.length
+                  {scopedFaqs.length
                     ? "No training entries match this search or status filter."
                     : "No training entries yet. Add a source-backed answer to begin."}
                 </div>
@@ -6365,7 +6443,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 <p className="eyebrow">RATING MIX</p>
                 <h2>Rating distribution</h2>
               </div>
-              <b>{data.reviews.length} total</b>
+              <b>{scopedReviews.length} total</b>
             </div>
             <div className="rating-distribution">
               {ratingDistribution.map((row) => (
@@ -6460,7 +6538,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             </div>
           </div>
           <p className="review-result-count" role="status">
-            Showing {visibleReviews.length} of {data.reviews.length} review records
+            Showing {visibleReviews.length} of {scopedReviews.length} review records
           </p>
           <div className="admin-review-list">
             {visibleReviews.map((review) => {
@@ -6493,7 +6571,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             })}
             {!visibleReviews.length && (
               <div className="empty-card">
-                {data.reviews.length
+                {scopedReviews.length
                   ? "No review records match the current search and rating filter."
                   : "No completed-consultation reviews have been submitted yet."}
               </div>
@@ -6591,7 +6669,7 @@ function Data({
   cls?: string;
 }) {
   return (
-    <section className="data-card">
+    <section className={`data-card ${cls}`}>
       <div className={`data-row data-head ${cls}`}>
         {headings.map((h) => (
           <b key={h}>{h}</b>

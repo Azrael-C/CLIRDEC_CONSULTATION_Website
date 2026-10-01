@@ -349,7 +349,7 @@ class ChatSessionStatus(BaseModel):
 
 _cache: tuple[float, list[KnowledgeItem], str] = (0.0, [], "bundled")
 _cache_lock = asyncio.Lock()
-_faculty_cache: tuple[float, list[FacultyDirectoryItem]] = (0.0, [])
+_faculty_cache: dict[str, tuple[float, list[FacultyDirectoryItem]]] = {}
 _faculty_cache_lock = asyncio.Lock()
 CACHE_TTL_SECONDS = max(30, int(os.getenv("FAQ_CACHE_SECONDS", "300")))
 FACULTY_CACHE_TTL_SECONDS = max(30, int(os.getenv("FACULTY_CACHE_SECONDS", "60")))
@@ -522,6 +522,39 @@ def _validate_supabase_session(
     return bool(isinstance(payload, dict) and payload.get("id"))
 
 
+def _load_user_academic_unit_id(
+    supabase_url: str,
+    server_key: str,
+    authorization: str | None,
+) -> str | None:
+    """Resolve the signed-in user's unit before service-key retrieval.
+
+    The chatbot uses a server credential for read-only retrieval, so PostgREST
+    RLS cannot scope those requests by itself. Resolve the user's Supabase ID
+    from their bearer token first, then apply the unit predicate explicitly to
+    FAQ, faculty, and availability queries.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    request = Request(
+        f"{supabase_url}/auth/v1/user",
+        headers={"apikey": server_key, "Authorization": authorization},
+        method="GET",
+    )
+    with urlopen(request, timeout=5) as response:  # nosec B310
+        payload = json.loads(response.read().decode("utf-8"))
+    user_id = payload.get("id") if isinstance(payload, dict) else None
+    if not user_id:
+        return None
+    rows = _fetch_json(
+        f"{supabase_url}/rest/v1/profiles",
+        {"apikey": server_key, "Authorization": f"Bearer {server_key}"},
+        {"select": "academic_unit_id", "id": f"eq.{user_id}", "limit": "1"},
+    )
+    unit_id = rows[0].get("academic_unit_id") if rows else None
+    return str(unit_id) if unit_id else None
+
+
 def _verify_turnstile_response(secret: str, token: str, remote_ip: str | None) -> bool:
     data = {"secret": secret, "response": token}
     if remote_ip:
@@ -648,24 +681,28 @@ def is_sensitive(message: str) -> bool:
 
 
 async def _load_approved_knowledge(authorization: str | None) -> tuple[list[KnowledgeItem], str]:
-    """Load approved FAQ entries with a server-only Supabase credential.
-
-    The browser authorization header is deliberately ignored here. Knowledge
-    retrieval is an application backend responsibility and must not depend on
-    whichever user's request happens to warm a global serverless cache. Only a
-    successful database response is cached; missing configuration, database
-    errors, and empty results fall back for that request without poisoning
-    later authenticated requests.
-    """
+    """Load approved FAQ entries scoped to the signed-in user's unit."""
     global _cache
-    expires, cached, source = _cache
-    if cached and time.monotonic() < expires:
-        return cached, source
+    if not authorization:
+        expires, cached, source = _cache
+        if cached and time.monotonic() < expires:
+            return cached, source
 
     supabase_url = (os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL", "")).rstrip("/")
     server_key = os.getenv("SUPABASE_SECRET_KEY") or ""
     if not supabase_url or not server_key:
         return [], "bundled workflow answers"
+
+    unit_id: str | None = None
+    if authorization:
+        try:
+            unit_id = await asyncio.to_thread(
+                _load_user_academic_unit_id, supabase_url, server_key, authorization
+            )
+        except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
+            return [], "bundled workflow answers"
+        if not unit_id:
+            return [], "bundled workflow answers"
 
     headers = {"apikey": server_key, "Authorization": f"Bearer {server_key}"}
     params = {
@@ -675,10 +712,13 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
         "order": "updated_at.desc",
         "limit": "200",
     }
+    if unit_id:
+        params["academic_unit_id"] = f"eq.{unit_id}"
     async with _cache_lock:
-        expires, cached, source = _cache
-        if cached and time.monotonic() < expires:
-            return cached, source
+        if not unit_id:
+            expires, cached, source = _cache
+            if cached and time.monotonic() < expires:
+                return cached, source
         try:
             rows = await asyncio.to_thread(
                 _fetch_json,
@@ -690,7 +730,8 @@ async def _load_approved_knowledge(authorization: str | None) -> tuple[list[Know
             if not items:
                 return [], "bundled workflow answers"
             source = "Supabase approved FAQ entries"
-            _cache = (time.monotonic() + CACHE_TTL_SECONDS, items, source)
+            if not unit_id:
+                _cache = (time.monotonic() + CACHE_TTL_SECONDS, items, source)
             return items, source
         except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
             return [], "bundled workflow answers"
@@ -711,24 +752,21 @@ async def _load_live_faculty(
     if not supabase_url or not server_key:
         return []
     try:
-        valid_session = await asyncio.to_thread(
-            _validate_supabase_session,
-            supabase_url,
-            server_key,
-            authorization,
+        unit_id = await asyncio.to_thread(
+            _load_user_academic_unit_id, supabase_url, server_key, authorization
         )
     except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
         return []
-    if not valid_session:
+    if not unit_id:
         return []
 
-    expires, cached = _faculty_cache
+    expires, cached = _faculty_cache.get(unit_id, (0.0, []))
     if cached and time.monotonic() < expires:
         return cached
 
     headers = {"apikey": server_key, "Authorization": f"Bearer {server_key}"}
     async with _faculty_cache_lock:
-        expires, cached = _faculty_cache
+        expires, cached = _faculty_cache.get(unit_id, (0.0, []))
         if cached and time.monotonic() < expires:
             return cached
         try:
@@ -737,7 +775,11 @@ async def _load_live_faculty(
                     _fetch_json,
                     f"{supabase_url}/rest/v1/profiles",
                     headers,
-                    {"select": "id,full_name,department", "role": "eq.faculty"},
+                    {
+                        "select": "id,full_name,department",
+                        "role": "eq.faculty",
+                        "academic_unit_id": f"eq.{unit_id}",
+                    },
                 ),
                 asyncio.to_thread(
                     _fetch_json,
@@ -750,6 +792,7 @@ async def _load_live_faculty(
                         ),
                         "active": "eq.true",
                         "profile_completed_at": "not.is.null",
+                        "academic_unit_id": f"eq.{unit_id}",
                     },
                 ),
                 asyncio.to_thread(
@@ -757,8 +800,9 @@ async def _load_live_faculty(
                     f"{supabase_url}/rest/v1/availability",
                     headers,
                     {
-                        "select": "faculty_id,starts_at,location,consultation_mode",
+                        "select": "faculty_id,academic_unit_id,starts_at,location,consultation_mode",
                         "is_open": "eq.true",
+                        "academic_unit_id": f"eq.{unit_id}",
                         "starts_at": f"gt.{datetime.now(timezone.utc).isoformat()}",
                         "order": "starts_at.asc",
                         "limit": "200",
@@ -792,7 +836,7 @@ async def _load_live_faculty(
                     office_location=str(row.get("office_location") or ""),
                     next_slots=tuple(slots_by_faculty.get(user_id, ())),
                 ))
-            _faculty_cache = (
+            _faculty_cache[unit_id] = (
                 time.monotonic() + FACULTY_CACHE_TTL_SECONDS,
                 items,
             )

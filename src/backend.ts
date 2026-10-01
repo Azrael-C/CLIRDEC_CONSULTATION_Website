@@ -13,6 +13,7 @@ export type ConsultationMode = "in_person" | "online";
 export type FacultyAvailability = {
   id: string;
   faculty_id?: string;
+  academic_unit_id?: string | null;
   starts_at: string;
   ends_at: string;
   location: string;
@@ -43,6 +44,7 @@ export type PortalAppointment = {
   location: string;
   consultation_mode: ConsultationMode;
   faculty_id: string;
+  academic_unit_id?: string | null;
   faculty_name: string;
   expertise: string[];
   review?: ConsultationReview;
@@ -59,6 +61,7 @@ export type FacultyProfile = {
   office_location: string;
   profile_completed: boolean;
   active: boolean;
+  academic_unit_id?: string | null;
 };
 
 export type ChatbotGap = {
@@ -79,6 +82,7 @@ export type AdminUser = {
   email: string;
   role: Role;
   department: string;
+  academic_unit_id: string | null;
   last_seen_at: string | null;
   created_at: string;
   account_status: "active" | "suspended" | "deactivated";
@@ -91,6 +95,7 @@ export type ConsultationReview = {
   appointment_id: string;
   student_id: string;
   faculty_id: string;
+  academic_unit_id: string | null;
   rating: number;
   comment: string | null;
   year_level: string | null;
@@ -110,6 +115,7 @@ export type FaqEntry = {
   training_phrases: string[];
   status: FaqStatus;
   created_by: string;
+  academic_unit_id: string | null;
   approved_by: string | null;
   approved_at: string | null;
   updated_at: string;
@@ -268,7 +274,7 @@ export async function loadStudentPortal(studentId: string) {
     supabase
       .from("availability")
       .select(
-        "id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open",
+        "id,faculty_id,academic_unit_id,starts_at,ends_at,location,consultation_mode,is_open",
       )
       .eq("is_open", true)
       .gt("starts_at", now)
@@ -276,13 +282,13 @@ export async function loadStudentPortal(studentId: string) {
     supabase
       .from("appointments")
       .select(
-        "id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)",
+        "id,availability_id,student_id,academic_unit_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,academic_unit_id,starts_at,ends_at,location,consultation_mode,is_open)",
       )
       .eq("student_id", studentId)
       .order("created_at", { ascending: false }),
     supabase
       .from("consultation_reviews")
-      .select("id,appointment_id,student_id,faculty_id,rating,comment,year_level,college,program,created_at,updated_at")
+      .select("id,appointment_id,student_id,faculty_id,academic_unit_id,rating,comment,year_level,college,program,created_at,updated_at")
       .eq("student_id", studentId),
   ]);
   if (slotError)
@@ -377,6 +383,7 @@ export async function loadStudentPortal(studentId: string) {
           location: slot.location || "Location provided after approval",
           consultation_mode: slot.consultation_mode as ConsultationMode,
           faculty_id: slot.faculty_id,
+          academic_unit_id: slot.academic_unit_id || row.academic_unit_id || null,
           faculty_name: names.get(slot.faculty_id) || "Faculty member",
           expertise: expertise.get(slot.faculty_id) || [],
           review: reviews.get(row.id),
@@ -439,8 +446,6 @@ export async function cancelAppointment(appointmentId: string) {
   const { error } = await supabase.rpc("cancel_consultation", {
     target_appointment: appointmentId,
   });
-  if (error?.code === "23505")
-    throw new Error("An academic unit with this code or name already exists.");
   if (error)
     throw new Error(
       friendlyError(error, "The consultation could not be cancelled."),
@@ -466,7 +471,7 @@ export async function loadFacultyPortal(facultyId: string) {
   const { data: availability, error: availabilityError } = await supabase
     .from("availability")
     .select(
-      "id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open",
+      "id,faculty_id,academic_unit_id,starts_at,ends_at,location,consultation_mode,is_open",
     )
     .eq("faculty_id", facultyId)
     .order("starts_at", { ascending: true });
@@ -486,7 +491,7 @@ export async function loadFacultyPortal(facultyId: string) {
   const { data: appointments, error: appointmentError } = await supabase
     .from("appointments")
     .select(
-      "id,availability_id,student_id,topic,notes,status,created_at,updated_at",
+      "id,availability_id,student_id,academic_unit_id,topic,notes,status,created_at,updated_at",
     )
     .in("availability_id", slotIds)
     .order("created_at", { ascending: false });
@@ -535,6 +540,7 @@ export async function loadFacultyPortal(facultyId: string) {
         location: slot.location || "Location to be confirmed",
         consultation_mode: slot.consultation_mode,
         faculty_id: facultyId,
+        academic_unit_id: slot.academic_unit_id || item.academic_unit_id || null,
         faculty_name: "",
         expertise: [],
       },
@@ -605,7 +611,7 @@ export async function createFacultyAvailability(input: {
       is_open: true,
     })
     .select(
-      "id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open",
+      "id,faculty_id,academic_unit_id,starts_at,ends_at,location,consultation_mode,is_open",
     )
     .single();
   return requireData(
@@ -683,7 +689,7 @@ export async function loadFacultyProfile(
 ): Promise<FacultyProfile> {
   const { data, error } = await supabase
     .from("faculty_profiles")
-    .select("expertise,subjects,consultation_topics,research_interests,bio,office_location,profile_completed_at,active")
+    .select("expertise,subjects,consultation_topics,research_interests,bio,office_location,profile_completed_at,active,academic_unit_id")
     .eq("user_id", userId)
     .single();
   return requireData(
@@ -696,6 +702,7 @@ export async function loadFacultyProfile(
       office_location: data?.office_location || "",
       profile_completed: Boolean(data?.profile_completed_at),
       active: data?.active ?? true,
+      academic_unit_id: data?.academic_unit_id || null,
     },
     error,
     "The faculty profile could not be loaded.",
@@ -719,23 +726,23 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
   ] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id,full_name,email,role,department,last_seen_at,created_at,account_status,status_reason,status_changed_at")
+      .select("id,full_name,email,role,department,academic_unit_id,last_seen_at,created_at,account_status,status_reason,status_changed_at")
       .order("full_name"),
     supabase
       .from("appointments")
       .select(
-        "id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)",
+        "id,availability_id,student_id,academic_unit_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,academic_unit_id,starts_at,ends_at,location,consultation_mode,is_open)",
       )
       .order("created_at", { ascending: false }),
     supabase
       .from("faq_entries")
       .select(
-        "id,question,answer,category,source_reference,training_phrases,status,created_by,approved_by,approved_at,updated_at,content_owner_id,last_reviewed_at,review_due_at,review_interval_days",
+        "id,question,answer,category,source_reference,training_phrases,status,created_by,academic_unit_id,approved_by,approved_at,updated_at,content_owner_id,last_reviewed_at,review_due_at,review_interval_days",
       )
       .order("updated_at", { ascending: false }),
     supabase
       .from("consultation_reviews")
-      .select("id,appointment_id,student_id,faculty_id,rating,comment,year_level,college,program,created_at,updated_at")
+      .select("id,appointment_id,student_id,faculty_id,academic_unit_id,rating,comment,year_level,college,program,created_at,updated_at")
       .order("created_at", { ascending: false }),
     supabase
       .from("chatbot_unanswered_questions")
@@ -827,6 +834,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
         location: slot.location || "Location to be confirmed",
         consultation_mode: slot.consultation_mode as ConsultationMode,
         faculty_id: slot.faculty_id,
+        academic_unit_id: slot.academic_unit_id || row.academic_unit_id || null,
         faculty_name: profileMap.get(slot.faculty_id) || "Faculty member",
         expertise: [],
       },
@@ -838,6 +846,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       ...profile,
       role: profile.role as Role,
       department: profile.department || "",
+      academic_unit_id: profile.academic_unit_id || null,
       last_seen_at: profile.last_seen_at || null,
       account_status: profile.account_status || "active",
       status_reason: profile.status_reason || null,
@@ -906,7 +915,7 @@ export async function loadAdminNotificationSummary(): Promise<AdminNotificationS
     supabase
       .from("appointments")
       .select(
-        "id,availability_id,student_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,starts_at,ends_at,location,consultation_mode,is_open)",
+        "id,availability_id,student_id,academic_unit_id,topic,notes,status,created_at,updated_at,availability:availability_id(id,faculty_id,academic_unit_id,starts_at,ends_at,location,consultation_mode,is_open)",
       )
       .eq("status", "pending")
       .order("updated_at", { ascending: false })
@@ -914,7 +923,7 @@ export async function loadAdminNotificationSummary(): Promise<AdminNotificationS
     supabase
       .from("faq_entries")
       .select(
-        "id,question,answer,category,source_reference,training_phrases,status,created_by,approved_by,approved_at,updated_at",
+        "id,question,answer,category,source_reference,training_phrases,status,created_by,academic_unit_id,approved_by,approved_at,updated_at,content_owner_id,last_reviewed_at,review_due_at,review_interval_days",
       )
       .in("status", ["draft", "review"])
       .order("updated_at", { ascending: false })
@@ -962,6 +971,7 @@ export async function loadAdminNotificationSummary(): Promise<AdminNotificationS
       id: row.id,
       availability_id: row.availability_id,
       student_id: row.student_id,
+      academic_unit_id: slot.academic_unit_id || row.academic_unit_id || null,
       student_name: names.get(row.student_id) || "Student",
       topic: row.topic,
       notes: row.notes || "",
@@ -1056,6 +1066,17 @@ export async function adminUpdateAcademicUnit(input: {
     );
 }
 
+export async function adminAssignUserUnit(userId: string, unitId: string) {
+  const { error } = await supabase.rpc("admin_assign_user_unit", {
+    target_user: userId,
+    target_unit: unitId,
+  });
+  if (error)
+    throw new Error(
+      friendlyError(error, "The user's academic unit could not be updated."),
+    );
+}
+
 export async function updateRetentionPolicy(input: {
   recordType: string;
   retentionDays: number;
@@ -1079,6 +1100,7 @@ export async function createFaqEntry(input: {
   category: string;
   sourceReference: string;
   trainingPhrases: string[];
+  academicUnitId: string;
   contentOwnerId?: string;
   reviewIntervalDays?: number;
 }) {
@@ -1103,6 +1125,7 @@ export async function createFaqEntry(input: {
     training_phrases: trainingPhrases,
     status: "draft",
     created_by: input.userId,
+    academic_unit_id: input.academicUnitId,
     content_owner_id: input.contentOwnerId || input.userId,
     review_interval_days: input.reviewIntervalDays || 180,
   });
@@ -1136,6 +1159,7 @@ export async function updateFaqEntry(input: {
   category: string;
   sourceReference: string;
   trainingPhrases: string[];
+  academicUnitId: string;
   contentOwnerId?: string;
   reviewIntervalDays?: number;
 }) {
@@ -1157,6 +1181,7 @@ export async function updateFaqEntry(input: {
       answer: input.answer.trim(),
       category: input.category.trim(),
       source_reference: input.sourceReference.trim(),
+      academic_unit_id: input.academicUnitId,
       training_phrases: normalizeTrainingPhrases(input.trainingPhrases),
       status: "draft",
       approved_by: null,
