@@ -22,6 +22,10 @@ create table public.profiles (
   ),
   email_notifications boolean not null default true,
   last_seen_at timestamptz,
+  account_status text not null default 'active' check (account_status in ('active','suspended','deactivated')),
+  status_reason text,
+  status_changed_at timestamptz,
+  status_changed_by uuid references public.profiles(id),
   created_at timestamptz not null default now()
 );
 create table public.academic_units (
@@ -425,6 +429,13 @@ $$;
 revoke all on function public.can_read_profile(uuid) from public,anon;
 grant execute on function public.can_read_profile(uuid) to authenticated;
 
+-- This helper is defined before the directory functions and RLS policies that
+-- depend on it. The canonical bootstrap can then be applied from an empty DB.
+create or replace function public.current_academic_unit_id()
+returns uuid language sql stable security definer set search_path=public as $$
+  select academic_unit_id from public.profiles where id=auth.uid()
+$$;
+
 create function public.faculty_directory(target_ids uuid[] default null)
 returns table(
   id uuid,full_name text,department text,expertise text[],subjects text[],
@@ -530,8 +541,8 @@ begin
   if extract(isodow from local_start) not between 1 and 5 then
     raise exception 'Consultation availability may only be published from Monday to Friday';
   end if;
-  if new.starts_at < now() + interval '24 hours' then
-    raise exception 'Publish availability at least 24 hours in advance';
+  if new.starts_at <= now() then
+    raise exception 'Availability must start in the future';
   end if;
   if local_start::date <> local_end::date
      or local_start::time < time '08:00'
@@ -694,7 +705,7 @@ begin
 end $$;
 create trigger create_profile_after_signup after insert on auth.users for each row execute function public.create_profile();
 
-create function public.queue_appointment_email() returns trigger language plpgsql security definer set search_path=public as $$
+create or replace function public.queue_appointment_email() returns trigger language plpgsql security definer set search_path=public as $$
 declare faculty_user uuid; event_name text; mail_subject text; mail_body text;
 begin
   select faculty_id into faculty_user from availability where id=new.availability_id;
@@ -793,7 +804,7 @@ begin
   if length(trim(consultation_topic))<5 then raise exception 'Consultation topic is too short'; end if;
   select * into selected_slot from availability where id=target_availability for update;
   if not found or not selected_slot.is_open then raise exception 'This consultation slot is no longer available'; end if;
-  if selected_slot.starts_at<now()+interval '24 hours' then raise exception 'Appointments require at least 24 hours notice'; end if;
+  if selected_slot.starts_at<=now() then raise exception 'Consultation time must be in the future'; end if;
   insert into appointments(availability_id,student_id,topic,notes)
   values(target_availability,auth.uid(),trim(consultation_topic),nullif(trim(consultation_notes),''))
   returning id into created_id;
@@ -831,7 +842,7 @@ begin
   select starts_at into slot_start from availability
   where id=new.availability_id and is_open=true for update;
   if not found then raise exception 'This consultation slot is no longer available'; end if;
-  if slot_start<now()+interval '24 hours' then raise exception 'Appointments require at least 24 hours notice'; end if;
+  if slot_start<=now() then raise exception 'Consultation time must be in the future'; end if;
   update availability set is_open=false where id=new.availability_id;
   return new;
 end $$;
@@ -880,7 +891,7 @@ begin
   if previous_availability=new_availability then raise exception 'Choose a different consultation time'; end if;
   select * into replacement from availability where id=new_availability for update;
   if not found or not replacement.is_open then raise exception 'This consultation slot is no longer available'; end if;
-  if replacement.starts_at<now()+interval '24 hours' then raise exception 'Appointments require at least 24 hours notice'; end if;
+  if replacement.starts_at<=now() then raise exception 'Consultation time must be in the future'; end if;
   update appointments set status='cancelled' where id=target_appointment;
   insert into appointments(availability_id,student_id,topic,notes)
   values(new_availability,auth.uid(),previous_topic,previous_notes)
@@ -955,8 +966,8 @@ grant execute on function public.decide_consultation(uuid,text) to authenticated
 grant execute on function public.complete_consultation(uuid) to authenticated;
 grant execute on function public.withdraw_availability(uuid) to authenticated;
 
--- Closed slots become available again only when a cancellation or decline
--- leaves enough notice for another student to make a valid request.
+-- Closed slots reopen after cancellation or decline whenever their start is
+-- still in the future; no fixed booking lead time applies.
 create or replace function public.reopen_slot_after_inactive_appointment()
 returns trigger
 language plpgsql
@@ -966,7 +977,7 @@ as $$
 begin
   if old.status in ('pending','confirmed') and new.status in ('cancelled','declined') then
     update availability
-    set is_open=(starts_at>=now()+interval '24 hours')
+    set is_open=(starts_at>now())
     where id=new.availability_id;
   end if;
   return new;
@@ -1206,3 +1217,98 @@ create policy "unit students and admins read consultation reviews" on public.con
 using ((student_id=auth.uid() and public.can_access_academic_unit(academic_unit_id)) or public.current_role()='admin');
 
 grant select (id,full_name,email,role,department,email_notifications,student_number,college,program,year_level,last_seen_at,created_at,academic_unit_id) on public.profiles to authenticated;
+
+-- In-person consultations are historical records, not fake bookings. They do
+-- not create availability reservations, student requests, or email events.
+create table if not exists public.walk_in_consultations (
+  id uuid primary key default gen_random_uuid(),
+  academic_unit_id uuid not null references public.academic_units(id) on delete restrict,
+  student_id uuid not null references public.profiles(id) on delete restrict,
+  faculty_id uuid not null references public.profiles(id) on delete restrict,
+  topic text not null check (char_length(trim(topic)) between 5 and 240),
+  notes text check (notes is null or char_length(notes) <= 2000),
+  occurred_at timestamptz not null,
+  location text not null default 'In person' check (char_length(location) between 1 and 160),
+  recorded_by uuid not null references public.profiles(id) on delete restrict,
+  created_at timestamptz not null default now(),
+  constraint walk_in_consultations_distinct_participants check (student_id <> faculty_id)
+);
+create index if not exists walk_in_consultations_unit_date_idx on public.walk_in_consultations(academic_unit_id,occurred_at desc);
+create index if not exists walk_in_consultations_student_date_idx on public.walk_in_consultations(student_id,occurred_at desc);
+create index if not exists walk_in_consultations_faculty_date_idx on public.walk_in_consultations(faculty_id,occurred_at desc);
+do $$
+begin
+  if exists(select 1 from pg_publication where pubname='supabase_realtime')
+     and not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='walk_in_consultations') then
+    execute 'alter publication supabase_realtime add table public.walk_in_consultations';
+  end if;
+end; $$;
+alter table public.walk_in_consultations enable row level security;
+revoke all on table public.walk_in_consultations from anon,authenticated;
+grant select on table public.walk_in_consultations to authenticated;
+create policy "participants read in-person consultation logs" on public.walk_in_consultations for select to authenticated
+using (public.can_access_academic_unit(academic_unit_id) and (student_id=auth.uid() or faculty_id=auth.uid() or public.current_role()='admin'));
+
+create or replace function public.search_walk_in_students(search_text text)
+returns table(id uuid,full_name text)
+language plpgsql stable security definer set search_path=public as $$
+declare actor_unit uuid; safe_query text;
+begin
+  if auth.uid() is null or public.current_role() is distinct from 'faculty'::public.user_role then raise exception 'Faculty access required'; end if;
+  if char_length(trim(coalesce(search_text,'')))<2 or char_length(trim(search_text))>80 then raise exception 'Enter 2 to 80 characters to search for a student'; end if;
+  select p.academic_unit_id into actor_unit from public.profiles p join public.faculty_profiles fp on fp.user_id=p.id and fp.active
+    where p.id=auth.uid() and p.role='faculty' and p.account_status='active';
+  if actor_unit is null then raise exception 'Active faculty access required'; end if;
+  safe_query := replace(replace(trim(search_text), E'\\', E'\\\\'), '%', E'\\%');
+  safe_query := replace(safe_query, '_', E'\\_');
+  return query select p.id,p.full_name from public.profiles p
+    where p.role='student' and p.account_status='active' and p.academic_unit_id=actor_unit
+      and p.full_name ilike '%'||safe_query||'%' escape E'\\'
+    order by p.full_name limit 25;
+end; $$;
+revoke all on function public.search_walk_in_students(text) from public,anon;
+grant execute on function public.search_walk_in_students(text) to authenticated;
+
+create or replace function public.record_walk_in_consultation(
+  target_student uuid,consultation_topic text,consultation_notes text default null,
+  consultation_occurred_at timestamptz default null,consultation_location text default null
+) returns uuid language plpgsql security definer set search_path=public as $$
+declare actor_unit uuid; created_id uuid; cleaned_topic text:=trim(coalesce(consultation_topic,''));
+  cleaned_notes text:=nullif(trim(coalesce(consultation_notes,'')),'');
+  clean_location text:=coalesce(nullif(trim(coalesce(consultation_location,'')),''),'In person');
+begin
+  if auth.uid() is null or public.current_role() is distinct from 'faculty'::public.user_role then raise exception 'Faculty access required'; end if;
+  select p.academic_unit_id into actor_unit from public.profiles p join public.faculty_profiles fp on fp.user_id=p.id and fp.active
+    where p.id=auth.uid() and p.role='faculty' and p.account_status='active';
+  if actor_unit is null then raise exception 'Active faculty access required'; end if;
+  if char_length(cleaned_topic)<5 or char_length(cleaned_topic)>240 then raise exception 'Consultation topic must be between 5 and 240 characters'; end if;
+  if cleaned_notes is not null and char_length(cleaned_notes)>2000 then raise exception 'Consultation notes may contain at most 2000 characters'; end if;
+  if char_length(clean_location)>160 then raise exception 'Location may contain at most 160 characters'; end if;
+  if consultation_occurred_at is null or consultation_occurred_at>now() then raise exception 'In-person consultation date and time must be in the past'; end if;
+  if not exists(select 1 from public.profiles s where s.id=target_student and s.role='student' and s.account_status='active' and s.academic_unit_id=actor_unit) then
+    raise exception 'Choose an active student from your academic unit';
+  end if;
+  insert into public.walk_in_consultations(academic_unit_id,student_id,faculty_id,topic,notes,occurred_at,location,recorded_by)
+    values(actor_unit,target_student,auth.uid(),cleaned_topic,cleaned_notes,consultation_occurred_at,clean_location,auth.uid()) returning id into created_id;
+  insert into public.audit_logs(actor_id,action,resource_type,resource_id,new_data)
+    values(auth.uid(),'walk_in_consultation_recorded','walk_in_consultation',created_id::text,
+      jsonb_build_object('academic_unit_id',actor_unit,'student_id',target_student,'faculty_id',auth.uid(),'occurred_at',consultation_occurred_at));
+  return created_id;
+end; $$;
+revoke all on function public.record_walk_in_consultation(uuid,text,text,timestamptz,text) from public,anon;
+grant execute on function public.record_walk_in_consultation(uuid,text,text,timestamptz,text) to authenticated;
+
+create or replace function public.can_read_profile(target_user uuid)
+returns boolean language sql stable security definer set search_path=public as $$
+  select target_user=auth.uid() or public.current_role()='admin' or (
+    public.current_role()='faculty' and (
+      exists(select 1 from public.profiles target join public.appointments ap on ap.student_id=target.id
+        join public.availability av on av.id=ap.availability_id where target.id=target_user and av.faculty_id=auth.uid()
+          and target.academic_unit_id=public.current_academic_unit_id())
+      or exists(select 1 from public.walk_in_consultations wc where wc.student_id=target_user and wc.faculty_id=auth.uid()
+        and wc.academic_unit_id=public.current_academic_unit_id())
+    )
+  )
+$$;
+revoke all on function public.can_read_profile(uuid) from public,anon;
+grant execute on function public.can_read_profile(uuid) to authenticated;

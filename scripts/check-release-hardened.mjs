@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const assertIncludes = (content, expected, label) => {
   if (!content.includes(expected)) throw new Error(`${label} is missing: ${expected}`);
 };
@@ -71,7 +71,8 @@ assertIncludes(completeEmailMigration, "reminder_60_minutes", "One-hour reminder
 assertIncludes(completeEmailMigration, "reminder_30_minutes", "Thirty-minute reminder queue");
 assertIncludes(completeEmailMigration, "array[new.student_id,faculty_user]", "Both consultation participants notified");
 assertIncludes(autoConfirmMigration, "auto_confirm_new_consultation", "Automatic consultation confirmation trigger");
-assertIncludes(autoConfirmMigration, "values(\n    target_availability", "Automatic-confirmation booking RPC");
+assertIncludes(autoConfirmMigration, "values(", "Automatic-confirmation booking RPC values clause");
+assertIncludes(autoConfirmMigration, "target_availability,", "Automatic-confirmation booking RPC slot parameter");
 assertIncludes(autoConfirmMigration, "insert into appointments(availability_id,student_id,topic,notes)\n", "Normal bookings remain pending by default");
 assertIncludes(autoConfirmMigration, "facultyconnect-e2e", "E2E-only automatic confirmation guard");
 assertIncludes(autoConfirmMigration, "student_email", "E2E student identity guard");
@@ -91,7 +92,15 @@ assertIncludes(app, 'table: "availability"', "Student availability realtime subs
 assertIncludes(app, "slot.booking_open", "Student booking-window display state");
 assertIncludes(app, "emailRedirectTo: window.location.origin", "Automatic sign-in after email confirmation");
 assertIncludes(backend, '.gt("starts_at", now)', "Future availability visibility");
-assertIncludes(backend, "Date.now() + MINIMUM_NOTICE_MS", "Minimum-notice booking gate");
+assertIncludes(backend, "new Date(slot.starts_at).getTime() > Date.now()", "Future-only booking gate");
+assertIncludes(backend, 'from("walk_in_consultations")', "In-person consultation history loading");
+assertIncludes(backend, 'rpc("record_walk_in_consultation"', "Secure in-person consultation recording");
+assertIncludes(app, "Log an in-person consultation", "Faculty walk-in logging form");
+assertIncludes(app, "Your report was sent", "Explicit issue-report confirmation");
+assertIncludes(app, "Students may request any published future time", "Flexible booking guidance");
+if (app.includes("Less than 24 hours remaining")) {
+  throw new Error("Student booking UI still displays the removed 24-hour cutoff.");
+}
 assertIncludes(schema, "training_phrases text[]", "Chatbot training phrase storage");
 assertIncludes(schema, "auto_confirm_new_consultation", "Canonical automatic consultation confirmation trigger");
 assertIncludes(schema, "facultyconnect-e2e", "Canonical E2E-only automatic confirmation guard");

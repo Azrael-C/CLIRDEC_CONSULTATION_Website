@@ -46,7 +46,7 @@ The GitHub `pilot-e2e` workflow now runs the original lifecycle, resets the dedi
 | STU-DIR-01 | Faculty directory | Search by faculty name | Matching published slots appear | Role suite |
 | STU-DIR-02 | Faculty directory | Search by subject/expertise | Matching faculty profile and subjects appear | Role suite |
 | STU-DIR-03 | Faculty directory | Search with no match | No-results state is useful and does not leak unrelated data | Role suite |
-| STU-DIR-04 | Faculty directory | Slot inside 24-hour notice window | Booking is disabled with an explanation | Execute with controlled near-term slot |
+| STU-DIR-04 | Faculty directory | Published slot later today, still in the future | Booking remains enabled; a same-day request can be submitted | Execute with controlled near-term slot |
 | STU-DIR-05 | Faculty directory | Expired/withdrawn slot | Slot is absent from the published student list | Execute |
 | STU-BKG-01 | Booking | Submit valid topic and notes | Pending request is created and confirmation appears | Protected lifecycle; role suite |
 | STU-BKG-02 | Booking | Topic shorter than five characters | Submission is blocked with an actionable message | Execute |
@@ -81,6 +81,8 @@ The GitHub `pilot-e2e` workflow now runs the original lifecycle, resets the dedi
 | STU-ERR-01 | Resilience | Network failure while loading portal | Existing records remain visible; retry/error state is understandable | Route-failure Playwright test |
 | STU-ERR-02 | Resilience | Offline/empty availability | Empty state explains what the student can do next | Execute |
 | STU-ERR-03 | Resilience | Loading and submitting states | Buttons show progress and duplicate submissions are prevented | Execute |
+| STU-ERR-04 | Support | Submit a portal issue report | Success is confirmed in the dialog; failure leaves the details available to retry | Execute |
+| STU-WALKIN-01 | Consultation history | Faculty records a past in-person consultation | Student sees a completed, clearly labeled record without booking actions or a review form | Execute with same-unit test accounts |
 
 ## Faculty role
 
@@ -97,9 +99,9 @@ The GitHub `pilot-e2e` workflow now runs the original lifecycle, resets the dedi
 | FAC-PRO-03 | Profile | Edit consultation topics | Chatbot/directory can use approved topics | Execute |
 | FAC-PRO-04 | Profile | Edit research interests, bio, office location | Optional fields persist without exposing private data | Role suite |
 | FAC-PRO-05 | Profile | Overlong label/bio/location | Server and client validation reject unsafe lengths | Execute |
-| FAC-AVL-01 | Availability | Open weekday calendar | Monday–Friday dates, timezone, and notice window are correct | Role suite |
+| FAC-AVL-01 | Availability | Open weekday calendar | Monday–Friday dates, Philippine timezone, and future-only rule are clear | Role suite |
 | FAC-AVL-02 | Availability | Change duration (15/20/30/45/60/90/120) | Selected duration highlights the correct calendar range | Role suite |
-| FAC-AVL-03 | Availability | Select past/weekend/<24-hour cell | Cell is disabled with an explanation | Execute |
+| FAC-AVL-03 | Availability | Select past/weekend/current-time cell | Past/current and weekend cells are disabled; a future same-day cell is allowed | Execute |
 | FAC-AVL-04 | Availability | Publish in-person slot | Slot appears in published schedule and student directory | Role suite |
 | FAC-AVL-05 | Availability | Choose online mode | Warning explains FacultyConnect does not create the meeting link | Role suite |
 | FAC-AVL-06 | Availability | Publish online slot with link/instructions | Location/link is required, saved, and shown to approved participants | Role suite |
@@ -117,6 +119,8 @@ The GitHub `pilot-e2e` workflow now runs the original lifecycle, resets the dedi
 | FAC-REQ-06 | Requests | Complete before the end time | Button is disabled or server rejects the action | Execute |
 | FAC-REQ-07 | Requests | Download `.ics` and Google Calendar event | Correct appointment details are exported | Role suite |
 | FAC-REQ-08 | Requests | View pending/approved/completed filters | Counts and records match the database | Role suite |
+| FAC-REQ-09 | In-person consultation history | Log a past consultation without a web booking | Completed record is visible to its student, recording faculty, and authorized admins; audit entry exists; no booking/email is created | Execute with same-unit test accounts |
+| FAC-REQ-10 | In-person consultation history | Search student or attempt cross-unit/unauthorized logging | Search returns only active same-unit students; non-faculty and cross-unit writes are denied | Isolated authorization test |
 | FAC-EMAIL-01 | Notifications | New request email | Faculty receives one request notification | Protected lifecycle |
 | FAC-EMAIL-02 | Notifications | Decision email | Student receives one approval/decline email | Protected lifecycle; role suite |
 | FAC-EMAIL-03 | Notifications | Schedule change/cancellation email | Both participants are notified and outbox record is auditable | Execute |

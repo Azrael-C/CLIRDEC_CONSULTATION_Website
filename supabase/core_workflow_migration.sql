@@ -56,7 +56,7 @@ begin
   if length(trim(consultation_topic))<5 then raise exception 'Consultation topic is too short'; end if;
   select * into selected_slot from availability where id=target_availability for update;
   if not found or not selected_slot.is_open then raise exception 'This consultation slot is no longer available'; end if;
-  if selected_slot.starts_at<now()+interval '24 hours' then raise exception 'Appointments require at least 24 hours notice'; end if;
+  if selected_slot.starts_at<=now() then raise exception 'Consultation time must be in the future'; end if;
   insert into appointments(availability_id,student_id,topic,notes)
   values(target_availability,auth.uid(),trim(consultation_topic),nullif(trim(consultation_notes),''))
   returning id into created_id;
@@ -72,7 +72,7 @@ begin
   select starts_at into slot_start from availability
   where id=new.availability_id and is_open=true for update;
   if not found then raise exception 'This consultation slot is no longer available'; end if;
-  if slot_start<now()+interval '24 hours' then raise exception 'Appointments require at least 24 hours notice'; end if;
+  if slot_start<=now() then raise exception 'Consultation time must be in the future'; end if;
   update availability set is_open=false where id=new.availability_id;
   return new;
 end $$;
@@ -113,7 +113,7 @@ begin
   if previous_availability=new_availability then raise exception 'Choose a different consultation time'; end if;
   select * into replacement from availability where id=new_availability for update;
   if not found or not replacement.is_open then raise exception 'This consultation slot is no longer available'; end if;
-  if replacement.starts_at<now()+interval '24 hours' then raise exception 'Appointments require at least 24 hours notice'; end if;
+  if replacement.starts_at<=now() then raise exception 'Consultation time must be in the future'; end if;
   update appointments set status='cancelled' where id=target_appointment;
   insert into appointments(availability_id,student_id,topic,notes)
   values(new_availability,auth.uid(),previous_topic,previous_notes)
@@ -184,7 +184,7 @@ returns trigger language plpgsql security definer set search_path=public
 as $$
 begin
   if old.status in ('pending','confirmed') and new.status in ('cancelled','declined') then
-    update availability set is_open=(starts_at>=now()+interval '24 hours') where id=new.availability_id;
+    update availability set is_open=(starts_at>now()) where id=new.availability_id;
   end if;
   return new;
 end $$;

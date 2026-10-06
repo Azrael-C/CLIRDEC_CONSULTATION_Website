@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { availabilityValidationMessage, MINIMUM_NOTICE_MS } from "./scheduling";
+import { availabilityValidationMessage } from "./scheduling";
 
 export type Role = "student" | "faculty" | "admin";
 export type AppointmentStatus =
@@ -48,7 +48,10 @@ export type PortalAppointment = {
   faculty_name: string;
   expertise: string[];
   review?: ConsultationReview;
+  record_source?: "web_booking" | "walk_in";
 };
+
+export type WalkInStudent = { id: string; full_name: string };
 
 export type FacultyRequest = PortalAppointment;
 
@@ -224,8 +227,8 @@ function friendlyError(error: DbError, fallback: string) {
   if (/overlap|no_overlapping_faculty_slots/i.test(raw)) {
     return "That time overlaps an availability entry already on the faculty schedule.";
   }
-  if (/24 hours/i.test(raw))
-    return "Choose a consultation time at least 24 hours from now.";
+  if (/must be in the future|already passed/i.test(raw))
+    return "Choose a consultation time that has not passed.";
   if (/row-level security|permission denied/i.test(raw)) {
     return "Your account is not allowed to perform that action.";
   }
@@ -270,6 +273,7 @@ export async function loadStudentPortal(studentId: string) {
     { data: open, error: slotError },
     { data: appointmentRows, error: appointmentError },
     { data: reviewRows, error: reviewError },
+    { data: walkInRows, error: walkInError },
   ] = await Promise.all([
     supabase
       .from("availability")
@@ -290,6 +294,11 @@ export async function loadStudentPortal(studentId: string) {
       .from("consultation_reviews")
       .select("id,appointment_id,student_id,faculty_id,academic_unit_id,rating,comment,year_level,college,program,created_at,updated_at")
       .eq("student_id", studentId),
+    supabase
+      .from("walk_in_consultations")
+      .select("id,academic_unit_id,student_id,faculty_id,topic,notes,occurred_at,location,created_at")
+      .eq("student_id", studentId)
+      .order("occurred_at", { ascending: false }),
   ]);
   if (slotError)
     throw new Error(
@@ -303,6 +312,8 @@ export async function loadStudentPortal(studentId: string) {
     throw new Error(
       friendlyError(reviewError, "Your consultation reviews could not be loaded."),
     );
+  if (walkInError)
+    throw new Error(friendlyError(walkInError, "Your in-person consultation history could not be loaded."));
 
   const reviews = new Map(
     ((reviewRows || []) as ConsultationReview[]).map((review) => [
@@ -318,6 +329,7 @@ export async function loadStudentPortal(studentId: string) {
         ...(appointmentRows || []).map(
           (row) => relation<any>(row.availability)?.faculty_id,
         ),
+        ...(walkInRows || []).map((row) => row.faculty_id),
       ].filter(Boolean),
     ),
   ] as string[];
@@ -356,7 +368,7 @@ export async function loadStudentPortal(studentId: string) {
     .map((slot) => ({
       ...slot,
       booking_open:
-        new Date(slot.starts_at).getTime() >= Date.now() + MINIMUM_NOTICE_MS,
+        new Date(slot.starts_at).getTime() > Date.now(),
       location: slot.location || "Location provided after approval",
       faculty_name: names.get(slot.faculty_id) || "Faculty member",
       expertise: expertise.get(slot.faculty_id) || [],
@@ -391,6 +403,29 @@ export async function loadStudentPortal(studentId: string) {
       ];
     },
   );
+
+  for (const item of walkInRows || []) {
+    appointments.push({
+      id: item.id,
+      availability_id: "",
+      student_id: item.student_id,
+      student_name: "",
+      topic: item.topic,
+      notes: item.notes || "",
+      status: "completed",
+      updated_at: item.created_at,
+      starts_at: item.occurred_at,
+      ends_at: item.occurred_at,
+      location: item.location || "In-person consultation",
+      consultation_mode: "in_person",
+      faculty_id: item.faculty_id,
+      academic_unit_id: item.academic_unit_id,
+      faculty_name: names.get(item.faculty_id) || "Faculty member",
+      expertise: expertise.get(item.faculty_id) || [],
+      record_source: "walk_in",
+    });
+  }
+  appointments.sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
 
   return { slots, appointments };
 }
@@ -467,6 +502,43 @@ export async function rescheduleAppointment(
   );
 }
 
+export async function searchWalkInStudents(query: string): Promise<WalkInStudent[]> {
+  const normalized = query.trim();
+  if (normalized.length < 2) return [];
+  if (normalized.length > 80) throw new Error("Keep the student search within 80 characters.");
+  const { data, error } = await supabase.rpc("search_walk_in_students", {
+    search_text: normalized,
+  });
+  if (error) throw new Error(friendlyError(error, "Student records could not be searched."));
+  return (data || []) as WalkInStudent[];
+}
+
+export async function recordWalkInConsultation(input: {
+  studentId: string;
+  topic: string;
+  notes?: string;
+  occurredAt: string;
+  location?: string;
+}) {
+  const topic = input.topic.trim();
+  if (topic.length < 5) throw new Error("Describe the consultation in at least 5 characters.");
+  if (topic.length > 240) throw new Error("Keep the consultation topic within 240 characters.");
+  if ((input.notes || "").trim().length > 2000) throw new Error("Keep notes within 2,000 characters.");
+  if (!input.studentId) throw new Error("Select a student before saving the log.");
+  const occurredAt = new Date(input.occurredAt);
+  if (Number.isNaN(occurredAt.getTime()) || occurredAt.getTime() > Date.now()) {
+    throw new Error("The in-person consultation date and time must be in the past.");
+  }
+  const { data, error } = await supabase.rpc("record_walk_in_consultation", {
+    target_student: input.studentId,
+    consultation_topic: topic,
+    consultation_notes: input.notes?.trim() || null,
+    consultation_occurred_at: occurredAt.toISOString(),
+    consultation_location: input.location?.trim() || null,
+  });
+  return requireData(data as string | null, error, "The in-person consultation could not be recorded.");
+}
+
 export async function loadFacultyPortal(facultyId: string) {
   const { data: availability, error: availabilityError } = await supabase
     .from("availability")
@@ -485,16 +557,23 @@ export async function loadFacultyPortal(facultyId: string) {
 
   const slots = (availability || []) as FacultyAvailability[];
   const slotIds = slots.map((slot) => slot.id);
-  if (!slotIds.length)
-    return { requests: [] as FacultyRequest[], availability: slots };
-
-  const { data: appointments, error: appointmentError } = await supabase
-    .from("appointments")
-    .select(
-      "id,availability_id,student_id,academic_unit_id,topic,notes,status,created_at,updated_at",
-    )
-    .in("availability_id", slotIds)
-    .order("created_at", { ascending: false });
+  const [
+    { data: appointments, error: appointmentError },
+    { data: walkIns, error: walkInError },
+  ] = await Promise.all([
+    slotIds.length
+      ? supabase
+          .from("appointments")
+          .select("id,availability_id,student_id,academic_unit_id,topic,notes,status,created_at,updated_at")
+          .in("availability_id", slotIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    supabase
+      .from("walk_in_consultations")
+      .select("id,academic_unit_id,student_id,faculty_id,topic,notes,occurred_at,location,created_at")
+      .eq("faculty_id", facultyId)
+      .order("occurred_at", { ascending: false }),
+  ]);
   if (appointmentError)
     throw new Error(
       friendlyError(
@@ -502,9 +581,11 @@ export async function loadFacultyPortal(facultyId: string) {
         "Consultation requests could not be loaded.",
       ),
     );
+  if (walkInError)
+    throw new Error(friendlyError(walkInError, "In-person consultation logs could not be loaded."));
 
   const studentIds = [
-    ...new Set((appointments || []).map((item) => item.student_id)),
+    ...new Set([...(appointments || []).map((item) => item.student_id), ...(walkIns || []).map((item) => item.student_id)]),
   ];
   const { data: students, error: studentError } = studentIds.length
     ? await supabase
@@ -521,7 +602,7 @@ export async function loadFacultyPortal(facultyId: string) {
   const studentById = new Map(
     (students || []).map((student) => [student.id, student]),
   );
-  const requests = (appointments || []).flatMap((item) => {
+  const requests: FacultyRequest[] = (appointments || []).flatMap((item) => {
     const slot = slotById.get(item.availability_id);
     if (!slot) return [];
     const student = studentById.get(item.student_id);
@@ -543,9 +624,33 @@ export async function loadFacultyPortal(facultyId: string) {
         academic_unit_id: slot.academic_unit_id || item.academic_unit_id || null,
         faculty_name: "",
         expertise: [],
+        record_source: "web_booking" as const,
       },
     ];
   });
+
+  for (const item of walkIns || []) {
+    requests.push({
+      id: item.id,
+      availability_id: "",
+      student_id: item.student_id,
+      student_name: studentById.get(item.student_id)?.full_name || "Student",
+      topic: item.topic,
+      notes: item.notes || "No additional note was recorded.",
+      status: "completed",
+      updated_at: item.created_at,
+      starts_at: item.occurred_at,
+      ends_at: item.occurred_at,
+      location: item.location || "In-person consultation",
+      consultation_mode: "in_person",
+      faculty_id: item.faculty_id,
+      academic_unit_id: item.academic_unit_id,
+      faculty_name: "",
+      expertise: [],
+      record_source: "walk_in",
+    });
+  }
+  requests.sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
 
   return { requests, availability: slots };
 }
@@ -723,6 +828,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     { data: retentionPreview, error: retentionPreviewError },
     { data: clientErrors, error: clientError },
     { data: academicUnits, error: academicUnitError },
+    { data: walkInRows, error: walkInError },
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -781,6 +887,10 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
       .select("id,code,name,description,contact_email,office_location,active,created_by,created_at,updated_at")
       .order("active", { ascending: false })
       .order("name"),
+    supabase
+      .from("walk_in_consultations")
+      .select("id,academic_unit_id,student_id,faculty_id,topic,notes,occurred_at,location,created_at")
+      .order("occurred_at", { ascending: false }),
   ]);
   // Users, appointments, FAQs, and reviews power the core admin views. Keep
   // those strict so a permission or schema problem cannot quietly show false
@@ -804,6 +914,7 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
     ["retention preview", retentionPreviewError],
     ["client error events", clientError],
     ["academic units", academicUnitError],
+    ["in-person consultation logs", walkInError],
   ]
     .filter(([, error]) => Boolean(error))
     .map(([label]) => label as string);
@@ -837,9 +948,31 @@ export async function loadAdminPortal(): Promise<AdminPortal> {
         academic_unit_id: slot.academic_unit_id || row.academic_unit_id || null,
         faculty_name: profileMap.get(slot.faculty_id) || "Faculty member",
         expertise: [],
+        record_source: "web_booking",
       },
     ];
   });
+  for (const item of walkInRows || []) {
+    appointments.push({
+      id: item.id,
+      availability_id: "",
+      student_id: item.student_id,
+      student_name: profileMap.get(item.student_id) || "Student",
+      topic: item.topic,
+      notes: item.notes || "",
+      status: "completed",
+      updated_at: item.created_at,
+      starts_at: item.occurred_at,
+      ends_at: item.occurred_at,
+      location: item.location || "In-person consultation",
+      consultation_mode: "in_person",
+      faculty_id: item.faculty_id,
+      academic_unit_id: item.academic_unit_id,
+      faculty_name: profileMap.get(item.faculty_id) || "Faculty member",
+      expertise: [],
+      record_source: "walk_in",
+    });
+  }
 
   return {
     users: (users || []).map((profile) => ({

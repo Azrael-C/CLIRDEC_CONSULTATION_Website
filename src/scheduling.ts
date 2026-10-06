@@ -1,5 +1,4 @@
 export const MANILA_TIME_ZONE = "Asia/Manila";
-export const MINIMUM_NOTICE_MS = 24 * 60 * 60 * 1000;
 export const CONSULTATION_START_MINUTES = 8 * 60;
 export const CONSULTATION_END_MINUTES = 17 * 60;
 export const SLOT_STEP_MINUTES = 30;
@@ -66,8 +65,7 @@ export function calendarTimes() {
 }
 
 export function firstBookableStart(now = new Date()) {
-  const earliest = new Date(now.getTime() + MINIMUM_NOTICE_MS);
-  let dateKey = manilaDateKey(earliest);
+  const dateKey = manilaDateKey(now);
 
   for (let dayOffset = 0; dayOffset < 14; dayOffset += 1) {
     const candidateDate = addCalendarDays(dateKey, dayOffset);
@@ -76,7 +74,7 @@ export function firstBookableStart(now = new Date()) {
 
     for (const minutes of calendarTimes()) {
       const candidate = manilaInstant(candidateDate, minutes);
-      if (candidate.getTime() >= earliest.getTime()) return candidate;
+      if (candidate.getTime() > now.getTime()) return candidate;
     }
   }
 
@@ -111,8 +109,8 @@ export function availabilityValidationMessage(
     return "Consultation availability may only be published from Monday to Friday.";
   }
 
-  if (start.getTime() < now.getTime() + MINIMUM_NOTICE_MS) {
-    return "Publish availability at least 24 hours in advance.";
+  if (start.getTime() <= now.getTime()) {
+    return "Choose a start time in the future.";
   }
 
   const startParts = new Intl.DateTimeFormat("en-US", {
