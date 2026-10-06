@@ -13,12 +13,18 @@ const assert = (condition, message) => {
 const fridayAfternoon = new Date("2026-08-07T08:00:00Z");
 const firstAfterFriday = firstBookableStart(fridayAfternoon);
 assert(
-  firstAfterFriday.toISOString() === "2026-08-10T00:00:00.000Z",
-  `Friday rollover failed: ${firstAfterFriday.toISOString()}`,
+  firstAfterFriday.toISOString() === "2026-08-07T08:30:00.000Z",
+  `A same-day future slot was not allowed: ${firstAfterFriday.toISOString()}`,
 );
 assert(
-  initialCalendarWeek(fridayAfternoon) === "2026-08-10",
-  "The initial calendar week did not advance to Monday.",
+  initialCalendarWeek(fridayAfternoon) === "2026-08-03",
+  "The initial calendar week did not stay on the current week.",
+);
+
+const fridayEndOfDay = new Date("2026-08-07T09:00:00Z");
+assert(
+  firstBookableStart(fridayEndOfDay).toISOString() === "2026-08-10T00:00:00.000Z",
+  "The calendar did not advance to Monday after weekday hours ended.",
 );
 
 const saturday = manilaInstant("2026-08-08", 8 * 60);
@@ -54,6 +60,25 @@ assert(
     new Date("2026-08-05T00:00:00Z"),
   ) === "",
   "A valid 15-minute consultation was rejected.",
+);
+
+assert(
+  availabilityValidationMessage(
+    fridayAfternoon,
+    new Date(fridayAfternoon.getTime() + 30 * 60_000),
+    [],
+    new Date("2026-08-07T07:45:00Z"),
+  ) === "",
+  "A valid near-term future consultation was rejected.",
+);
+assert(
+  availabilityValidationMessage(
+    fridayAfternoon,
+    new Date(fridayAfternoon.getTime() + 30 * 60_000),
+    [],
+    fridayAfternoon,
+  ).includes("future"),
+  "A consultation at the current time was not rejected.",
 );
 
 const extendedConsultationEnd = new Date(monday.getTime() + 120 * 60_000);

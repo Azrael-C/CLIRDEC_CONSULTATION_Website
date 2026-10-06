@@ -38,6 +38,7 @@ export type Slot = {
   updated_at?: string;
   review?: ConsultationReview;
   booking_open?: boolean;
+  record_source?: "web_booking" | "walk_in";
 };
 
 export type ChatMessage = {

@@ -137,7 +137,7 @@ test("student to admin consultation lifecycle queues and sends email", async ({ 
 
   await test.step("completed consultation appears in the faculty portal", async () => {
     // Production correctly prevents moving published availability inside the
-    // 24-hour notice window. Transition only this dedicated E2E appointment
+    // Future-only schedule validation. Transition only this dedicated E2E appointment
     // with the server-side test client, then verify the completed UI and review
     // workflow without weakening the live scheduling rule.
     const { error } = await admin.from("appointments").update({ status: "completed" }).eq("id", appointmentId);

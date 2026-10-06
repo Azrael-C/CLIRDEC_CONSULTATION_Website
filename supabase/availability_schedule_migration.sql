@@ -25,8 +25,8 @@ begin
   if extract(isodow from local_start) not between 1 and 5 then
     raise exception 'Consultation availability may only be published from Monday to Friday';
   end if;
-  if new.starts_at < now() + interval '24 hours' then
-    raise exception 'Publish availability at least 24 hours in advance';
+  if new.starts_at <= now() then
+    raise exception 'Availability must start in the future';
   end if;
   if local_start::date <> local_end::date
      or local_start::time < time '08:00'

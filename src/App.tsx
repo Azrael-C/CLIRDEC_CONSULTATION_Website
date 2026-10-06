@@ -22,6 +22,8 @@ import {
   loadStudentPortal,
   removeFacultyAvailability,
   recordUserPresence,
+  recordWalkInConsultation,
+  searchWalkInStudents,
   resolveChatbotGap,
   rescheduleAppointment,
   submitConsultationReview,
@@ -202,7 +204,7 @@ const USER_MANUAL_COPY = {
     steps: [
       ["Find a faculty member", "Open Faculty availability, search by subject or name, then choose a published time that works for you."],
       ["Send a consultation request", "Add a clear topic and context. A request is pending until the faculty member reviews and confirms it."],
-      ["Stay updated", "Check My requests for status changes, reminders, rescheduling, and the review form after a completed consultation."],
+      ["Stay updated", "Check My requests for status changes, reminders, rescheduling, in-person consultations your faculty records, and eligible review forms."],
     ],
     tip: "Consult AI answers from approved CLIRDEC information. If it cannot verify an answer, use Faculty availability or report the issue.",
   },
@@ -213,7 +215,7 @@ const USER_MANUAL_COPY = {
     steps: [
       ["Complete your profile", "Add your subjects, expertise, consultation topics, research interests, bio, and office location so students can find you."],
       ["Publish availability", "Choose a date, duration, location, and consultation mode. Online sessions do not automatically include a meeting link."],
-      ["Manage requests", "Review the student’s topic, approve or decline requests, then mark completed consultations so students can leave feedback."],
+      ["Manage requests", "Review and complete web requests, or log a past in-person consultation when no web booking was made."],
     ],
     tip: "Keep your published times accurate. Removing a slot closes it for new requests but does not erase consultation records.",
   },
@@ -541,8 +543,8 @@ function App() {
       );
       setBooked(
         data.appointments.map((item) => ({
-          id: item.availability_id,
-          appointment_id: item.id,
+          id: item.availability_id || item.id,
+          appointment_id: item.record_source === "walk_in" ? undefined : item.id,
           faculty_name: item.faculty_name,
           initials: item.faculty_name
             .split(" ")
@@ -561,6 +563,7 @@ function App() {
           notes: item.notes,
           updated_at: item.updated_at,
           review: item.review,
+          record_source: item.record_source,
           booking_open: false,
         })),
       );
@@ -2193,6 +2196,7 @@ function PortalFooterActions({
   const [reportCategory, setReportCategory] = useState("Appointment or availability");
   const [reportDetails, setReportDetails] = useState("");
   const [reportStatus, setReportStatus] = useState("");
+  const [reportSubmitted, setReportSubmitted] = useState(false);
   const [reportSubmitting, setReportSubmitting] = useState(false);
 
   const submitPortalIssue = async (event: FormEvent) => {
@@ -2206,8 +2210,7 @@ function PortalFooterActions({
         "user_report",
         `Portal report - ${user.role} - ${reportCategory}: ${details}`,
       );
-      setReportDetails("");
-      setReportOpen(false);
+      setReportSubmitted(true);
       setReportStatus("Report sent to the portal administrator.");
     } catch (cause) {
       setReportStatus(
@@ -2237,6 +2240,7 @@ function PortalFooterActions({
             onClick={() => {
               setReportOpen(true);
               setReportStatus("");
+              setReportSubmitted(false);
             }}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2292,7 +2296,17 @@ function PortalFooterActions({
               Describe the problem you encountered. The report is privacy-filtered
               and sent to the authorized administrator.
             </p>
-            <form className="topic report-issue-form" onSubmit={submitPortalIssue}>
+            {reportSubmitted ? (
+              <div className="report-success" role="status" aria-live="polite">
+                <span aria-hidden="true">✓</span>
+                <div>
+                  <h3>Your report was sent</h3>
+                  <p>The authorized portal administrator can now review it. Thank you for helping us improve FacultyConnect.</p>
+                </div>
+                <button type="button" className="primary" onClick={() => { setReportOpen(false); setReportDetails(""); }}>Done</button>
+              </div>
+            ) : <form className="topic report-issue-form" onSubmit={submitPortalIssue}>
+              {reportStatus && <p className="report-submit-error" role="alert">{reportStatus}</p>}
               <label>
                 <span>Issue type</span>
                 <select
@@ -2328,7 +2342,7 @@ function PortalFooterActions({
                   {reportSubmitting ? "Sending…" : "Send report"}
                 </button>
               </div>
-            </form>
+            </form>}
           </section>
         </div>
       )}
@@ -2619,7 +2633,7 @@ function FindFaculty({
               <div>
                 <span className={s.booking_open === false ? "booking-status closed" : "available"}>
                   {s.booking_open === false
-                    ? "Booking window closed"
+                    ? "Consultation time passed"
                     : "● Faculty-published"}
                 </span>
                 <h3>{s.faculty_name}</h3>
@@ -2652,7 +2666,7 @@ function FindFaculty({
               onClick={() => select(s)}
             >
               {s.booking_open === false
-                ? "Less than 24 hours remaining"
+                ? "Time has passed"
                 : "Review and request →"}
             </button>
           </article>
@@ -2687,8 +2701,8 @@ function Schedule({
           <p className="eyebrow">CONSULTATION GUIDANCE</p>
           <h1>My requests</h1>
           <p>
-            Requests shown here are not appointments until the faculty member
-            confirms them.
+            Web requests are not confirmed appointments until the faculty member
+            approves them. In-person consultations appear here after faculty record them.
           </p>
         </div>
       </section>
@@ -2739,9 +2753,11 @@ function Schedule({
                   })}
                 </p>
                 <small>
-                  {emailNotifications
-                    ? "✉ Email updates enabled"
-                    : "In-app status updates"}{" "}
+                  {s.record_source === "walk_in"
+                    ? "Recorded by faculty as an in-person consultation"
+                    : emailNotifications
+                      ? "✉ Email updates enabled"
+                      : "In-app status updates"}{" "}
                   ·{" "}
                   {s.status === "confirmed" || s.status === "completed"
                     ? s.location
@@ -3157,6 +3173,8 @@ function Chat({
   const [reportDetails, setReportDetails] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [chatActionStatus, setChatActionStatus] = useState("");
+  const [reportStatus, setReportStatus] = useState("");
+  const [reportSubmitted, setReportSubmitted] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -3240,13 +3258,13 @@ function Chat({
         "user_report",
         `Consult AI report — ${reportCategory}: ${details}`,
       );
-      setReportDetails("");
-      setReportOpen(false);
+      setReportSubmitted(true);
+      setReportStatus("");
       setChatActionStatus(
         "Issue reported. An administrator can review the privacy-filtered report.",
       );
     } catch (cause) {
-      setChatActionStatus(
+      setReportStatus(
         cause instanceof Error
           ? cause.message
           : "The report could not be submitted. Please try again.",
@@ -3303,6 +3321,8 @@ function Chat({
               onClick={() => {
                 setReportOpen(true);
                 setChatActionStatus("");
+                setReportStatus("");
+                setReportSubmitted(false);
               }}
             >
               <span aria-hidden="true">!</span> Report an issue
@@ -3445,7 +3465,17 @@ function Chat({
               Tell the administrator what went wrong. Reports are privacy-filtered and
               do not include the conversation automatically.
             </p>
-            <form className="topic report-issue-form" onSubmit={submitIssueReport}>
+            {reportSubmitted ? (
+              <div className="report-success" role="status" aria-live="polite">
+                <span aria-hidden="true">✓</span>
+                <div>
+                  <h3>Your report was sent</h3>
+                  <p>The authorized administrator can review the privacy-filtered report. Your chat conversation was not attached.</p>
+                </div>
+                <button type="button" className="primary" onClick={() => { setReportOpen(false); setReportDetails(""); }}>Done</button>
+              </div>
+            ) : <form className="topic report-issue-form" onSubmit={submitIssueReport}>
+              {reportStatus && <p className="report-submit-error" role="alert">{reportStatus}</p>}
               <label>
                 <span>Issue type</span>
                 <select
@@ -3480,7 +3510,7 @@ function Chat({
                   {reportSubmitting ? "Sending…" : "Send report"}
                 </button>
               </div>
-            </form>
+            </form>}
           </section>
         </div>
       )}
@@ -3897,7 +3927,7 @@ function WeekdayAvailabilityCalendar({
       </div>
       <p className="availability-foot">
         Times use Philippine Standard Time. The calendar disables weekends, past
-        times, entries with less than 24 hours’ notice, and overlaps.
+        times, past entries, and overlaps. Students may request any published future time.
       </p>
     </div>
   );
@@ -4008,6 +4038,16 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           event: "*",
           schema: "public",
           table: "availability",
+          filter: `faculty_id=eq.${user.id}`,
+        },
+        backgroundRefresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "walk_in_consultations",
           filter: `faculty_id=eq.${user.id}`,
         },
         backgroundRefresh,
@@ -4300,6 +4340,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
           setFilter={setRequestFilter}
           decide={decide}
           complete={complete}
+          onRefresh={() => refresh(false)}
         />
       </>
     );
@@ -4350,7 +4391,7 @@ function FacultyPages({ view, user }: { view: FView; user: User }) {
               {formatManilaDateTime(nextBookable, {
                 hour: "numeric",
                 minute: "2-digit",
-              })} · 24-hour notice
+              })} · next future weekday time
             </small>
           </div>
         </section>
@@ -4633,6 +4674,7 @@ function FacultyRequestWorkspace({
   setFilter,
   decide,
   complete,
+  onRefresh,
 }: {
   requests: FacultyRequest[];
   facultyName: string;
@@ -4640,7 +4682,79 @@ function FacultyRequestWorkspace({
   setFilter: (value: "pending" | "confirmed" | "completed") => void;
   decide: (id: string, status: "confirmed" | "declined") => Promise<void>;
   complete: (id: string) => Promise<void>;
+  onRefresh: () => Promise<void>;
 }) {
+  const [studentQuery, setStudentQuery] = useState("");
+  const [students, setStudents] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [selectedStudent, setSelectedStudent] = useState("");
+  const [searchingStudents, setSearchingStudents] = useState(false);
+  const [walkInTopic, setWalkInTopic] = useState("");
+  const [walkInNotes, setWalkInNotes] = useState("");
+  const [walkInLocation, setWalkInLocation] = useState("");
+  const [walkInOccurredAt, setWalkInOccurredAt] = useState(() => {
+    const parts = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(new Date());
+    return parts.replace(" ", "T");
+  });
+  const [walkInSaving, setWalkInSaving] = useState(false);
+  const [walkInStatus, setWalkInStatus] = useState("");
+  const [walkInError, setWalkInError] = useState("");
+
+  useEffect(() => {
+    const query = studentQuery.trim();
+    if (query.length < 2) {
+      setStudents([]);
+      setSearchingStudents(false);
+      return;
+    }
+    let active = true;
+    setSearchingStudents(true);
+    const timer = window.setTimeout(() => {
+      void searchWalkInStudents(query).then((results) => {
+        if (active) setStudents(results);
+      }).catch((cause) => {
+        if (active) setWalkInError(cause instanceof Error ? cause.message : "Student records could not be searched.");
+      }).finally(() => {
+        if (active) setSearchingStudents(false);
+      });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [studentQuery]);
+
+  const saveWalkIn = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setWalkInError("");
+    setWalkInStatus("");
+    setWalkInSaving(true);
+    try {
+      await recordWalkInConsultation({
+        studentId: selectedStudent,
+        topic: walkInTopic,
+        notes: walkInNotes,
+        occurredAt: new Date(`${walkInOccurredAt}:00+08:00`).toISOString(),
+        location: walkInLocation,
+      });
+      await onRefresh();
+      setWalkInStatus("In-person consultation logged. The student and administrator can now see it in the consultation history.");
+      setStudentQuery("");
+      setStudents([]);
+      setSelectedStudent("");
+      setWalkInTopic("");
+      setWalkInNotes("");
+      setWalkInLocation("");
+      setFilter("completed");
+    } catch (cause) {
+      setWalkInError(cause instanceof Error ? cause.message : "The in-person consultation could not be logged.");
+    } finally {
+      setWalkInSaving(false);
+    }
+  };
+
   const counts = {
     pending: requests.filter((item) => item.status === "pending").length,
     confirmed: requests.filter((item) => item.status === "confirmed").length,
@@ -4660,8 +4774,35 @@ function FacultyRequestWorkspace({
       <Head
         label="FACULTY PORTAL"
         title="Appointment requests"
-        copy="Review pending concerns, then track confirmed consultations through completion."
+        copy="Review web requests, track confirmed consultations, and record consultations held in person without a web booking."
       />
+      <section className="walk-in-log-card" aria-labelledby="walk-in-log-title">
+        <header>
+          <div><span className="section-kicker">OFFLINE CONSULTATION</span><h2 id="walk-in-log-title">Log an in-person consultation</h2></div>
+          <span className="walk-in-log-badge">Faculty entry</span>
+        </header>
+        <p>Use this after a student meets with you without submitting a web request. It creates a completed history record, not a booking or email notification.</p>
+        <form className="walk-in-log-form" onSubmit={saveWalkIn}>
+          <label className="walk-in-student-search">
+            <span>Find student in your academic unit</span>
+            <input value={studentQuery} onChange={(event) => { setStudentQuery(event.target.value); setSelectedStudent(""); setWalkInError(""); }} placeholder="Search by student name" autoComplete="off" minLength={2} maxLength={80} required />
+            <small>Only active students assigned to your academic unit are searchable.</small>
+            {searchingStudents && <small role="status">Searching students…</small>}
+            {studentQuery.trim().length >= 2 && !searchingStudents && !students.length && !walkInError && <small>No matching active students found.</small>}
+            {students.length > 0 && <div className="walk-in-student-results" role="listbox" aria-label="Matching students">{students.map((student) => <button type="button" key={student.id} role="option" aria-selected={selectedStudent === student.id} className={selectedStudent === student.id ? "selected" : ""} onClick={() => setSelectedStudent(student.id)}>{student.full_name}</button>)}</div>}
+            {selectedStudent && <small className="walk-in-selected-student">Student selected. Search again to change.</small>}
+          </label>
+          <div className="walk-in-log-fields">
+            <label><span>Consultation date and time <small>(Philippine time)</small></span><input type="datetime-local" value={walkInOccurredAt} onChange={(event) => setWalkInOccurredAt(event.target.value)} required /></label>
+            <label><span>Location</span><input value={walkInLocation} onChange={(event) => setWalkInLocation(event.target.value)} maxLength={160} placeholder="Office or consultation area" /></label>
+            <label className="walk-in-topic-field"><span>Consultation topic</span><input value={walkInTopic} onChange={(event) => setWalkInTopic(event.target.value)} minLength={5} maxLength={240} required placeholder="Briefly describe the consultation" /></label>
+            <label className="walk-in-topic-field"><span>Notes <small>(optional; avoid sensitive details)</small></span><textarea value={walkInNotes} onChange={(event) => setWalkInNotes(event.target.value)} maxLength={2000} rows={3} placeholder="Administrative context only" /></label>
+          </div>
+          {walkInError && <p className="walk-in-form-error" role="alert">{walkInError}</p>}
+          {walkInStatus && <p className="walk-in-form-success" role="status" aria-live="polite">✓ {walkInStatus}</p>}
+          <button className="primary" disabled={walkInSaving || !selectedStudent || searchingStudents}>{walkInSaving ? "Saving log…" : "Save in-person log"}</button>
+        </form>
+      </section>
       <div className="filter-tabs" aria-label="Request status filters">
         {labels.map((item) => (
           <button
@@ -4687,6 +4828,7 @@ function FacultyRequestWorkspace({
                   .slice(0, 2)}
               </span>
               <div>
+                {request.record_source === "walk_in" && <span className="walk-in-log-badge">Logged in person</span>}
                 <span className={`status ${request.status}`}>
                   {request.status.toUpperCase()}
                 </span>
@@ -4705,7 +4847,7 @@ function FacultyRequestWorkspace({
                 })}
               </b>
             </div>
-            {request.status === "pending" && (
+            {request.status === "pending" && request.record_source !== "walk_in" && (
               <>
                 <div className="student-note">
                   <span>Student note</span>
@@ -4727,7 +4869,7 @@ function FacultyRequestWorkspace({
                 </div>
               </>
             )}
-            {(request.status === "confirmed" || request.status === "completed") && (
+            {(request.status === "confirmed" || request.status === "completed") && request.record_source !== "walk_in" && (
               <div className="request-actions">
                 <button
                   type="button"
@@ -6013,7 +6155,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
         <Head
           label="MISO ADMINISTRATION"
           title="Manage appointments"
-          copy="Monitor schedules and investigate service exceptions."
+          copy="Monitor web bookings and in-person consultation records, then investigate service exceptions."
         />
         <div className="filter-tabs" aria-label="Appointment status filters">
           <button
@@ -6052,6 +6194,14 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 .length
             }
           </button>
+          <button
+            type="button"
+            className={appointmentFilter === "completed" ? "active" : ""}
+            aria-pressed={appointmentFilter === "completed"}
+            onClick={() => setAppointmentFilter("completed")}
+          >
+            Completed {completed}
+          </button>
         </div>
         <Data
           headings={["Consultation", "Participants", "Date and time", "Status"]}
@@ -6063,6 +6213,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
                 <b>{item.topic}</b>
                 <small>
                   {item.consultation_mode === "online" ? "Online" : "In person"}
+                  {item.record_source === "walk_in" ? " · Logged in person (no web booking)" : " · Web booking"}
                 </small>
               </span>
               <span data-label="Participants">
