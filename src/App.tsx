@@ -4837,6 +4837,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
   const [reviewRatingFilter, setReviewRatingFilter] = useState<
     "all" | "positive" | "neutral" | "critical"
   >("all");
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
   const [editingFaqId, setEditingFaqId] = useState<string | null>(null);
   const [faqDraft, setFaqDraft] = useState({
     question: "",
@@ -4903,6 +4904,14 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       window.removeEventListener("focus", backgroundRefresh);
     };
   }, []);
+  useEffect(() => {
+    if (!selectedAdminUserId) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedAdminUserId(null);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [selectedAdminUserId]);
   useEffect(() => {
     let active = true;
     void getChatTrustStatus().then((status) => {
@@ -5323,6 +5332,7 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  const selectedAdminUser = data.users.find((item) => item.id === selectedAdminUserId) || null;
   const presenceNow = Date.now();
   const presenceUsers = scopedUsers.map((item) => ({
     ...item,
@@ -5718,6 +5728,14 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
               <span data-label="User">
                 <b>{item.full_name}</b>
                 <small>{item.id.slice(0, 8)}</small>
+                <button
+                  type="button"
+                  className="mobile-user-detail-trigger"
+                  onClick={() => setSelectedAdminUserId(item.id)}
+                  aria-label={`View account details for ${item.full_name}`}
+                >
+                  View details
+                </button>
               </span>
               <span data-label="Department">
                 {item.department || "Not set"}
@@ -5772,6 +5790,82 @@ function AdminPages({ view, user }: { view: AView; user: User }) {
             );
           })}
         </Data>
+        {selectedAdminUser && (
+          <div
+            className="modal-backdrop admin-user-detail-backdrop"
+            onMouseDown={() => setSelectedAdminUserId(null)}
+          >
+            <section
+              className="modal admin-user-detail-card"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-user-detail-title"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setSelectedAdminUserId(null)}
+                aria-label="Close account details"
+              >
+                ×
+              </button>
+              <p className="eyebrow">USER ACCOUNT</p>
+              <h2 id="admin-user-detail-title">{selectedAdminUser.full_name}</h2>
+              <p className="admin-user-detail-email">{selectedAdminUser.email}</p>
+              <dl className="admin-user-detail-facts">
+                <div><dt>Department</dt><dd>{selectedAdminUser.department || "Not provided"}</dd></div>
+                <div><dt>CLSU account ID</dt><dd>{selectedAdminUser.id}</dd></div>
+                <div><dt>Account created</dt><dd>{formatManilaDateTime(new Date(selectedAdminUser.created_at), { month: "short", day: "numeric", year: "numeric" })}</dd></div>
+                <div><dt>Last activity</dt><dd>{selectedAdminUser.last_seen_at ? `${relativePresence(selectedAdminUser.last_seen_at, presenceNow)} · ${formatManilaDateTime(new Date(selectedAdminUser.last_seen_at), { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}` : "No portal activity recorded"}</dd></div>
+              </dl>
+              <div className="admin-user-detail-controls">
+                <label>
+                  <span>Role</span>
+                  <select
+                    value={selectedAdminUser.role}
+                    disabled={selectedAdminUser.id === user.id}
+                    onChange={(event) => void changeRole(selectedAdminUser.id, event.target.value as Role)}
+                  >
+                    <option value="student">Student</option>
+                    <option value="faculty">Faculty</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Academic unit</span>
+                  <select
+                    value={selectedAdminUser.academic_unit_id || ""}
+                    disabled={!data.academicUnits.some((unit) => unit.active)}
+                    onChange={(event) => void assignUserUnit(selectedAdminUser.id, event.target.value)}
+                  >
+                    <option value="" disabled>Select a unit</option>
+                    {data.academicUnits.filter((unit) => unit.active || unit.id === selectedAdminUser.academic_unit_id).map((unit) => (
+                      <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="admin-user-detail-status">
+                <span className={`account-status-pill ${selectedAdminUser.account_status}`}>{selectedAdminUser.account_status}</span>
+                {selectedAdminUser.status_reason && <p>{selectedAdminUser.status_reason}</p>}
+                {selectedAdminUser.status_changed_at && <small>Status updated {formatManilaDateTime(new Date(selectedAdminUser.status_changed_at), { month: "short", day: "numeric", year: "numeric" })}</small>}
+              </div>
+              <div className="admin-user-detail-actions">
+                {selectedAdminUser.id === user.id ? (
+                  <small>This is your current administrator account.</small>
+                ) : selectedAdminUser.account_status === "active" ? (
+                  <>
+                    <button type="button" className="outline" onClick={() => void changeAccountStatus(selectedAdminUser.id, "suspended")}>Suspend account</button>
+                    <button type="button" className="danger-button" onClick={() => void changeAccountStatus(selectedAdminUser.id, "deactivated")}>Deactivate account</button>
+                  </>
+                ) : (
+                  <button type="button" className="primary" onClick={() => void changeAccountStatus(selectedAdminUser.id, "active")}>Reactivate account</button>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
       </>
     );
   if (view === "units")
