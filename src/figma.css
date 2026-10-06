@@ -1581,7 +1581,11 @@ body {
   .mobile-portal-nav button.active { background: var(--figma-green); color: #fff; box-shadow: 0 6px 14px rgba(8,122,73,.22); }
   .mobile-portal-nav .nav-icon { width: 19px; height: 19px; }
   .mobile-portal-nav span { overflow: hidden; max-width: 100%; font-size: .58rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-portal-nav.has-overflow-menu { grid-auto-columns: minmax(54px,1fr); overflow: visible; }
+  .mobile-portal-nav.has-overflow-menu {
+    grid-template-columns: repeat(5,minmax(0,1fr));
+    grid-auto-columns: initial;
+    overflow: visible;
+  }
   .mobile-more-icon { display: grid; place-items: center; width: 19px; height: 19px; font-size: .8rem!important; letter-spacing: .08em; }
   .mobile-more-scrim {
     position: fixed;
